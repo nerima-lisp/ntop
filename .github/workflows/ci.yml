@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flake-check:
+    name: Linux amd64 flake check
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check with pinned Nix on Linux amd64
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_name="ntop-flake-check-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            local command_status=$?
+            local cleanup_status=0
+            local output
+            trap - EXIT
+            output=$(timeout --signal=TERM --kill-after=5s 20s \
+              docker rm --force "$container_name" 2>&1) || cleanup_status=$?
+            if [[ "$cleanup_status" -ne 0 && "$output" != *"No such container"* ]]; then
+              printf '%s\n' "$output" >&2
+              exit 1
+            fi
+            exit "$command_status"
+          }
+          trap cleanup EXIT
+          timeout --signal=TERM --kill-after=15s 1800s docker run \
+            --name "$container_name" \
+            --platform linux/amd64 \
+            --rm \
+            --volume "$GITHUB_WORKSPACE:/src" \
+            --workdir /src \
+            nixos/nix:2.35.3 \
+            nix flake check --print-build-logs path:/src

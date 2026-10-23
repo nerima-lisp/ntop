@@ -470,7 +470,7 @@
    #:run-fixed-rate-sampler
    #:apply-application-action #:run-application-loop
    ;; WP12b: application composition.
-   ))
+   #:next-widget-view))
 
 (define-ntop-package #:ntop.app.infrastructure (:documentation "Terminal and sampler lifecycle.")
   (:export
@@ -484,12 +484,13 @@
 (define-ntop-package #:ntop.app.presentation (:documentation "Screen layout and widgets.")
   (:export
    ;; WP12b: whole-screen presentation.
-   ))
+   #:make-help-state #:help-state-p #:help-state-selected-widget
+   #:help-state-query #:help-state-search-active-p #:help-state-scroll-offset
+   #:help-state-transition #:help-state-visible-entries
+   #:draw-application-screen))
 
 (define-ntop-package #:ntop.cli (:documentation "Command-line options and entry point.")
-  (:export
-   ;; WP13: command-line interface.
-   ))
+  (:export #:main))
 
 (define-ntop-package #:ntop.test (:documentation "Project test definitions.")
   (:export
