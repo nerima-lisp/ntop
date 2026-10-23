@@ -10,18 +10,20 @@
       (:temperature ntop.shared.application:collect-temperature-sample :temperature-sample :temperature)
       (:battery ntop.shared.application:collect-battery-sample :battery-sample :battery)
       (:process ntop.shared.application:collect-process-sample :process-sample :process)))
+  (deftype application-unavailability-reason-or-nil ()
+    '(or null ntop.shared.application:collector-unavailability-reason))
   (defstruct (application-unavailability-reasons
               (:constructor %make-application-unavailability-reasons
                   (&key cpu memory gpu network disk temperature battery process))
               (:copier nil))
-    (cpu nil :type (or null ntop.shared.application:collector-unavailability-reason) :read-only t)
-    (memory nil :type (or null ntop.shared.application:collector-unavailability-reason) :read-only t)
-    (gpu nil :type (or null ntop.shared.application:collector-unavailability-reason) :read-only t)
-    (network nil :type (or null ntop.shared.application:collector-unavailability-reason) :read-only t)
-    (disk nil :type (or null ntop.shared.application:collector-unavailability-reason) :read-only t)
-    (temperature nil :type (or null ntop.shared.application:collector-unavailability-reason) :read-only t)
-    (battery nil :type (or null ntop.shared.application:collector-unavailability-reason) :read-only t)
-    (process nil :type (or null ntop.shared.application:collector-unavailability-reason) :read-only t))
+    (cpu nil :type application-unavailability-reason-or-nil :read-only t)
+    (memory nil :type application-unavailability-reason-or-nil :read-only t)
+    (gpu nil :type application-unavailability-reason-or-nil :read-only t)
+    (network nil :type application-unavailability-reason-or-nil :read-only t)
+    (disk nil :type application-unavailability-reason-or-nil :read-only t)
+    (temperature nil :type application-unavailability-reason-or-nil :read-only t)
+    (battery nil :type application-unavailability-reason-or-nil :read-only t)
+    (process nil :type application-unavailability-reason-or-nil :read-only t))
   (defstruct (application-collection-result
               (:constructor %make-application-collection-result
                   (snapshot unavailability-reasons))

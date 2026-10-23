@@ -92,4 +92,16 @@
               reasons :unknown)
              nil)
          (error () t))
-       :to-be t))))
+       :to-be t)))
+
+  (cl-weave:it "rejects invalid reasons for every application feature"
+    (dolist (feature
+             '(:cpu :memory :gpu :network :disk :temperature :battery :process))
+      (cl-weave:signals
+       type-error
+       (apply
+        (function ntop.app.application::%make-application-unavailability-reasons)
+        (loop for key in
+              '(:cpu :memory :gpu :network :disk :temperature :battery :process)
+              append (list key (if (eq key feature) :invalid nil)))))))
+)
