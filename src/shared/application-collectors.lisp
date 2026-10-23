@@ -1,5 +1,9 @@
 (in-package #:ntop.shared.application)
 
+(deftype collector-unavailability-reason ()
+  '(member :not-present :disabled :permission-denied :unsupported-platform
+           :private-api-unavailable :read-failed))
+;; ON-UNAVAILABLE receives exactly one keyword of type COLLECTOR-UNAVAILABILITY-REASON.
 (defmacro define-collector (name)
   `(defgeneric ,name (collector on-sample on-unavailable)))
 

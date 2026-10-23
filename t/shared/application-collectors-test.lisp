@@ -9,7 +9,7 @@
 
 (defmethod collect-fixture-sample ((collector (eql :unavailable)) on-sample on-unavailable)
   (declare (ignore collector on-sample))
-  (funcall on-unavailable :fixture-reason)
+  (funcall on-unavailable :read-failed)
   (values))
 
 (cl-weave:describe "application collectors"
@@ -65,5 +65,20 @@
                                                                    (push reason reasons)
                                                                    :callback-result)))))
                                   (cl-weave:expect samples :to-equal '())
-                                  (cl-weave:expect reasons :to-equal '(:fixture-reason))
+                                  (cl-weave:expect reasons :to-equal '(:read-failed))
                                   (cl-weave:expect returned-values :to-equal '()))))
+(cl-weave:describe "collector unavailability reasons"
+  (cl-weave:it "accepts the six shared reason keywords and rejects unknown ones"
+    (let ((reasons (list :not-present :disabled :permission-denied
+                         :unsupported-platform :private-api-unavailable
+                         :read-failed)))
+      (cl-weave:expect
+       (every (lambda (reason)
+                (typep reason
+                       (quote ntop.shared.application:collector-unavailability-reason)))
+              reasons)
+       :to-be t)
+      (cl-weave:expect
+       (typep :fixture-reason
+              (quote ntop.shared.application:collector-unavailability-reason))
+       :to-be nil))))
