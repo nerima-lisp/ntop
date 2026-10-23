@@ -1,7 +1,6 @@
 (in-package #:ntop.app.domain)
 
-(defparameter *btm-parity-key-data*
-  (define-parity-keys
+(define-parity-table *btm-parity-key-data* :key
    ("Quit" ("q" "Q")
            ("normal")
            "Exits unless process or help search is active."
@@ -253,4 +252,4 @@
                                      ("normal process table")
                                      "Help claims h/l movement; source and runtime show no binding."
                                      ("src/app.rs:1022-1253"
-                                      "runtime: in-app help and frozen process-table key probe"))))
+                                      "runtime: in-app help and frozen process-table key probe")))

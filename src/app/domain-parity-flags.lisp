@@ -1,7 +1,6 @@
 (in-package #:ntop.app.domain)
 
-(defparameter *btm-parity-flag-data*
-  (define-parity-flags
+(define-parity-table *btm-parity-flag-data* :flag
    ("autohide_time" "" () "boolean" () "all platforms" ("src/options/args.rs:95"))
    ("basic" "-b" () "boolean" () "all platforms" ("src/options/args.rs:105"))
    ("config_location" "-C" ("--config") "path" () "all platforms" ("src/options/args.rs:114-126"))
@@ -122,4 +121,4 @@
             "all platforms"
             ("src/options/args.rs:655"))
    ("help" "-h" () "control" () "parser control" ("src/options/args.rs:688"))
-   ("version" "-V" () "control" () "parser control" ("src/options/args.rs:691"))))
+   ("version" "-V" () "control" () "parser control" ("src/options/args.rs:691")))

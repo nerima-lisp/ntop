@@ -1,7 +1,6 @@
 (in-package #:ntop.app.domain)
 
-(defparameter *btm-parity-column-data*
-  (define-parity-columns
+(define-parity-table *btm-parity-column-data* :column
    ("CPU%(c)" "CpuPercent"
               ("cpu%")
               "all"
@@ -136,10 +135,9 @@
            "gpu feature"
            "no; optional"
            "optional"
-           ("src/widgets/process_table/process_columns.rs:17-230"))))
+           ("src/widgets/process_table/process_columns.rs:17-230")))
 
-(defparameter *btm-parity-search-field-data*
-  (define-parity-search-fields
+(define-parity-table *btm-parity-search-field-data* :search-field
    ("PID" ("pid") "all" "no" ("src/widgets/process_table/query.rs:181-257"))
    ("CPU%" ("cpu" "cpu%") "all" "no" ("src/widgets/process_table/query.rs:181-257"))
    ("Memory bytes" ("memb") "all" "no" ("src/widgets/process_table/query.rs:181-257"))
@@ -156,4 +154,4 @@
    ("Priority" ("priority") "all" "no" ("src/widgets/process_table/query.rs:181-257"))
    ("GPU%" ("gpu%") "gpu feature" "no" ("src/widgets/process_table/query.rs:181-257"))
    ("GPU memory bytes" ("gmem") "gpu feature" "no" ("src/widgets/process_table/query.rs:181-257"))
-   ("GPU memory%" ("gmem%") "gpu feature" "no" ("src/widgets/process_table/query.rs:181-257"))))
+   ("GPU memory%" ("gmem%") "gpu feature" "no" ("src/widgets/process_table/query.rs:181-257")))
