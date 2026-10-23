@@ -205,6 +205,80 @@
              (funcall on-unavailable fallback-reason)
              (funcall on-value fallback)))))))
 
+(defun linux-hwmon-temperature-source-descriptors (directory hwmon-name inputs)
+  (let ((name
+         (or (linux-sysfs-optional-text (format nil "~A/name" directory))
+             hwmon-name)))
+    (mapcar
+     (lambda (input)
+       (destructuring-bind (index . filename) input
+         (let* ((label-file
+                 (concatenate 'string
+                              (subseq filename 0 (- (length filename) 5))
+                              "label"))
+                (label
+                 (linux-sysfs-optional-text
+                  (format nil "~A/~A" directory label-file)))
+                (display-label (and label (copy-seq label))))
+           (when (and display-label (plusp (length display-label)))
+             (setf (char display-label 0) (char-upcase (char display-label 0))))
+           (list :identity
+                 (format nil "hwmon/~A/~D" hwmon-name index)
+                 :name
+                 (if display-label
+                     (format nil "~A: ~A" name display-label)
+                     name)
+                 :handle
+                 (list :kind :hwmon :directory directory :filename filename)))))
+     inputs)))
+
+(defun linux-hwmon-device-temperature-sources (hwmon-name)
+  (let ((directory (format nil "sys/class/hwmon/~A" hwmon-name)))
+    (multiple-value-bind (entries reason) (linux-sysfs-read-directory directory)
+      (when (and reason (not (eq reason :unavailable)))
+        (return-from linux-hwmon-device-temperature-sources
+          (values nil reason)))
+      (let ((inputs (linux-hwmon-inputs entries)))
+        (when inputs
+          (return-from linux-hwmon-device-temperature-sources
+            (values
+             (linux-hwmon-temperature-source-descriptors directory
+                                                         hwmon-name
+                                                         inputs)
+             nil))))
+      (multiple-value-bind (device-entries device-reason)
+          (linux-sysfs-read-directory (format nil "~A/device" directory))
+        (when (and device-reason (not (eq device-reason :unavailable)))
+          (return-from linux-hwmon-device-temperature-sources
+            (values nil device-reason)))
+        (let ((device-inputs (linux-hwmon-inputs device-entries)))
+          (if device-inputs
+              (values
+               (linux-hwmon-temperature-source-descriptors
+                (format nil "~A/device" directory)
+                hwmon-name
+                device-inputs)
+               nil)
+              (values nil nil)))))))
+
+(defun linux-hwmon-temperature-sources ()
+  (multiple-value-bind (directories reason)
+      (linux-sysfs-read-directory "sys/class/hwmon")
+    (when (and reason (not (eq reason :unavailable)))
+      (return-from linux-hwmon-temperature-sources
+        (values nil reason)))
+    (let ((sources nil))
+      (dolist
+          (directory
+           (mapcar #'cdr (linux-sysfs-indexed-names directories "hwmon")))
+        (multiple-value-bind (device-sources device-reason)
+            (linux-hwmon-device-temperature-sources directory)
+          (when device-reason
+            (return-from linux-hwmon-temperature-sources
+              (values nil device-reason)))
+          (setf sources (nconc sources device-sources))))
+      (values sources nil))))
+
 (defparameter +linux-power-supply-integer-fields+
   '(("capacity" :capacity-percent) ("cycle_count" :cycle-count)
     ("energy_now" :energy-now-microwatt-hours)
@@ -222,6 +296,90 @@
     ("voltage_max_design" :voltage-max-design-microvolts)
     ("voltage_min_design" :voltage-min-design-microvolts)
     ("voltage_present" :voltage-present-microvolts)))
+
+(defun linux-thermal-zone-temperature-source (zone index)
+  (let* ((directory (format nil "sys/class/thermal/~A" zone))
+         (name
+          (or (linux-sysfs-optional-text (format nil "~A/type" directory)) zone)))
+    (list :identity
+          (format nil "thermal-zone/~A/~D" zone index)
+          :name
+          name
+          :handle
+          (list :kind :thermal-zone :directory directory :filename "temp"))))
+
+(defun linux-thermal-zone-temperature-sources ()
+  (multiple-value-bind (directories reason)
+      (linux-sysfs-read-directory "sys/class/thermal")
+    (when (and reason (not (eq reason :unavailable)))
+      (return-from linux-thermal-zone-temperature-sources
+        (values nil reason)))
+    (values
+     (mapcar
+      (lambda (zone)
+        (linux-thermal-zone-temperature-source (cdr zone) (car zone)))
+      (linux-sysfs-indexed-names directories "thermal_zone"))
+     nil)))
+
+(defun enumerate-linux-temperature-sources (on-sources on-unavailable)
+  (multiple-value-bind (sources reason) (linux-hwmon-temperature-sources)
+    (cond
+      ((and reason (not (eq reason :unavailable)))
+       (funcall on-unavailable
+                (cond
+                  ((eq reason :root-unavailable) :unsupported-platform)
+                  ((eq reason :permission-denied) :permission-denied)
+                  (t :read-failed))))
+      (sources (funcall on-sources sources))
+      (t
+       (multiple-value-bind (fallback fallback-reason)
+           (linux-thermal-zone-temperature-sources)
+         (if fallback-reason
+             (funcall on-unavailable
+                      (cond
+                        ((eq fallback-reason :root-unavailable)
+                         :unsupported-platform)
+                        ((eq fallback-reason :permission-denied)
+                         :permission-denied)
+                        (t :read-failed)))
+             (funcall on-sources fallback)))))))
+
+(defun linux-temperature-source-millidegrees (source)
+  (let* ((handle (getf source :handle))
+         (kind (getf handle :kind))
+         (directory (getf handle :directory))
+         (filename (getf handle :filename)))
+    (if (and (member kind '(:hwmon :thermal-zone))
+             (stringp directory)
+             (stringp filename))
+        (linux-sysfs-required-integer (format nil "~A/~A" directory filename))
+        (values nil :invalid-data))))
+
+(defun read-linux-temperature-values (sources on-values on-unavailable)
+  (if (null sources)
+      (funcall on-unavailable :not-present)
+      (let ((values nil))
+        (dolist (source sources)
+          (multiple-value-bind (millidegrees reason)
+              (linux-temperature-source-millidegrees source)
+            (cond
+              ((null reason)
+               (push (cons (getf source :identity) millidegrees) values))
+              ((eq reason :root-unavailable)
+               (return-from read-linux-temperature-values
+                 (funcall on-unavailable :unsupported-platform)))
+              ((member reason
+                       '(:unavailable :invalid-data
+                                      :too-large
+                                      :invalid-encoding))
+               (push (cons (getf source :identity) nil) values))
+              ((eq reason :permission-denied)
+               (return-from read-linux-temperature-values
+                 (funcall on-unavailable :permission-denied)))
+              (t
+               (return-from read-linux-temperature-values
+                 (funcall on-unavailable :read-failed))))))
+        (funcall on-values (nreverse values)))))
 
 (defun linux-power-supply-battery (name)
   (let ((directory (format nil "sys/class/power_supply/~A" name)))

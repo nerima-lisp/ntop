@@ -25,6 +25,18 @@
                                                      (setf reason unavailable))))
     (values value reason)))
 
+(defun linux-device-temperature-values-result (fixture sources)
+  (let ((result nil)
+        (reason nil))
+    (ntop.platform.linux:with-linux-root (linux-device-fixture-root fixture)
+                                         (ntop.platform.linux:read-linux-temperature-values
+                                          sources
+                                          (lambda (values)
+                                            (setf result values))
+                                          (lambda (unavailable)
+                                            (setf reason unavailable))))
+    (values result reason)))
+
 (cl-weave:describe "Linux sysfs temperature readers"
                    (cl-weave:it "reads every hwmon input and its optional label"
                                 (multiple-value-bind (sensors reason)
@@ -116,6 +128,129 @@
                                   (cl-weave:expect (first (third expansion))
                                                    :to-be
                                                    'cl-weave:it-each))))
+
+(cl-weave:describe "Linux temperature source and value APIs"
+                   (cl-weave:it
+                    "enumerates stable hwmon descriptors and preserves hwmon priority"
+                    (multiple-value-bind (sources reason)
+                        (linux-device-reader-result
+                         #'ntop.platform.linux:enumerate-linux-temperature-sources
+                         "complete")
+                      (cl-weave:expect reason :to-be nil)
+                      (cl-weave:expect
+                       (mapcar
+                        (lambda (source)
+                          (list (getf source :identity) (getf source :name)))
+                        sources)
+                       :to-equal
+                       '(("hwmon/hwmon0/1" "coretemp: Package id 0")
+                         ("hwmon/hwmon0/2" "coretemp")
+                         ("hwmon/hwmon1/1" "amdgpu: Edge")))
+                      (cl-weave:expect
+                       (getf (getf (third sources) :handle) :directory)
+                       :to-equal
+                       "sys/class/hwmon/hwmon1/device")
+                      (cl-weave:expect
+                       (getf (getf (third sources) :handle) :filename)
+                       :to-equal
+                       "temp1_input")))
+                   (cl-weave:it
+                    "enumerates thermal-zone descriptors and reads negative millidegrees"
+                    (multiple-value-bind (sources reason)
+                        (linux-device-reader-result
+                         #'ntop.platform.linux:enumerate-linux-temperature-sources
+                         "thermal-only")
+                      (cl-weave:expect reason :to-be nil)
+                      (cl-weave:expect
+                       (mapcar
+                        (lambda (source)
+                          (list (getf source :identity) (getf source :name)))
+                        sources)
+                       :to-equal
+                       '(("thermal-zone/thermal_zone0/0" "acpitz")
+                         ("thermal-zone/thermal_zone1/1" "x86_pkg_temp")))
+                      (multiple-value-bind (values value-reason)
+                          (linux-device-temperature-values-result "thermal-only"
+                                                                  sources)
+                        (cl-weave:expect value-reason :to-be nil)
+                        (cl-weave:expect values
+                                         :to-equal
+                                         '(("thermal-zone/thermal_zone0/0" .
+                                                                           -5000)
+                                           ("thermal-zone/thermal_zone1/1" .
+                                                                           65000))))))
+                   (cl-weave:it
+                    "reads only supplied handles and returns current values"
+                    (multiple-value-bind (sources reason)
+                        (linux-device-reader-result
+                         #'ntop.platform.linux:enumerate-linux-temperature-sources
+                         "complete")
+                      (cl-weave:expect reason :to-be nil)
+                      (multiple-value-bind (values value-reason)
+                          (linux-device-temperature-values-result "complete"
+                                                                  sources)
+                        (cl-weave:expect value-reason :to-be nil)
+                        (cl-weave:expect values
+                                         :to-equal
+                                         '(("hwmon/hwmon0/1" . 42000)
+                                           ("hwmon/hwmon0/2" . 0)
+                                           ("hwmon/hwmon1/1" . 58000))))
+                      (multiple-value-bind (values value-reason)
+                          (linux-device-temperature-values-result "thermal-only"
+                                                                  sources)
+                        (cl-weave:expect value-reason :to-be nil)
+                        (cl-weave:expect values
+                                         :to-equal
+                                         '(("hwmon/hwmon0/1" . nil)
+                                           ("hwmon/hwmon0/2" . nil)
+                                           ("hwmon/hwmon1/1" . nil))))))
+                   (cl-weave:it
+                    "keeps malformed individual readings as nil values"
+                    (multiple-value-bind (sources reason)
+                        (linux-device-reader-result
+                         #'ntop.platform.linux:enumerate-linux-temperature-sources
+                         "malformed")
+                      (cl-weave:expect reason :to-be nil)
+                      (multiple-value-bind (values value-reason)
+                          (linux-device-temperature-values-result "malformed"
+                                                                  sources)
+                        (cl-weave:expect value-reason :to-be nil)
+                        (cl-weave:expect values
+                                         :to-equal
+                                         '(("hwmon/hwmon0/1" . nil))))))
+                   (cl-weave:it
+                    "reports an unsupported platform when the Linux root is unavailable"
+                    (multiple-value-bind (sources reason)
+                        (linux-device-reader-result
+                         #'ntop.platform.linux:enumerate-linux-temperature-sources
+                         "complete")
+                      (cl-weave:expect reason :to-be nil)
+                      (let ((values :not-called)
+                            (unavailable nil))
+                        (let ((ntop.platform.linux:*linux-root* nil))
+                          (ntop.platform.linux:read-linux-temperature-values
+                           sources
+                           (lambda (result)
+                             (setf values result))
+                           (lambda (reason)
+                             (setf unavailable reason))))
+                        (cl-weave:expect unavailable
+                                         :to-be
+                                         :unsupported-platform)
+                        (cl-weave:expect values :to-be :not-called))))
+                   (cl-weave:it
+                    "enumerates an empty source set and reports not-present when reading it"
+                    (multiple-value-bind (sources reason)
+                        (linux-device-reader-result
+                         #'ntop.platform.linux:enumerate-linux-temperature-sources
+                         "empty")
+                      (cl-weave:expect reason :to-be nil)
+                      (cl-weave:expect sources :to-equal nil)
+                      (multiple-value-bind (values value-reason)
+                          (linux-device-temperature-values-result "empty"
+                                                                  sources)
+                        (cl-weave:expect values :to-be nil)
+                        (cl-weave:expect value-reason :to-be :not-present)))))
 
 (define-linux-device-case-table "Linux power_supply integer values"
                                 (("capacity" :capacity-percent 73)
