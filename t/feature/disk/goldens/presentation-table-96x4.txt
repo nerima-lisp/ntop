@@ -1,0 +1,4 @@
+ Disks
+Disk(d)▲   Mount(m)        Used(u)    Free(n)    Total(t)   Used%(p)   R/s(r)      W/s(w)
+disk1      /               100GB      200GB      300GB      33.3%      0B/s        0B/s
+disk4      /Volumes/Data   5GB        4GB        10GB       55.6%      12KB/s      1.2GB/s
