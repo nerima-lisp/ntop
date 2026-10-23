@@ -156,6 +156,7 @@
        (sb-ext:process-wait child)))
   (cl-weave:describe
    "Darwin process infrastructure"
+   #+darwin
    (cl-weave:it
     "returns a sampled process list and Darwin signal catalog"
     (multiple-value-bind (sample reason)
@@ -175,6 +176,7 @@
           (cl-weave:expect
            (ntop.process.domain:process-signal-name (first signals))
            :to-equal "SIGHUP")))))
+   #+darwin
    (cl-weave:it
     "reads details for the current process threads when requested"
     (let* ((pid (sb-posix:getpid))
@@ -200,6 +202,7 @@
       (cl-weave:expect
        (ntop.process.domain:process-record-kernel-thread-p record)
        :to-be nil)))
+   #+darwin
    (cl-weave:it
     "overlaps ps process IDs and matches WindowServer real user and start time"
     (let* ((windowserver-pid (%f8a-darwin-windowserver-pid))
@@ -259,6 +262,7 @@
                       expected-elapsed))
               1.1d0)
            :to-be t)))))
+   #+darwin
    (cl-weave:it
     "keeps root-owned memory unavailable and its Mem% absent"
     (multiple-value-bind (sample reason)
@@ -282,6 +286,7 @@
           (cl-weave:expect
            (ntop.process.domain:process-row-memory-percent row)
            :to-be-null)))))
+   #+darwin
    (cl-weave:it
     "measures a child disk writer near one MiB per second"
     (host-kit:call-with-temporary-directory

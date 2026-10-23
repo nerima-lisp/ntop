@@ -229,9 +229,9 @@
                            :to-be
                            t))))) (cl-weave:it
     "validates every target before signaling its child"
-    (let* ((child (sb-ext:run-program "/bin/sleep"
+    (let* ((child (sb-ext:run-program "sleep"
                                      '("30")
-                                     :search nil
+                                     :search t
                                      :wait nil
                                      :input nil
                                      :output nil
@@ -267,9 +267,9 @@
  "F8a process signal permission handling"
  (cl-weave:it
   "preserves a live owned child when the send port reports permission denied"
-  (let* ((child (sb-ext:run-program "/bin/sleep"
+  (let* ((child (sb-ext:run-program "sleep"
                                     '("30")
-                                    :search nil
+                                    :search t
                                     :wait nil
                                     :input nil
                                     :output nil

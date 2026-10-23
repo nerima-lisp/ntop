@@ -194,6 +194,7 @@
     (cl-weave:expect
      (ntop.platform.darwin::decode-darwin-procargs2 empty-path)
      :to-equal "")))
+ #+darwin
  (cl-weave:it
   "bounds native process buffers and catches decoder failures"
   (let ((count 4)
@@ -253,6 +254,7 @@
      (ntop.platform.darwin::%darwin-info-decoded
       1 2 4 (lambda (octets) octets))
      :to-be-null))))
+ #+darwin
  (cl-weave:it
   "handles PID and thread enumeration limits and unavailable callbacks"
   (let* ((layout (copy-list ntop.platform.darwin::+darwin-process-layout+))

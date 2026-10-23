@@ -11,13 +11,13 @@
                "app_pid=
 trap 'if [ -n \"$app_pid\" ]; "
                "then kill -TERM \"$app_pid\" "
-               "2>/dev/null; /bin/sleep 0.1; kill -KILL "
+               "2>/dev/null; sleep 0.1; kill -KILL "
                "\"$app_pid\" 2>/dev/null; fi; exit 1' "
                "INT TERM HUP
 IFS= read -r start
 printf "
                "'__NTOP_BEFORE_BEGIN__\\n'
-/bin/stty -a
+stty -a
 "
                "printf '__NTOP_BEFORE_END__\\n'
 \"$@\" "
@@ -36,7 +36,7 @@ IFS= read -r release
 "
                "printf '__NTOP_AFTER_BEGIN__\\n'
 "
-               "/bin/stty -a
+               "stty -a
 printf "
                "'__NTOP_AFTER_END__\\n'"))
 
