@@ -1,0 +1,6 @@
+ Temperatures
+Sensor(s)▲       Temp(t)
+                 43°C
+CPU (1)          51°C
+CPU (2)          52°C
+GPU              N/A
