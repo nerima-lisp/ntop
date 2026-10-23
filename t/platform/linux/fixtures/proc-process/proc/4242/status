@@ -1,0 +1,16 @@
+Name:   worker
+Umask:  0022
+State:  R (running)
+Tgid:   4242
+Ngid:   0
+Pid:    4242
+PPid:   4000
+TracerPid: 0
+Uid:    1000 1001 1002 1003
+Gid:    2000 2001 2002 2003
+FDSize: 64
+Groups: 4 24 27
+VmPeak: 5120 kB
+VmSize: 5120 kB
+VmRSS:  48 kB
+Threads: 3

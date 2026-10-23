@@ -1,0 +1,7 @@
+cpu 111 7 23 400 5 3 4 2 6 1
+cpu0 44 3 8 100 2 1 0 1 0 0
+cpu1 67 4 15 300 3 2 4 1 6 1
+btime 1700000000
+processes 103
+procs_running 2
+procs_blocked 0

@@ -1,0 +1,362 @@
+(in-package #:ntop.platform.linux)
+
+(defun linux-sysfs-read-text (relative-path)
+  (let ((text nil)
+        (reason nil))
+    (read-linux-file relative-path
+                     (lambda (value)
+                       (setf text (string-trim
+                                   '(#\Space #\Tab #\Newline #\Return)
+                                   value)))
+                     (lambda (unavailable)
+                       (setf reason unavailable)))
+    (values text reason)))
+
+(defun linux-sysfs-read-directory (relative-path)
+  (let ((entries nil)
+        (reason nil))
+    (read-linux-directory relative-path
+                          (lambda (value)
+                            (setf entries value))
+                          (lambda (unavailable)
+                            (setf reason unavailable)))
+    (values entries reason)))
+
+(defun linux-sysfs-required-text (relative-path)
+  (multiple-value-bind (text reason) (linux-sysfs-read-text relative-path)
+    (cond
+      (reason (values nil reason))
+      ((zerop (length text)) (values nil :invalid-data))
+      (t (values text nil)))))
+
+(defun linux-sysfs-optional-text (relative-path)
+  (multiple-value-bind (text reason) (linux-sysfs-read-text relative-path)
+    (unless (or reason (zerop (length text)))
+      text)))
+
+(defun linux-sysfs-required-integer (relative-path)
+  (multiple-value-bind (text reason) (linux-sysfs-read-text relative-path)
+    (cond
+      (reason (values nil reason))
+      ((parse-linux-integer text))
+      (t (values nil :invalid-data)))))
+
+(defun linux-sysfs-optional-integer (relative-path)
+  (multiple-value-bind (text reason) (linux-sysfs-read-text relative-path)
+    (unless (or reason (null text))
+      (parse-linux-integer text))))
+
+(defun linux-sysfs-name-index (name prefix)
+  (when
+      (and (> (length name) (length prefix))
+           (string= prefix name :end2 (length prefix)))
+    (let ((index (parse-linux-integer (subseq name (length prefix)))))
+      (when (and index (not (minusp index)))
+        index))))
+
+(defun linux-sysfs-indexed-names (names prefix)
+  (sort
+   (loop for name in names
+         for index = (linux-sysfs-name-index name prefix)
+         when index
+           collect (cons index name))
+   #'<
+   :key
+   #'car))
+
+(defun linux-hwmon-input-index (name)
+  (let ((length (length name)))
+    (when
+        (and (> length 10)
+             (string= "temp" name :end2 4)
+             (string= "_input" name :start2 (- length 6)))
+      (let ((index (parse-linux-integer (subseq name 4 (- length 6)))))
+        (when (and index (not (minusp index)))
+          index)))))
+
+(defun linux-hwmon-inputs (entries)
+  (sort
+   (loop for name in entries
+         for index = (linux-hwmon-input-index name)
+         when index
+           collect (cons index name))
+   #'<
+   :key
+   #'car))
+
+(defun linux-hwmon-sensors (directory hwmon-name inputs)
+  (let ((name
+         (or (linux-sysfs-optional-text (format nil "~A/name" directory))
+             hwmon-name))
+        (sensors nil))
+    (dolist (input inputs)
+      (destructuring-bind (index . filename) input
+        (multiple-value-bind (temperature reason)
+            (linux-sysfs-required-integer
+             (format nil "~A/~A" directory filename))
+          (cond
+            ((eq reason :unavailable))
+            (reason
+             (return-from linux-hwmon-sensors
+               (values nil reason)))
+            (t
+             (let* ((label-file
+                     (concatenate 'string
+                                  (subseq filename 0 (- (length filename) 5))
+                                  "label"))
+                    (label
+                     (linux-sysfs-optional-text
+                      (format nil "~A/~A" directory label-file))))
+               (push
+                (append (list :hwmon hwmon-name :sensor-index index :name name)
+                        (when label
+                          (list :label label))
+                        (list :temperature-millidegrees temperature))
+                sensors)))))))
+    (values (nreverse sensors) nil)))
+
+(defun linux-hwmon-device-temperatures (hwmon-name)
+  (let ((directory (format nil "sys/class/hwmon/~A" hwmon-name)))
+    (multiple-value-bind (entries reason) (linux-sysfs-read-directory directory)
+      (when (and reason (not (eq reason :unavailable)))
+        (return-from linux-hwmon-device-temperatures
+          (values nil reason)))
+      (let ((inputs (linux-hwmon-inputs entries)))
+        (when inputs
+          (return-from linux-hwmon-device-temperatures
+            (linux-hwmon-sensors directory hwmon-name inputs))))
+      (multiple-value-bind (device-entries device-reason)
+          (linux-sysfs-read-directory (format nil "~A/device" directory))
+        (when (and device-reason (not (eq device-reason :unavailable)))
+          (return-from linux-hwmon-device-temperatures
+            (values nil device-reason)))
+        (let ((device-inputs (linux-hwmon-inputs device-entries)))
+          (if device-inputs
+              (linux-hwmon-sensors (format nil "~A/device" directory)
+                                   hwmon-name
+                                   device-inputs)
+              (values nil nil)))))))
+
+(defun linux-hwmon-temperatures ()
+  (multiple-value-bind (directories reason)
+      (linux-sysfs-read-directory "sys/class/hwmon")
+    (when (and reason (not (eq reason :unavailable)))
+      (return-from linux-hwmon-temperatures
+        (values nil reason)))
+    (let ((sensors nil))
+      (dolist
+          (directory
+           (mapcar #'cdr (linux-sysfs-indexed-names directories "hwmon")))
+        (multiple-value-bind (device-sensors device-reason)
+            (linux-hwmon-device-temperatures directory)
+          (when device-reason
+            (return-from linux-hwmon-temperatures
+              (values nil device-reason)))
+          (setf sensors (nconc sensors device-sensors))))
+      (values sensors reason))))
+
+(defun linux-thermal-zone-temperature (zone index)
+  (let ((directory (format nil "sys/class/thermal/~A" zone)))
+    (multiple-value-bind (temperature reason)
+        (linux-sysfs-required-integer (format nil "~A/temp" directory))
+      (cond
+        ((eq reason :unavailable) (values nil nil))
+        (reason (values nil reason))
+        (t
+         (values
+          (list :thermal-zone
+                zone
+                :sensor-index
+                index
+                :name
+                (or (linux-sysfs-optional-text (format nil "~A/type" directory))
+                    zone)
+                :temperature-millidegrees
+                temperature)
+          nil))))))
+
+(defun linux-thermal-zone-temperatures ()
+  (multiple-value-bind (directories reason)
+      (linux-sysfs-read-directory "sys/class/thermal")
+    (when (and reason (not (eq reason :unavailable)))
+      (return-from linux-thermal-zone-temperatures
+        (values nil reason)))
+    (let ((sensors nil))
+      (dolist (zone (linux-sysfs-indexed-names directories "thermal_zone"))
+        (multiple-value-bind (sensor sensor-reason)
+            (linux-thermal-zone-temperature (cdr zone) (car zone))
+          (when sensor-reason
+            (return-from linux-thermal-zone-temperatures
+              (values nil sensor-reason)))
+          (when sensor
+            (push sensor sensors))))
+      (values (nreverse sensors) nil))))
+
+(defun read-linux-temperatures (on-value on-unavailable)
+  (multiple-value-bind (sensors reason) (linux-hwmon-temperatures)
+    (cond
+      ((and reason (not (eq reason :unavailable)))
+       (funcall on-unavailable reason))
+      (sensors (funcall on-value sensors))
+      (t
+       (multiple-value-bind (fallback fallback-reason)
+           (linux-thermal-zone-temperatures)
+         (if fallback-reason
+             (funcall on-unavailable fallback-reason)
+             (funcall on-value fallback)))))))
+
+(defparameter +linux-power-supply-integer-fields+
+  '(("capacity" :capacity-percent) ("cycle_count" :cycle-count)
+    ("energy_now" :energy-now-microwatt-hours)
+    ("energy_avg" :energy-average-microwatt-hours)
+    ("energy_full" :energy-full-microwatt-hours)
+    ("energy_full_design" :energy-full-design-microwatt-hours)
+    ("charge_now" :charge-now-microamp-hours)
+    ("charge_avg" :charge-average-microamp-hours)
+    ("charge_full" :charge-full-microamp-hours)
+    ("charge_full_design" :charge-full-design-microamp-hours)
+    ("power_now" :power-now-microwatts)
+    ("current_now" :current-now-microamps)
+    ("voltage_now" :voltage-now-microvolts)
+    ("voltage_avg" :voltage-average-microvolts)
+    ("voltage_max_design" :voltage-max-design-microvolts)
+    ("voltage_min_design" :voltage-min-design-microvolts)
+    ("voltage_present" :voltage-present-microvolts)))
+
+(defun linux-power-supply-battery (name)
+  (let ((directory (format nil "sys/class/power_supply/~A" name)))
+    (multiple-value-bind (type reason)
+        (linux-sysfs-required-text (format nil "~A/type" directory))
+      (cond
+        ((eq reason :unavailable) (values nil nil))
+        (reason (values nil reason))
+        ((not (string= type "Battery")) (values nil nil))
+        (t
+         (let ((present
+                (linux-sysfs-optional-integer
+                 (format nil "~A/present" directory))))
+           (when (eql present 0)
+             (return-from linux-power-supply-battery
+               (values nil nil)))
+           (let ((record
+                  (list :name
+                        (or
+                         (linux-sysfs-optional-text
+                          (format nil "~A/name" directory))
+                         name)
+                        :type
+                        type)))
+             (when present
+               (setf record (append record (list :present present))))
+             (let ((status
+                    (linux-sysfs-optional-text
+                     (format nil "~A/status" directory))))
+               (when status
+                 (setf record (append record (list :status status)))))
+             (dolist (field +linux-power-supply-integer-fields+)
+               (destructuring-bind (filename key) field
+                 (let ((value
+                        (linux-sysfs-optional-integer
+                         (format nil "~A/~A" directory filename))))
+                   (when value
+                     (setf record (append record (list key value)))))))
+             (values record nil))))))))
+
+(defun read-linux-batteries (on-value on-unavailable)
+  (multiple-value-bind (directories reason)
+      (linux-sysfs-read-directory "sys/class/power_supply")
+    (cond
+      ((and reason (not (eq reason :unavailable)))
+       (funcall on-unavailable reason))
+      (t
+       (let ((batteries nil))
+         (dolist (directory directories)
+           (multiple-value-bind (battery battery-reason)
+               (linux-power-supply-battery directory)
+             (when battery-reason
+               (return-from read-linux-batteries
+                 (funcall on-unavailable battery-reason)))
+             (when battery
+               (push battery batteries))))
+         (funcall on-value (nreverse batteries)))))))
+
+(defun linux-amd-gpu-card (device-directory)
+  (multiple-value-bind (cards reason)
+      (linux-sysfs-read-directory (format nil "~A/drm" device-directory))
+    (if reason
+        (values nil reason)
+        (values (cdr (first (linux-sysfs-indexed-names cards "card"))) nil))))
+
+(defun linux-amd-gpu-temperature (device-directory)
+  (multiple-value-bind (hwmons reason)
+      (linux-sysfs-read-directory (format nil "~A/hwmon" device-directory))
+    (declare (ignore reason))
+    (dolist (hwmon (mapcar #'cdr (linux-sysfs-indexed-names hwmons "hwmon")))
+      (multiple-value-bind (entries entry-reason)
+          (linux-sysfs-read-directory
+           (format nil "~A/hwmon/~A" device-directory hwmon))
+        (declare (ignore entry-reason))
+        (dolist (input (linux-hwmon-inputs entries))
+          (let ((temperature
+                 (linux-sysfs-optional-integer
+                  (format nil
+                          "~A/hwmon/~A/~A"
+                          device-directory
+                          hwmon
+                          (cdr input)))))
+            (when temperature
+              (return-from linux-amd-gpu-temperature
+                temperature))))))))
+
+(defun linux-amd-gpu (device)
+  (let ((directory
+         (format nil "sys/module/amdgpu/drivers/pci:amdgpu/~A" device)))
+    (multiple-value-bind (card reason) (linux-amd-gpu-card directory)
+      (cond
+        ((eq reason :unavailable) (values nil nil))
+        (reason (values nil reason))
+        ((null card) (values nil nil))
+        (t
+         (let ((record
+                (list :pci-address
+                      device
+                      :card
+                      card
+                      :name
+                      (or
+                       (linux-sysfs-optional-text
+                        (format nil "~A/product_name" directory))
+                       card))))
+           (dolist
+               (field
+                '(("gpu_busy_percent" :usage-percent)
+                  ("mem_info_vram_used" :vram-used-bytes)
+                  ("mem_info_vram_total" :vram-total-bytes)))
+             (destructuring-bind (filename key) field
+               (let ((value
+                      (linux-sysfs-optional-integer
+                       (format nil "~A/~A" directory filename))))
+                 (when value
+                   (setf record (append record (list key value)))))))
+           (let ((temperature (linux-amd-gpu-temperature directory)))
+             (when temperature
+               (setf record (append record
+                                    (list :temperature-millidegrees temperature)))))
+           (values record nil)))))))
+
+(defun read-linux-amd-gpus (on-value on-unavailable)
+  (multiple-value-bind (devices reason)
+      (linux-sysfs-read-directory "sys/module/amdgpu/drivers/pci:amdgpu")
+    (cond
+      ((and reason (not (eq reason :unavailable)))
+       (funcall on-unavailable reason))
+      (t
+       (let ((gpus nil))
+         (dolist (device devices)
+           (multiple-value-bind (gpu gpu-reason) (linux-amd-gpu device)
+             (when gpu-reason
+               (return-from read-linux-amd-gpus
+                 (funcall on-unavailable gpu-reason)))
+             (when gpu
+               (push gpu gpus))))
+         (funcall on-value (nreverse gpus)))))))
