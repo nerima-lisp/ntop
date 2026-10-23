@@ -45,4 +45,5 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/src" \
             --workdir /src \
             nixos/nix:2.35.3 \
-            nix flake check --print-build-logs path:/src
+            nix --extra-experimental-features 'nix-command flakes' \
+              flake check --print-build-logs path:/src
