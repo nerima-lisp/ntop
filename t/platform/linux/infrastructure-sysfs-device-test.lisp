@@ -37,82 +37,7 @@
                                             (setf reason unavailable))))
     (values result reason)))
 
-(cl-weave:describe "Linux sysfs temperature readers"
-                   (cl-weave:it "reads every hwmon input and its optional label"
-                                (multiple-value-bind (sensors reason)
-                                    (linux-device-reader-result
-                                     #'ntop.platform.linux::read-linux-temperatures
-                                     "complete")
-                                  (cl-weave:expect reason :to-be nil)
-                                  (cl-weave:expect
-                                   (mapcar
-                                    (lambda (sensor)
-                                      (list (getf sensor :hwmon)
-                                            (getf sensor :sensor-index)
-                                            (getf sensor :name)
-                                            (getf sensor :label)
-                                            (getf sensor
-                                                  :temperature-millidegrees)))
-                                    sensors)
-                                   :to-equal
-                                   '(("hwmon0" 1
-                                               "coretemp"
-                                               "Package id 0"
-                                               42000)
-                                     ("hwmon0" 2 "coretemp" nil 0)
-                                     ("hwmon1" 1 "amdgpu" "edge" 58000)))))
-                   (cl-weave:it
-                    "uses the hwmon device subdirectory when direct inputs are absent"
-                    (multiple-value-bind (sensors reason)
-                        (linux-device-reader-result
-                         #'ntop.platform.linux::read-linux-temperatures
-                         "complete")
-                      (cl-weave:expect reason :to-be nil)
-                      (cl-weave:expect
-                       (getf (third sensors) :temperature-millidegrees)
-                       :to-be
-                       58000)))
-                   (cl-weave:it
-                    "prefers hwmon over thermal zones to avoid duplicate sensors"
-                    (multiple-value-bind (sensors reason)
-                        (linux-device-reader-result
-                         #'ntop.platform.linux::read-linux-temperatures
-                         "complete")
-                      (cl-weave:expect reason :to-be nil)
-                      (cl-weave:expect (length sensors) :to-be 3)
-                      (cl-weave:expect
-                       (find "ignored-zone"
-                             sensors
-                             :key
-                             (lambda (sensor)
-                               (getf sensor :name))
-                             :test
-                             #'string=)
-                       :to-be
-                       nil)))
-                   (cl-weave:it
-                    "falls back to thermal-zone values and preserves negatives"
-                    (multiple-value-bind (sensors reason)
-                        (linux-device-reader-result
-                         #'ntop.platform.linux::read-linux-temperatures
-                         "thermal-only")
-                      (cl-weave:expect reason :to-be nil)
-                      (cl-weave:expect
-                       (mapcar
-                        (lambda (sensor)
-                          (list (getf sensor :name)
-                                (getf sensor :sensor-index)
-                                (getf sensor :temperature-millidegrees)))
-                        sensors)
-                       :to-equal
-                       '(("acpitz" 0 -5000) ("x86_pkg_temp" 1 65000)))))
-                   (cl-weave:it "reports malformed required temperature data"
-                                (multiple-value-bind (sensors reason)
-                                    (linux-device-reader-result
-                                     #'ntop.platform.linux::read-linux-temperatures
-                                     "malformed")
-                                  (cl-weave:expect sensors :to-be nil)
-                                  (cl-weave:expect reason :to-be :invalid-data)))
+(cl-weave:describe "Linux device fixture test helper"
                    (cl-weave:it "expands the table helper into cl-weave cases"
                                 (let ((expansion
                                        (macroexpand-1
@@ -404,36 +329,20 @@
                        (cl-weave:expect battery :to-be nil)
                        (cl-weave:expect reason :to-be :invalid-data))))
                    (cl-weave:it
-                    "ignores missing required battery and thermal-zone files"
+                    "ignores missing required battery files"
                     (ntop.platform.linux:with-linux-root
                      (linux-device-fixture-root "empty")
                      (multiple-value-bind (battery reason)
                          (ntop.platform.linux::linux-power-supply-battery
                           "BAT0")
                        (cl-weave:expect battery :to-be nil)
-                       (cl-weave:expect reason :to-be nil))
-                     (multiple-value-bind (sensor reason)
-                         (ntop.platform.linux::linux-thermal-zone-temperature
-                          "thermal_zone99"
-                          99)
-                       (cl-weave:expect sensor :to-be nil)
                        (cl-weave:expect reason :to-be nil))))
                    (cl-weave:it
-                    "returns no hwmon data when an empty device has no inputs"
-                    (ntop.platform.linux:with-linux-root
-                     (linux-device-fixture-root "complete")
-                     (multiple-value-bind (sensors reason)
-                         (ntop.platform.linux::linux-hwmon-device-temperatures
-                          "hwmon2")
-                       (cl-weave:expect sensors :to-be nil)
-                       (cl-weave:expect reason :to-be nil))))
-                   (cl-weave:it
-                    "reports missing roots through temperature, battery, and GPU readers"
+                    "reports missing roots through battery and GPU readers"
                     (let ((ntop.platform.linux:*linux-root* nil))
                       (dolist
                           (reader
-                           (list #'ntop.platform.linux:read-linux-temperatures
-                                 #'ntop.platform.linux:read-linux-batteries
+                           (list #'ntop.platform.linux:read-linux-batteries
                                  #'ntop.platform.linux:read-linux-amd-gpus))
                         (let ((value nil)
                               (reason :unset))
@@ -443,13 +352,4 @@
                                    (lambda (unavailable)
                                      (setf reason unavailable)))
                           (cl-weave:expect value :to-be nil)
-                          (cl-weave:expect reason :to-be :root-unavailable)))
-                      (multiple-value-bind (sensors reason)
-                          (ntop.platform.linux::linux-hwmon-device-temperatures
-                           "hwmon0")
-                        (cl-weave:expect sensors :to-be nil)
-                        (cl-weave:expect reason :to-be :root-unavailable))
-                      (multiple-value-bind (sensors reason)
-                          (ntop.platform.linux::linux-thermal-zone-temperatures)
-                        (cl-weave:expect sensors :to-be nil)
-                        (cl-weave:expect reason :to-be :root-unavailable)))))
+                          (cl-weave:expect reason :to-be :root-unavailable))))))
