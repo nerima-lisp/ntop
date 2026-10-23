@@ -1,0 +1,12 @@
+
+
+ ┌ Select Signal ────────────────────────────────────── Esc to close ┐
+ │Kill process 'fixture-worker' with PID 123? Press ENTER to confirm.│
+ │0: Cancel                                                          │
+ │2: SIGINT                                                          │
+ │9: SIGKILL                                                         │
+ │15: SIGTERM                                                        │
+ └───────────────────────────────────────────────────────────────────┘
+
+
+

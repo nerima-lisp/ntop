@@ -1,0 +1,8 @@
+
+ ┌ Confirm Kill Process ─────────────────────────────── Esc to close ┐
+ │Kill process 'fixture-worker' with PID 123? Press ENTER to confirm.│
+ │                             Yes   No                              │
+ │                                                                   │
+ └───────────────────────────────────────────────────────────────────┘
+
+
