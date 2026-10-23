@@ -52,7 +52,11 @@
                              (lambda (on-value on-unavailable)
                                (declare (ignore on-unavailable))
                                (funcall on-value
-                                        (ntop.cpu.infrastructure::make-cpu-source-sample)))
+                                        (ntop.cpu.infrastructure::make-cpu-source-sample
+                                         :core-values
+                                         (list
+                                          (ntop.cpu.domain:make-cpu-core-value
+                                           :core-index 0)))))
                              :clock
                              clock))
                            (snapshot nil)
@@ -81,8 +85,18 @@
                        :to-be
                        nil)
                       (cl-weave:expect
-                       (ntop.app.domain:collection-snapshot-cpu-sample snapshot)
-                       :to-be-truthy)
+                       (list
+                        (not
+                         (null
+                          (ntop.app.domain:collection-snapshot-cpu-sample
+                           snapshot)))
+                        (ntop.cpu.domain:cpu-core-value-frequency-mhz
+                         (first
+                          (ntop.cpu.domain:cpu-sample-core-values
+                           (ntop.app.domain:collection-snapshot-cpu-sample
+                            snapshot)))))
+                       :to-equal
+                       (quote (t nil)))
                       (cl-weave:expect top-level-unavailable :to-be :not-called)))
                    (cl-weave:it
                     "keeps duplicate named services as rows and samples cached handles again"
