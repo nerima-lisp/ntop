@@ -63,7 +63,7 @@
 
 (defun %nvml-device-name (device index)
   (sb-alien:with-alien
-   ((buffer (sb-alien:array sb-alien:char +nvml-device-name-buffer-size+)))
+   ((buffer (sb-alien:array sb-alien:char 128)))
    (if (zerop
         (%nvml-device-get-name device
                                (sb-alien:addr (sb-alien:deref buffer 0))
@@ -71,9 +71,9 @@
        (let ((name
               (coerce
                (loop for position below +nvml-device-name-buffer-size+
-                     for character = (sb-alien:deref buffer position)
-                     until (char= character #\Null)
-                     collect character)
+                     for code = (logand (sb-alien:deref buffer position) #xff)
+                     until (zerop code)
+                     collect (code-char code))
                'string)))
          (if (plusp (length name))
              name
