@@ -7,17 +7,30 @@
    (ntop.app.domain:btm-parity-catalog)))
 
 (defun cli-test-spellings (entry)
-  (remove-duplicates
-   (list (ntop.app.domain:parity-flag-snake-case entry)
-         (ntop.app.domain:parity-flag-kebab-case entry))
-   :test
-   #'string=))
+  (let ((short (ntop.app.domain:parity-flag-short entry)))
+    (remove-duplicates
+     (append
+      (loop for name in (append
+                         (list (ntop.app.domain:parity-flag-snake-case entry)
+                               (ntop.app.domain:parity-flag-kebab-case entry))
+                         (ntop.app.domain:parity-flag-aliases entry))
+            collect (concatenate 'string "--" (string-left-trim "-" name)))
+      (when (and short (plusp (length short)))
+        (list short)))
+     :test
+     #'string-equal)))
 
 (defun cli-test-sample-value (entry)
-  (let ((type (ntop.app.domain:parity-flag-value-type entry)))
+  (let ((name (ntop.app.domain:parity-flag-snake-case entry))
+        (type (ntop.app.domain:parity-flag-value-type entry)))
     (cond
-      ((string= type "boolean") nil)
-      ((string= type "duration") "60000")
+      ((member type '("boolean" "control") :test #'string=) nil)
+      ((string= type "duration")
+       (cond
+         ((string= name "rate") "251ms")
+         ((string= name "default_time_value") "30s")
+         ((string= name "retention") "60s")
+         ((string= name "time_delta") "1s")))
       ((string= type "integer") "2")
       ((string= type "enum") (first (ntop.app.domain:parity-flag-values entry)))
       ((string= type "path") "/tmp/ntop-config")
@@ -27,12 +40,30 @@
               when (eq (ntop.app.domain:parity-entry-kind column) :column)
                 append (ntop.app.domain:parity-column-aliases column)))))))
 
+(defun cli-test-sample-values (entry)
+  (let ((type (ntop.app.domain:parity-flag-value-type entry)))
+    (cond
+      ((string= type "enum") (copy-list (ntop.app.domain:parity-flag-values entry)))
+      ((string= type "column-name")
+       (remove-duplicates
+        (loop for column in (ntop.app.domain:btm-parity-catalog)
+              when (eq (ntop.app.domain:parity-entry-kind column) :column)
+                append (ntop.app.domain:parity-column-aliases column))
+        :test
+        #'string-equal))
+      ((member type '("boolean" "control") :test #'string=) nil)
+      (t (list (cli-test-sample-value entry))))))
+
 (defun cli-test-parse (arguments)
   (cl-cli:parse-argv (ntop.cli::%make-cli-app) (cons "ntop" arguments)))
 
 (defun cli-test-entry-argv (entry spelling &optional value)
-  (append (list (concatenate 'string "--" spelling))
-          (unless (string= (ntop.app.domain:parity-flag-value-type entry) "boolean")
+  (append (list spelling)
+          (unless
+              (member (ntop.app.domain:parity-flag-value-type entry)
+                      '("boolean" "control")
+                      :test
+                      #'string=)
             (list value))))
 
 (defun cli-test-invalid-p (arguments)
@@ -100,53 +131,96 @@
                                          t)))))))
 
 (cl-weave:describe "CLI parity catalog"
-                   (cl-weave:it "generates an option for each flag spelling"
-                                (let ((records (cli-test-flags)))
-                                  (cl-weave:expect (length records) :to-equal 52)
-                                  (dolist (entry records)
-                                    (let ((type
-                                           (ntop.app.domain:parity-flag-value-type entry)))
-                                      (unless (string= type "control")
-                                        (dolist (spelling (cli-test-spellings entry))
-                                          (let* ((value (cli-test-sample-value entry))
-                                                 (invocation
-                                                  (cli-test-parse
-                                                   (cli-test-entry-argv entry
-                                                                        spelling
-                                                                        value)))
-                                                 (actual
-                                                  (ntop.cli::%option-value invocation
-                                                                           entry)))
-                                            (cl-weave:expect
-                                             (cl-cli:invocation-action invocation)
-                                             :to-equal
-                                             :dispatch)
-                                            (cl-weave:expect
-                                             (if (string= type "boolean")
-                                                 (eq actual t)
-                                                 (not
-                                                  (eq actual
-                                                      ntop.cli::*missing-option-value*)))
-                                             :to-be
-                                             t))))))))
-                   (cl-weave:it "rejects invalid enum, integer, and column values"
-                                (dolist (entry (cli-test-flags))
-                                  (let* ((type
-                                          (ntop.app.domain:parity-flag-value-type entry))
-                                         (invalid
-                                          (cond
-                                            ((string= type "integer") "not-an-integer")
-                                            ((string= type "column-name") "not-a-column")
-                                            ((string= type "enum") "not-a-choice"))))
-                                    (when invalid
-                                      (dolist (spelling (cli-test-spellings entry))
-                                        (cl-weave:expect
-                                         (cli-test-invalid-p
-                                          (append
-                                           (list (concatenate 'string "--" spelling)
-                                                 invalid)))
-                                         :to-be
-                                         t))))))
+                   (cl-weave:it
+                    "accepts every declared value and spelling for all 52 parity flags"
+                    (let ((records (cli-test-flags)))
+                      (cl-weave:expect (length records) :to-equal 52)
+                      (dolist (entry records)
+                        (let* ((name (ntop.app.domain:parity-flag-snake-case entry))
+                               (type (ntop.app.domain:parity-flag-value-type entry))
+                               (samples (cli-test-sample-values entry)))
+                          (dolist (spelling (cli-test-spellings entry))
+                            (if (string= type "control")
+                                (let ((invocation (cli-test-parse (list spelling))))
+                                  (cl-weave:expect (cl-cli:invocation-action invocation)
+                                                   :to-equal
+                                                   (if (string= name "help")
+                                                       :help
+                                                       :version)))
+                                (dolist
+                                    (value
+                                     (if (string= type "boolean")
+                                         (list nil)
+                                         samples))
+                                  (let* ((arguments
+                                          (cli-test-entry-argv entry spelling value))
+                                         (invocation (cli-test-parse arguments))
+                                         (actual
+                                          (ntop.cli::%option-value invocation entry)))
+                                    (cl-weave:expect (cl-cli:invocation-action invocation)
+                                                     :to-equal
+                                                     :dispatch)
+                                    (cl-weave:expect
+                                     (if (string= type "boolean")
+                                         (eq actual t)
+                                         (not
+                                          (eq actual ntop.cli::*missing-option-value*)))
+                                     :to-be
+                                     t)))))))))
+                   (cl-weave:it
+                    "rejects a generated invalid case for each of the 52 parity flags"
+                    (dolist (entry (cli-test-flags))
+                      (let* ((name (ntop.app.domain:parity-flag-snake-case entry))
+                             (type (ntop.app.domain:parity-flag-value-type entry))
+                             (spellings (cli-test-spellings entry)))
+                        (cond
+                          ((string= type "control")
+                           (cl-weave:expect
+                            (cli-test-invalid-p
+                             (list (concatenate 'string "--" name "=invalid")))
+                            :to-be
+                            t))
+                          ((string= type "boolean")
+                           (cl-weave:expect
+                            (cli-test-invalid-p
+                             (list (concatenate 'string "--" name "=false")))
+                            :to-be
+                            t))
+                          ((string= type "path")
+                           (dolist (spelling spellings)
+                             (cl-weave:expect (cli-test-invalid-p (list spelling))
+                                              :to-be
+                                              t)))
+                          ((string= type "duration")
+                           (dolist (spelling spellings)
+                             (dolist
+                                 (value
+                                  (list "abc"
+                                        (cond
+                                          ((string= name "rate") "250ms")
+                                          ((string= name "default_time_value") "29999ms")
+                                          ((string= name "retention") "59999ms")
+                                          ((string= name "time_delta") "999ms"))))
+                               (cl-weave:expect
+                                (multiple-value-bind (config status)
+                                    (ntop.cli::%config-from-invocation
+                                     (cli-test-parse (list spelling value)))
+                                  (declare (ignore config))
+                                  status)
+                                :to-equal
+                                (if (string= name "rate")
+                                    1
+                                    2)))))
+                          (t
+                           (let ((value
+                                  (cond
+                                    ((string= type "integer") "not-an-integer")
+                                    ((string= type "enum") "not-a-choice")
+                                    ((string= type "column-name") "not-a-column"))))
+                             (dolist (spelling spellings)
+                               (cl-weave:expect (cli-test-invalid-p (list spelling value))
+                                                :to-be
+                                                t))))))))
                    (cl-weave:it
                     "uses built-in controls and their short spellings without running"
                     (dolist
