@@ -180,3 +180,103 @@
                            text)
                         (cl-weave:expect reason :to-be :unset)
                         (cl-weave:expect value :to-equal expected)))))
+
+(cl-weave:describe "Linux proc system edge cases"
+                   (cl-weave:it-each
+                    (("missing loadavg ratio" "1.0 0.5 0.2")
+                     ("loadavg ratio without separator" "1.0 0.5 0.2 2 103 9")
+                     ("invalid first average" "bad 0.5 0.2 2/103 9")
+                     ("invalid second average" "1.0 bad 0.2 2/103 9")
+                     ("invalid third average" "1.0 0.5 bad 2/103 9")
+                     ("invalid running process count" "1.0 0.5 0.2 bad/103 9")
+                     ("invalid total process count" "1.0 0.5 0.2 2/bad 9")
+                     ("invalid last process id" "1.0 0.5 0.2 2/103 bad"))
+                    "rejects ~A"
+                    (description text)
+                    (declare (ignore description))
+                    (multiple-value-bind (value reason)
+                        (%capture-linux-parser
+                         #'ntop.platform.linux::parse-linux-proc-loadavg
+                         text)
+                      (cl-weave:expect value :to-be :unset)
+                      (cl-weave:expect reason :to-be :invalid-data)))
+                   (cl-weave:it-each
+                    (("MemTotal: many kB") ("MemTotal: 1 kB extra")
+                     ("MemTotal:")
+                     (": 1 kB"))
+                    "rejects malformed proc/meminfo row ~A"
+                    (text)
+                    (multiple-value-bind (value reason)
+                        (%capture-linux-parser
+                         #'ntop.platform.linux::parse-linux-proc-meminfo
+                         text)
+                      (cl-weave:expect value :to-be :unset)
+                      (cl-weave:expect reason :to-be :invalid-data)))
+                   (cl-weave:it
+                    "ignores rows without a colon while parsing meminfo"
+                    (multiple-value-bind (value reason)
+                        (%capture-linux-parser
+                         #'ntop.platform.linux::parse-linux-proc-meminfo
+                         (format nil "garbage~%MemTotal: 1~%"))
+                      (cl-weave:expect reason :to-be :unset)
+                      (cl-weave:expect value :to-equal '(("MemTotal" 1 nil)))))
+                   (cl-weave:it-each
+                    (("usage_usec nope") ("usage_usec 1 extra"))
+                    "rejects malformed cgroup key-value row ~A"
+                    (text)
+                    (multiple-value-bind (value valid-p)
+                        (ntop.platform.linux::parse-linux-key-value-table text)
+                      (cl-weave:expect value :to-be nil)
+                      (cl-weave:expect valid-p :to-be nil)))
+                   (cl-weave:it "accepts an empty cgroup key-value table"
+                                (multiple-value-bind (value valid-p)
+                                    (ntop.platform.linux::parse-linux-key-value-table
+                                     "")
+                                  (cl-weave:expect value :to-be nil)
+                                  (cl-weave:expect valid-p :to-be t)))
+                   (cl-weave:it-each
+                    (("v2 quota" (("sys/fs/cgroup/cpu.max" . "bad 100000")))
+                     ("v2 period" (("sys/fs/cgroup/cpu.max" . "max 0")))
+                     ("v2 memory limit" (("sys/fs/cgroup/memory.max" . "bad")))
+                     ("v2 memory usage"
+                      (("sys/fs/cgroup/cpu.max" . "max 100000")
+                       ("sys/fs/cgroup/memory.current" . "bad")))
+                     ("v2 cpu statistics"
+                      (("sys/fs/cgroup/cpu.max" . "max 100000")
+                       ("sys/fs/cgroup/cpu.stat" . "usage_usec")))
+                     ("v2 memory statistics"
+                      (("sys/fs/cgroup/cpu.max" . "max 100000")
+                       ("sys/fs/cgroup/memory.stat" . "anon 1 extra")))
+                     ("v1 quota"
+                      (("sys/fs/cgroup/cpu/cpu.cfs_quota_us" . "bad")))
+                     ("v1 period"
+                      (("sys/fs/cgroup/cpu/cpu.cfs_period_us" . "bad")))
+                     ("v1 cpu usage"
+                      (("sys/fs/cgroup/cpuacct/cpuacct.usage" . "bad")))
+                     ("v1 memory limit"
+                      (("sys/fs/cgroup/memory/memory.limit_in_bytes" . "bad")))
+                     ("v1 memory usage"
+                      (("sys/fs/cgroup/memory/memory.usage_in_bytes" . "bad")))
+                     ("v1 cpu statistics"
+                      (("sys/fs/cgroup/cpu/cpu.stat" . "usage_usec")))
+                     ("v1 memory statistics"
+                      (("sys/fs/cgroup/memory/memory.stat" . "anon 1 extra"))))
+                    "rejects malformed ~A cgroup data"
+                    (description files)
+                    (declare (ignore description))
+                    (multiple-value-bind (value reason)
+                        (%capture-linux-parser
+                         #'ntop.platform.linux::parse-linux-cgroup-files
+                         files)
+                      (cl-weave:expect value :to-be :unset)
+                      (cl-weave:expect reason :to-be :invalid-data)))
+                   (cl-weave:it
+                    "accepts a partial v1 cgroup record with optional files absent"
+                    (multiple-value-bind (value reason)
+                        (%capture-linux-parser
+                         #'ntop.platform.linux::parse-linux-cgroup-files
+                         '(("sys/fs/cgroup/cpu/cpu.cfs_quota_us" . "70000")))
+                      (cl-weave:expect reason :to-be :unset)
+                      (cl-weave:expect (getf value :version) :to-be 1)
+                      (cl-weave:expect (getf value :cpu-quota) :to-be 70000)
+                      (cl-weave:expect (getf value :cpu-period) :to-be nil))))

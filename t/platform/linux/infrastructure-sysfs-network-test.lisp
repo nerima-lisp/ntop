@@ -140,3 +140,24 @@
                                       (cl-weave:expect value :to-be 1))))))
                                  :to-be
                                  (quote cl-weave:it-each))))
+
+(cl-weave:describe "Linux sysfs counter edge cases"
+                   (cl-weave:it-each
+                    (("" nil :invalid-data) ("1 2" nil :invalid-data)
+                     ("-1" nil :invalid-data)
+                     ("0" 0 nil)
+                     ("+1" 1 nil))
+                    "parses sysfs counter text ~S"
+                    (text expected expected-reason)
+                    (let ((value nil)
+                          (reason nil))
+                      (ntop.platform.linux::parse-linux-sysfs-counter-text text
+                                                                           (lambda
+                                                                               (result)
+                                                                             (setf value result))
+                                                                           (lambda
+                                                                               (unavailable)
+                                                                             (setf reason
+      unavailable)))
+                      (cl-weave:expect value :to-equal expected)
+                      (cl-weave:expect reason :to-equal expected-reason))))

@@ -229,3 +229,92 @@
                          "empty")
                       (cl-weave:expect gpus :to-equal nil)
                       (cl-weave:expect reason :to-be nil))))
+
+(cl-weave:describe "Linux sysfs reader edge cases"
+                   (cl-weave:it-each
+                    (("hwmon" "hwmon" nil) ("other0" "hwmon" nil)
+                     ("hwmonx" "hwmon" nil)
+                     ("hwmon-1" "hwmon" nil)
+                     ("hwmon0" "hwmon" 0))
+                    "parses sysfs index ~S for prefix ~S"
+                    (name prefix expected)
+                    (cl-weave:expect
+                     (ntop.platform.linux::linux-sysfs-name-index name prefix)
+                     :to-be
+                     expected))
+                   (cl-weave:it-each
+                    (("temp1" nil) ("xemp1_input" nil)
+                     ("temp1-input" nil)
+                     ("tempx_input" nil)
+                     ("temp-1_input" nil)
+                     ("temp0_input" 0))
+                    "parses hwmon input index in ~S"
+                    (name expected)
+                    (cl-weave:expect
+                     (ntop.platform.linux::linux-hwmon-input-index name)
+                     :to-be
+                     expected))
+                   (cl-weave:it
+                    "distinguishes empty required sysfs text from missing text"
+                    (ntop.platform.linux:with-linux-root
+                     (linux-device-fixture-root "empty-required")
+                     (multiple-value-bind (value reason)
+                         (ntop.platform.linux::linux-sysfs-required-text
+                          "sys/class/power_supply/BAT-empty/type")
+                       (cl-weave:expect value :to-be nil)
+                       (cl-weave:expect reason :to-be :invalid-data))
+                     (multiple-value-bind (battery reason)
+                         (ntop.platform.linux::linux-power-supply-battery
+                          "BAT-empty")
+                       (cl-weave:expect battery :to-be nil)
+                       (cl-weave:expect reason :to-be :invalid-data))))
+                   (cl-weave:it
+                    "ignores missing required battery and thermal-zone files"
+                    (ntop.platform.linux:with-linux-root
+                     (linux-device-fixture-root "empty")
+                     (multiple-value-bind (battery reason)
+                         (ntop.platform.linux::linux-power-supply-battery
+                          "BAT0")
+                       (cl-weave:expect battery :to-be nil)
+                       (cl-weave:expect reason :to-be nil))
+                     (multiple-value-bind (sensor reason)
+                         (ntop.platform.linux::linux-thermal-zone-temperature
+                          "thermal_zone99"
+                          99)
+                       (cl-weave:expect sensor :to-be nil)
+                       (cl-weave:expect reason :to-be nil))))
+                   (cl-weave:it
+                    "returns no hwmon data when an empty device has no inputs"
+                    (ntop.platform.linux:with-linux-root
+                     (linux-device-fixture-root "complete")
+                     (multiple-value-bind (sensors reason)
+                         (ntop.platform.linux::linux-hwmon-device-temperatures
+                          "hwmon2")
+                       (cl-weave:expect sensors :to-be nil)
+                       (cl-weave:expect reason :to-be nil))))
+                   (cl-weave:it
+                    "reports missing roots through temperature, battery, and GPU readers"
+                    (let ((ntop.platform.linux:*linux-root* nil))
+                      (dolist
+                          (reader
+                           (list #'ntop.platform.linux:read-linux-temperatures
+                                 #'ntop.platform.linux:read-linux-batteries
+                                 #'ntop.platform.linux:read-linux-amd-gpus))
+                        (let ((value nil)
+                              (reason :unset))
+                          (funcall reader
+                                   (lambda (result)
+                                     (setf value result))
+                                   (lambda (unavailable)
+                                     (setf reason unavailable)))
+                          (cl-weave:expect value :to-be nil)
+                          (cl-weave:expect reason :to-be :root-unavailable)))
+                      (multiple-value-bind (sensors reason)
+                          (ntop.platform.linux::linux-hwmon-device-temperatures
+                           "hwmon0")
+                        (cl-weave:expect sensors :to-be nil)
+                        (cl-weave:expect reason :to-be :root-unavailable))
+                      (multiple-value-bind (sensors reason)
+                          (ntop.platform.linux::linux-thermal-zone-temperatures)
+                        (cl-weave:expect sensors :to-be nil)
+                        (cl-weave:expect reason :to-be :root-unavailable)))))
