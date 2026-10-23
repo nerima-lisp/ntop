@@ -90,7 +90,7 @@
                     "reports an absent network class directory as unavailable"
                     (cl-weave:expect (%read-linux-network-fixture "absent")
                                      :to-equal
-                                     '(:unavailable :unavailable)))
+                                     '(:unavailable :not-present)))
                    (cl-weave:it "rejects malformed network counters"
                                 (cl-weave:expect
                                  (%read-linux-network-fixture "invalid-network")
@@ -101,7 +101,7 @@
                     (cl-weave:expect
                      (%read-linux-cpu-frequency-fixture "complete" 99)
                      :to-equal
-                     '(:unavailable :unavailable)))
+                     '(:unavailable :not-present)))
                    (cl-weave:it "rejects malformed CPU frequency values"
                                 (cl-weave:expect
                                  (%read-linux-cpu-frequency-fixture "complete"

@@ -150,7 +150,7 @@
                          5555
                          #'ntop.platform.linux::read-linux-process-io)
                       (cl-weave:expect value :to-be :unset)
-                      (cl-weave:expect reason :to-be :unavailable)))
+                      (cl-weave:expect reason :to-be :not-present)))
                    (cl-weave:it
                     "rejects a nonpositive pid before accessing proc"
                     (multiple-value-bind (value reason)

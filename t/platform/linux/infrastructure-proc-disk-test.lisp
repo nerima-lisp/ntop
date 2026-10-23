@@ -53,7 +53,7 @@
                                      (capture-linux-result
                                       #'ntop.platform.linux:read-proc-mounts)
                                    (cl-weave:expect value :to-be nil)
-                                   (cl-weave:expect reason :to-be :unavailable))))
+                                   (cl-weave:expect reason :to-be :not-present))))
                    (cl-weave:it-each
                     (("sda" 5 10 2560 5120) ("sdb" 6 10 3072 5120)
                      ("nvme0n1" 0 0 0 0))
