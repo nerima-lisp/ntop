@@ -47,7 +47,7 @@
                                               on-value
                                               on-unavailable))
          (lambda (reason)
-           (if (eq reason :unavailable)
+           (if (eq reason :not-present)
                (read-linux-network-counter-fields interface
                                                   (rest fields)
                                                   (list* key nil values)

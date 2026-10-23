@@ -36,6 +36,13 @@
              (not (member :back directory))
              (not (member :up directory)))
       (merge-pathnames pathname *linux-root*))))
+(defun linux-errno-unavailability-reason (errno)
+  (cond
+    ((eql errno sb-posix:enoent) :not-present)
+    ((or (eql errno sb-posix:eacces)
+         (eql errno sb-posix:eperm))
+     :permission-denied)
+    (t :read-failed)))
 
 (defun read-bounded-linux-text (stream limit)
   (let ((text
@@ -61,21 +68,39 @@
       ((not (and (integerp limit) (plusp limit)))
        (funcall on-unavailable :invalid-limit))
       (t
-       (handler-case (with-open-file
-                         (stream pathname
-                                 :direction
-                                 :input
-                                 :external-format
-                                 :utf-8)
-                       (multiple-value-bind (text failure)
-                           (read-bounded-linux-text stream limit)
-                         (if failure
-                             (funcall on-unavailable failure)
-                             (funcall on-value text))))
-         (file-error ()
-           (funcall on-unavailable :unavailable))
-         (stream-error ()
-           (funcall on-unavailable :invalid-encoding)))))))
+       (let ((descriptor nil)
+             (file-stream nil))
+         (unwind-protect
+              (handler-case
+                  (progn
+                    (setf descriptor
+                          (sb-posix:open (namestring pathname)
+                                         sb-posix:o-rdonly))
+                    (setf file-stream
+                          (sb-sys:make-fd-stream
+                           descriptor
+                           :input t
+                           :element-type 'character
+                           :external-format :utf-8
+                           :auto-close t
+                           :pathname pathname))
+                    (setf descriptor nil)
+                    (with-open-stream (stream file-stream)
+                      (multiple-value-bind (text failure)
+                          (read-bounded-linux-text stream limit)
+                        (if failure
+                            (funcall on-unavailable failure)
+                            (funcall on-value text)))))
+                (sb-posix:syscall-error (condition)
+                  (funcall on-unavailable
+                           (linux-errno-unavailability-reason
+                            (sb-posix:syscall-errno condition))))
+                (file-error ()
+                  (funcall on-unavailable :read-failed))
+                (stream-error ()
+                  (funcall on-unavailable :invalid-encoding)))
+           (when descriptor
+             (sb-posix:close descriptor))))))))
 
 (defun linux-directory-entry-name (pathname)
   (or
@@ -89,23 +114,32 @@
     (cond
       ((null *linux-root*) (funcall on-unavailable :root-unavailable))
       ((null pathname) (funcall on-unavailable :invalid-path))
-      ((not (probe-file pathname)) (funcall on-unavailable :unavailable))
       (t
-       (handler-case (let* ((directory
-                             (uiop:ensure-directory-pathname pathname))
-                            (pathnames
-                             (append (uiop:directory-files directory)
-                                     (uiop:subdirectories directory)))
-                            (entries
-                             (sort
-                              (remove-duplicates
-                               (mapcar #'linux-directory-entry-name pathnames)
-                               :test
-                               #'string=)
-                              #'string<)))
-                       (funcall on-value entries))
+       (handler-case
+           (let* ((directory (sb-posix:opendir (namestring pathname)))
+                  (entries
+                    (unwind-protect
+                         (let* ((directory-pathname
+                                 (uiop:ensure-directory-pathname pathname))
+                                (pathnames
+                                  (append (uiop:directory-files
+                                           directory-pathname)
+                                          (uiop:subdirectories
+                                           directory-pathname))))
+                           (sort
+                            (remove-duplicates
+                             (mapcar #'linux-directory-entry-name pathnames)
+                             :test
+                             #'string=)
+                            #'string<))
+                      (sb-posix:closedir directory))))
+             (funcall on-value entries))
+         (sb-posix:syscall-error (condition)
+           (funcall on-unavailable
+                    (linux-errno-unavailability-reason
+                     (sb-posix:syscall-errno condition))))
          (file-error ()
-           (funcall on-unavailable :unavailable)))))))
+           (funcall on-unavailable :read-failed)))))))
 
 (defun split-linux-fields (text)
   (let ((fields nil)

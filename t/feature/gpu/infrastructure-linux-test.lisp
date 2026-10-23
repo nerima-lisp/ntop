@@ -252,11 +252,18 @@
                                 (:invalid-data nil :read-failed)
                                 (nil :private-api-unavailable
                                      :private-api-unavailable)
-                                (:unavailable :private-api-unavailable
-                                              :private-api-unavailable)
-                                (:unavailable :not-present :not-present)
-                                (:unavailable :read-failed :read-failed)
-                                (:unavailable :nvml-unavailable :read-failed)))
+                                (:not-present
+                                 :private-api-unavailable
+                                 :private-api-unavailable)
+                                (:not-present
+                                 :not-present
+                                 :not-present)
+                                (:not-present
+                                 :read-failed
+                                 :read-failed)
+                                (:not-present
+                                 :nvml-unavailable
+                                 :read-failed)))
                       (destructuring-bind (amd-reason nvml-reason expected) case
                         (cl-weave:expect
                          (ntop.gpu.infrastructure::%linux-gpu-unavailable-reason

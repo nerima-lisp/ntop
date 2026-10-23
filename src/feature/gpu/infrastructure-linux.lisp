@@ -193,7 +193,7 @@
     ((or (eq amd-reason :root-unavailable)
          (eq amd-reason :unsupported-platform)
          (eq nvml-reason :unsupported-platform)) :unsupported-platform)
-    ((and amd-reason (not (eq amd-reason :unavailable))) :read-failed)
+    ((and amd-reason (not (eq amd-reason :not-present))) :read-failed)
     ((eq nvml-reason :private-api-unavailable) :private-api-unavailable)
     ((eq nvml-reason :not-present) :not-present)
     (nvml-reason :read-failed)

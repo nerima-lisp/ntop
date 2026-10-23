@@ -77,7 +77,7 @@
                                                     '("4242" "4260"
                                                              "4270"
                                                              "not-a-pid")))))
-                   (cl-weave:it "reports a missing directory as unavailable"
+                   (cl-weave:it "reports a missing directory as not present"
                                 (ntop.platform.linux:with-linux-root
                                  #p"t/platform/linux/fixtures/proc-disk/"
                                  (multiple-value-bind (entries reason)
@@ -85,7 +85,7 @@
                                       #'ntop.platform.linux::read-linux-directory
                                       "proc/not-present")
                                    (cl-weave:expect entries :to-be nil)
-                                   (cl-weave:expect reason :to-be :unavailable))))
+                                   (cl-weave:expect reason :to-be :not-present))))
                    (cl-weave:it "reads a file up to its configured limit"
                                 (with-input-from-string (stream "abc")
                                   (multiple-value-bind (text reason)
@@ -152,7 +152,30 @@
                      (ntop.platform.linux::parse-linux-integer
                       (format nil "~D" value))
                      :to-be
-                     value)))
+                     value))
+                   (cl-weave:it "reports a missing file as not present"
+                                (ntop.platform.linux:with-linux-root
+                                 #p"t/platform/linux/fixtures/proc-disk/"
+                                 (multiple-value-bind (text reason)
+                                     (capture-linux-base-result
+                                      #'ntop.platform.linux::read-linux-file
+                                      "proc/not-present")
+                                   (cl-weave:expect text :to-be nil)
+                                   (cl-weave:expect reason :to-be :not-present))))
+                   (cl-weave:it "maps errno values to Linux read failure reasons"
+                                (cl-weave:expect
+                                 (list
+                                  (ntop.platform.linux::linux-errno-unavailability-reason
+                                   sb-posix:enoent)
+                                  (ntop.platform.linux::linux-errno-unavailability-reason
+                                   sb-posix:eacces)
+                                  (ntop.platform.linux::linux-errno-unavailability-reason
+                                   sb-posix:eperm)
+                                  (ntop.platform.linux::linux-errno-unavailability-reason
+                                   sb-posix:eio))
+                                 :to-equal
+                                 '(:not-present :permission-denied :permission-denied
+                                                :read-failed))))
 
 (cl-weave:describe "Linux base edge cases"
                    (cl-weave:it "rejects a zero file limit"
