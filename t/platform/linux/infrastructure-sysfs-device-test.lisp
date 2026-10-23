@@ -175,7 +175,142 @@
                           (linux-device-temperature-values-result "empty"
                                                                   sources)
                         (cl-weave:expect values :to-be nil)
-                        (cl-weave:expect value-reason :to-be :not-present)))))
+                        (cl-weave:expect value-reason :to-be :not-present))))
+                   (cl-weave:it
+                    "maps temperature value read failures and invalid handles"
+                    (dolist (case
+                             (quote ((:root-unavailable :unavailable :unsupported-platform)
+                                     (:permission-denied :unavailable :permission-denied)
+                                     (:read-failed :unavailable :read-failed)
+                                     (:not-present :values (("sensor" . nil)))
+                                     (:invalid-data :values (("sensor" . nil)))
+                                     (:too-large :values (("sensor" . nil)))
+                                     (:invalid-encoding :values (("sensor" . nil))))))
+                      (destructuring-bind (read-reason result-kind result-value)
+                          case
+                        (let ((result nil))
+                          (cl-weave:with-mocked-functions
+                           (((symbol-function
+                              (quote ntop.platform.linux::linux-sysfs-required-integer))
+                             (lambda (path)
+                               (declare (ignore path))
+                               (values nil read-reason))))
+                           (ntop.platform.linux:read-linux-temperature-values
+                            (quote ((:identity "sensor"
+                                     :handle (:kind :hwmon
+                                             :directory "sys/class/hwmon/hwmon0"
+                                             :filename "temp1_input"))))
+                            (lambda (values)
+                              (setf result (list :values values)))
+                            (lambda (reason)
+                              (setf result (list :unavailable reason))))
+                          (cl-weave:expect result
+                                           :to-equal
+                                           (list result-kind result-value))))))
+                    (dolist (handle
+                             (quote ((:kind :other
+                                      :directory "sys/class/hwmon/hwmon0"
+                                      :filename "temp1_input")
+                                     (:kind :hwmon
+                                      :directory nil
+                                      :filename "temp1_input")
+                                     (:kind :thermal-zone
+                                      :directory "sys/class/thermal/thermal_zone0"
+                                      :filename nil))))
+                      (let ((result nil))
+                        (ntop.platform.linux:read-linux-temperature-values
+                         (list (list :identity "sensor" :handle handle))
+                         (lambda (values)
+                           (setf result (list :values values)))
+                         (lambda (reason)
+                           (setf result (list :unavailable reason))))
+                        (cl-weave:expect result
+                                         :to-equal
+                                         (quote (:values (("sensor" . nil))))))))
+                   (cl-weave:it
+                    "forwards directory failures during Linux temperature enumeration"
+                    (let ((failure-path "sys/class/hwmon")
+                          (failure-reason :permission-denied)
+                          (result nil))
+                      (ntop.platform.linux:with-linux-root
+                       (linux-device-fixture-root "empty")
+                       (cl-weave:with-mocked-functions
+                        (((symbol-function
+                           (quote ntop.platform.linux::linux-sysfs-read-directory))
+                          (lambda (path)
+                            (if (string= path failure-path)
+                                (values nil failure-reason)
+                                (cond
+                                  ((string= path "sys/class/hwmon")
+                                   (values (quote ("hwmon0")) nil))
+                                  ((string= path "sys/class/hwmon/hwmon0")
+                                   (values (quote ("name")) nil))
+                                  (t (values nil :not-present)))))))
+                        (multiple-value-bind (sources reason)
+                            (ntop.platform.linux::linux-hwmon-temperature-sources)
+                          (setf result (list sources reason)))
+                        (cl-weave:expect result
+                                         :to-equal
+                                         (quote (nil :permission-denied)))
+                        (setf failure-path "sys/class/hwmon/hwmon0")
+                        (multiple-value-bind (sources reason)
+                            (ntop.platform.linux::linux-hwmon-temperature-sources)
+                          (setf result (list sources reason)))
+                        (cl-weave:expect result
+                                         :to-equal
+                                         (quote (nil :permission-denied)))
+                        (setf failure-path "sys/class/hwmon/hwmon0/device"
+                              failure-reason :read-failed)
+                        (multiple-value-bind (sources reason)
+                            (ntop.platform.linux::linux-hwmon-temperature-sources)
+                          (setf result (list sources reason)))
+                        (cl-weave:expect result
+                                         :to-equal
+                                         (quote (nil :read-failed)))
+                        (setf failure-path "sys/class/thermal"
+                              failure-reason :permission-denied)
+                        (multiple-value-bind (sources reason)
+                            (ntop.platform.linux::linux-thermal-zone-temperature-sources)
+                          (setf result (list sources reason)))
+                        (cl-weave:expect result
+                                         :to-equal
+                                         (quote (nil :permission-denied)))))))
+                   (cl-weave:it
+                    "maps source enumeration errors to the shared reasons"
+                    (dolist (case
+                             (quote ((:root-unavailable :unsupported-platform)
+                                     (:permission-denied :permission-denied)
+                                     (:read-failed :read-failed))))
+                      (destructuring-bind (source-reason expected-reason) case
+                        (let ((result nil))
+                          (cl-weave:with-mocked-functions
+                           (((symbol-function
+                              (quote ntop.platform.linux::linux-hwmon-temperature-sources))
+                             (lambda () (values nil source-reason))))
+                           (ntop.platform.linux:enumerate-linux-temperature-sources
+                            (lambda (sources)
+                              (setf result (list :sources sources)))
+                            (lambda (reason)
+                              (setf result (list :unavailable reason)))))
+                          (cl-weave:expect result
+                                           :to-equal
+                                           (list :unavailable expected-reason)))
+                        (let ((result nil))
+                          (cl-weave:with-mocked-functions
+                           (((symbol-function
+                              (quote ntop.platform.linux::linux-hwmon-temperature-sources))
+                             (lambda () (values nil nil)))
+                            ((symbol-function
+                              (quote ntop.platform.linux::linux-thermal-zone-temperature-sources))
+                             (lambda () (values nil source-reason))))
+                           (ntop.platform.linux:enumerate-linux-temperature-sources
+                            (lambda (sources)
+                              (setf result (list :sources sources)))
+                            (lambda (reason)
+                              (setf result (list :unavailable reason)))))
+                          (cl-weave:expect result
+                                           :to-equal
+                                           (list :unavailable expected-reason)))))))
 
 (define-linux-device-case-table "Linux power_supply integer values"
                                 (("capacity" :capacity-percent 73)
