@@ -64,19 +64,70 @@
   (floor (* ticks numerator) denominator))
 
 (defmacro define-darwin-ffi (&body declarations)
-  `(progn
-     ,@(mapcar
-        (lambda (declaration)
-          (destructuring-bind (kind name foreign-name type &rest arguments)
-              declaration
-            (ecase kind
-              (:routine
-               `(sb-alien:define-alien-routine (,foreign-name ,name)
-                                               ,type
-                                               ,@arguments))
-              (:variable
-               `(sb-alien:define-alien-variable (,foreign-name ,name) ,type)))))
-        declarations)))
+  (labels ((expand-routine (name foreign-name result-type arguments)
+             (let ((optional-position (position '&optional arguments)))
+               (if (null optional-position)
+                   `(sb-alien:define-alien-routine (,foreign-name ,name)
+                                                   ,result-type
+                                                   ,@arguments)
+                   (let* ((required (subseq arguments 0 optional-position))
+                          (optional (subseq arguments (1+ optional-position)))
+                          (required-names (mapcar #'first required))
+                          (optional-names (mapcar #'first optional))
+                          (supplied-p-names
+                           (loop repeat (length optional)
+                                 collect (gensym "OPTIONAL-SUPPLIED-P-")))
+                          (routine-names
+                           (loop repeat (1+ (length optional))
+                                 collect (gensym
+                                          (format nil
+                                                  "~A-ARITY-"
+                                                  (symbol-name name))))))
+                     (unless (plusp (length optional))
+                       (error
+                        "A Darwin variadic routine needs an optional argument."))
+                     (unless
+                         (every
+                          (lambda (argument)
+                            (and (listp argument) (= (length argument) 2)))
+                          optional)
+                       (error
+                        "Each Darwin variadic argument needs a name and type."))
+                     (labels ((routine-form (arity)
+                                `(sb-alien:define-alien-routine
+                                  (,foreign-name ,(nth arity routine-names))
+                                  ,result-type
+                                  ,@required
+                                  ,@(subseq optional 0 arity)))
+                              (call-form (arity)
+                                `(,(nth arity routine-names) ,@required-names
+                                  ,@(subseq optional-names 0 arity)))
+                              (dispatch-form (index)
+                                (if (= index (length optional))
+                                    (call-form index)
+                                    `(if ,(nth index supplied-p-names)
+                                         ,(dispatch-form (1+ index))
+                                         ,(call-form index)))))
+                       `(progn
+                          ,@(loop for arity from 0 to (length optional)
+                                  collect (routine-form arity))
+                          (defun ,name (,@required-names &optional
+                                                         ,@(loop for (argument-name
+                                                                      argument-type) in optional
+                                                                 for supplied-p in supplied-p-names
+                                                                 collect `(,argument-name
+                                                                           nil
+                                                                           ,supplied-p)))
+                            ,(dispatch-form 0))))))))
+           (expand-declaration (declaration)
+             (destructuring-bind (kind name foreign-name type &rest arguments)
+                 declaration
+               (ecase kind
+                 (:routine (expand-routine name foreign-name type arguments))
+                 (:variable
+                  `(sb-alien:define-alien-variable (,foreign-name ,name) ,type))))))
+    `(progn
+       ,@(mapcar #'expand-declaration declarations))))
 
 #+darwin
 (define-darwin-ffi
@@ -108,7 +159,12 @@
     (samples sb-alien:system-area-pointer)
     (count sb-alien:int))
   (:routine %strerror "strerror" sb-alien:c-string
-    (number sb-alien:int)))
+    (number sb-alien:int))
+  (:routine %fcntl "fcntl" sb-alien:int
+    (file-descriptor sb-alien:int)
+    (command sb-alien:int)
+    &optional
+    (argument sb-alien:int)))
 
 #+darwin
 (defun %read-sysctl (query on-value on-error)

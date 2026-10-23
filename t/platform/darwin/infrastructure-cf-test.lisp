@@ -102,6 +102,7 @@
                                   (cl-weave:expect (first (third expansion))
                                                    :to-be
                                                    'cl-weave:it-each))))
+
 (defvar *released-cf-references*
   nil)
 
@@ -156,27 +157,27 @@
                     "passes owned and missing results through continuations"
                     (let ((runner
                            (fdefinition
-                            (find-symbol
-                             "CALL-WITH-OWNED-CF-REFERENCE"
-                             "NTOP.PLATFORM.DARWIN"))))
-                      (cl-weave:with-continuation-values
-                       (values next)
-                       (funcall
-                        runner
-                        (sb-sys:int-sap 7)
-                        (function
-                         %record-cf-release)
-                        (lambda (reference)
-                          (funcall
-                           next
-                           :value
-                           (sb-sys:sap-int reference)))
-                        (lambda ()
-                          (funcall next :missing)))
-                       (cl-weave:expect
-                        values
-                        :to-equal
-                        (quote (:value 7))))))
+                            (find-symbol "CALL-WITH-OWNED-CF-REFERENCE"
+                                         "NTOP.PLATFORM.DARWIN"))))
+                      (cl-weave:with-continuation-values (values next)
+                                                         (funcall runner
+                                                                  (sb-sys:int-sap
+                                                                   7)
+                                                                  (function
+                                                                   %record-cf-release)
+                                                                  (lambda
+                                                                      (reference)
+                                                                    (next :value
+                                                                          (sb-sys:sap-int
+                                                                           reference)))
+                                                                  (lambda ()
+                                                                    (next
+                                                                     :missing)))
+                                                         (cl-weave:expect values
+                                                                          :to-equal
+                                                                          (quote
+                                                                           (:value
+                                                                            7))))))
                    (cl-weave:it
                     "expands the ownership macro into the CPS cleanup call"
                     (let ((expansion
@@ -195,6 +196,7 @@
                                            (ntop.test::consume reference))
                                          (lambda ()
                                            (ntop.test::missing)))))))
+
 (defun %ioreg-model-value (output)
   (let* ((marker "\"model\" = <\"")
          (value-start (search marker output)))
@@ -213,43 +215,142 @@
 
 (defun %read-ioreg-model ()
   (let ((result
-         (host-kit:run-program
-          "/usr/sbin/ioreg"
-          (list "-rd1" "-l" "-c" "IOPlatformExpertDevice")
-          :timeout 5
-          :max-output-characters 65536)))
-    (unless (and
-             (= (host-kit:process-result-exit-code result) 0)
+         (host-kit:run-program "/usr/sbin/ioreg"
+                               (list "-rd1" "-l" "-c" "IOPlatformExpertDevice")
+                               :timeout
+                               5
+                               :max-output-characters
+                               65536)))
+    (unless
+        (and (= (host-kit:process-result-exit-code result) 0)
              (not (host-kit:process-result-stdout-truncated-p result))
              (not (host-kit:process-result-stderr-truncated-p result)))
       (error "ioreg command failed or exceeded its output limit."))
     (%ioreg-model-value (host-kit:process-result-stdout result))))
 
 (cl-weave:describe "Darwin CoreFoundation boundary"
-                   (cl-weave:it-run-if
-                    (member :darwin *features*)
-                    "matches the device model around the read"
-                    (let* ((before (%read-ioreg-model))
-                           (models nil))
-                      (ntop.platform.darwin::call-with-iokit-services
-                       "IOPlatformExpertDevice"
-                       (lambda (service)
-                         (ntop.platform.darwin::iokit-registry-properties
-                          service
-                          (lambda (properties)
-                            (multiple-value-bind (value foundp)
-                                (gethash "model" properties)
-                              (when foundp
-                                (push (%cf-model-string value) models))))
-                          (lambda (reason)
-                            (error "IOKit property read failed: ~S." reason))))
-                       (lambda () nil)
-                       (lambda (reason)
-                         (error "IOKit enumeration failed: ~S." reason)))
-                      (let ((after (%read-ioreg-model)))
-                        (cl-weave:expect
-                         (and (= (length models) 1)
-                              (equal (first models) before)
-                              (equal (first models) after))
-                         :to-be
-                         t)))))
+                   (cl-weave:it-run-if (member :darwin *features*)
+                                       "matches the device model around the read"
+                                       (let* ((before (%read-ioreg-model))
+                                              (models nil))
+                                         (ntop.platform.darwin::call-with-iokit-services
+                                          "IOPlatformExpertDevice"
+                                          (lambda (service)
+                                            (ntop.platform.darwin::iokit-registry-properties
+                                             service
+                                             (lambda (properties)
+                                               (multiple-value-bind (value
+                                                                     foundp)
+                                                   (gethash "model" properties)
+                                                 (when foundp
+                                                   (push
+                                                    (%cf-model-string value)
+                                                    models))))
+                                             (lambda (reason)
+                                               (error
+                                                "IOKit property read failed: ~S."
+                                                reason))))
+                                          (lambda ()
+                                            nil)
+                                          (lambda (reason)
+                                            (error
+                                             "IOKit enumeration failed: ~S."
+                                             reason)))
+                                         (let ((after (%read-ioreg-model)))
+                                           (cl-weave:expect
+                                            (and (= (length models) 1)
+                                                 (equal (first models) before)
+                                                 (equal (first models) after))
+                                            :to-be
+                                            t)))))
+#+darwin
+(progn
+  (ntop.platform.darwin:define-darwin-ffi
+    (:routine %cf-data-create-for-test "CFDataCreate"
+      sb-alien:system-area-pointer
+      (allocator sb-alien:system-area-pointer)
+      (bytes sb-alien:system-area-pointer)
+      (length sb-alien:long))
+    (:routine %cf-property-list-create-for-test "CFPropertyListCreateWithData"
+      sb-alien:system-area-pointer
+      (allocator sb-alien:system-area-pointer)
+      (data sb-alien:system-area-pointer)
+      (options sb-alien:unsigned-long)
+      (format sb-alien:system-area-pointer)
+      (error sb-alien:system-area-pointer)))
+  (defun %make-native-property-list-reference ()
+    (let* ((source
+             (concatenate
+              'string
+              "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+              "<plist version=\"1.0\"><dict>"
+              "<key>integer</key><integer>-42</integer>"
+              "<key>real</key><real>1.5</real>"
+              "<key>enabled</key><true/>"
+              "<key>disabled</key><false/>"
+              "<key>items</key><array><string>alpha</string>"
+              "<integer>-7</integer><data>AQID</data></array>"
+              "<key>nested</key><dict><key>empty</key><dict/></dict>"
+              "</dict></plist>"))
+           (octets (sb-ext:string-to-octets source :external-format :utf-8)))
+      (sb-sys:with-pinned-objects (octets)
+        (let ((data (%cf-data-create-for-test
+                     (sb-sys:int-sap 0)
+                     (sb-sys:vector-sap octets)
+                     (length octets))))
+          (ntop.platform.darwin::call-with-owned-cf-reference
+           data
+           #'ntop.platform.darwin::%cf-release
+           (lambda (data-reference)
+             (let ((reference
+                     (%cf-property-list-create-for-test
+                      (sb-sys:int-sap 0)
+                      data-reference
+                      0
+                      (sb-sys:int-sap 0)
+                      (sb-sys:int-sap 0))))
+               (when (ntop.platform.darwin:cf-null-reference-p reference)
+                 (error "CoreFoundation could not parse the property list."))
+               reference))
+           (lambda ()
+             (error "CoreFoundation could not create property-list data.")))))))
+  (defvar *native-property-list-reference* nil)
+  (cl-weave:describe
+   "Native CoreFoundation values"
+   (cl-weave:before-all
+    (setf *native-property-list-reference*
+          (%make-native-property-list-reference)))
+   (cl-weave:after-all
+    (unless (ntop.platform.darwin:cf-null-reference-p
+             *native-property-list-reference*)
+      (ntop.platform.darwin::%cf-release *native-property-list-reference*)))
+   (cl-weave:it
+    "converts native scalar, array, data, and empty-dictionary values"
+    (let* ((properties
+             (ntop.platform.darwin:cf-value-to-lisp
+              *native-property-list-reference*))
+           (items (gethash "items" properties))
+           (nested (gethash "nested" properties)))
+      (cl-weave:expect (gethash "integer" properties) :to-equal -42)
+      (cl-weave:expect (gethash "real" properties) :to-equal 1.5d0)
+      (cl-weave:expect (gethash "enabled" properties) :to-be :true)
+      (cl-weave:expect (gethash "disabled" properties) :to-be :false)
+      (cl-weave:expect (first items) :to-equal "alpha")
+      (cl-weave:expect (second items) :to-equal -7)
+      (cl-weave:expect (equalp (third items) #(1 2 3)) :to-be t)
+      (cl-weave:expect (hash-table-count (gethash "empty" nested)) :to-be 0)))
+   (cl-weave:it
+    "looks up present and missing native dictionary values with continuations"
+    (let ((present nil)
+          (missing nil))
+      (ntop.platform.darwin:cf-dictionary-get-value
+       *native-property-list-reference* "integer"
+       (lambda (value) (setf present value))
+       (lambda () (setf present :missing)))
+      (ntop.platform.darwin:cf-dictionary-get-value
+       *native-property-list-reference* "absent"
+       (lambda (value) (setf missing value))
+       (lambda () (setf missing :missing)))
+      (cl-weave:expect present :to-equal -42)
+      (cl-weave:expect missing :to-be :missing)))))
+
