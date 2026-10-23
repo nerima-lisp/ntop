@@ -2,10 +2,12 @@
 
 (defstruct
     (darwin-iohid-service-handle
-     (:constructor %make-darwin-iohid-service-handle (pointer identity))
+     (:constructor %make-darwin-iohid-service-handle
+         (pointer identity &optional client-pointer))
      (:copier nil))
   pointer
-  (identity nil :read-only t))
+  (identity nil :read-only t)
+  client-pointer)
 
 (defun %darwin-iohid-product-name (value)
   (and (stringp value) (plusp (length value)) value))
@@ -34,7 +36,7 @@
     "IOHIDEventSystemClientCreate" sb-alien:system-area-pointer
     (allocator sb-alien:system-area-pointer))
   (:routine %iohid-event-system-client-set-matching
-    "IOHIDEventSystemClientSetMatching" sb-alien:int
+    "IOHIDEventSystemClientSetMatching" sb-alien:void
     (client sb-alien:system-area-pointer)
     (matching sb-alien:system-area-pointer))
   (:routine %iohid-event-system-client-copy-services
@@ -55,27 +57,44 @@
     (event sb-alien:system-area-pointer)
     (field sb-alien:int)))
 
-(defun %make-retained-darwin-iohid-service-handle (pointer identity)
-  (let ((handle (%make-darwin-iohid-service-handle pointer identity)))
-    #+darwin
-    (handler-case
-        (sb-ext:finalize handle
-          (let ((retained-pointer pointer))
-            (lambda ()
-              (ignore-errors (%cf-release retained-pointer))))
-          :dont-save t)
-      (error (condition)
-        (%cf-release pointer)
-        (error condition)))
-    handle))
+#+darwin
+(defun %make-retained-darwin-iohid-service-handle
+    (pointer identity client)
+  (let ((retained-client (%cf-retain client)))
+    (when (cf-null-reference-p retained-client)
+      (%cf-release pointer)
+      (error "CFRetain failed for the IOHID event system client."))
+    (let ((handle
+            (%make-darwin-iohid-service-handle
+             pointer identity retained-client)))
+      (handler-case
+          (sb-ext:finalize handle
+            (let ((retained-service pointer)
+                  (retained-client retained-client))
+              (lambda ()
+                (ignore-errors (%cf-release retained-service))
+                (ignore-errors (%cf-release retained-client))))
+            :dont-save t)
+        (error (condition)
+          (%cf-release pointer)
+          (%cf-release retained-client)
+          (error condition)))
+      handle)))
 
 #+darwin
 (defun %release-darwin-iohid-service-handle (handle)
-  (let ((pointer (darwin-iohid-service-handle-pointer handle)))
-    (when pointer
-      (setf (darwin-iohid-service-handle-pointer handle) nil)
+  (let ((service-pointer
+          (darwin-iohid-service-handle-pointer handle))
+        (client-pointer
+          (darwin-iohid-service-handle-client-pointer handle)))
+    (when (or service-pointer client-pointer)
+      (setf (darwin-iohid-service-handle-pointer handle) nil
+            (darwin-iohid-service-handle-client-pointer handle) nil)
       (sb-ext:cancel-finalization handle)
-      (%cf-release pointer))))
+      (when service-pointer
+        (%cf-release service-pointer))
+      (when client-pointer
+        (%cf-release client-pointer)))))
 
 #+darwin
 (defun %make-iohid-number (value)
@@ -145,7 +164,7 @@
      (lambda () nil))))
 
 #+darwin
-(defun %copy-named-iohid-service (service product-key on-retained)
+(defun %copy-named-iohid-service (service product-key client on-retained)
   (let ((name (%iohid-service-product-name service product-key)))
     (when name
       (let ((pointer (%cf-retain service)))
@@ -153,12 +172,12 @@
           (error "CFRetain failed for an IOHID service."))
         (let ((handle
                 (%make-retained-darwin-iohid-service-handle
-                 pointer (sb-sys:sap-int pointer))))
+                 pointer (sb-sys:sap-int pointer) client)))
           (funcall on-retained handle)
           (%darwin-iohid-service-record name handle))))))
 
 #+darwin
-(defun %copy-named-iohid-services (services on-retained)
+(defun %copy-named-iohid-services (services client on-retained)
   (let ((count (%cf-array-get-count services)))
     (when (minusp count)
       (error "CFArrayGetCount returned a negative IOHID service count."))
@@ -170,7 +189,8 @@
        (lambda (key)
          (loop for index below count
                for service = (%cf-array-get-value-at-index services index)
-               for record = (%copy-named-iohid-service service key on-retained)
+               for record = (%copy-named-iohid-service
+                             service key client on-retained)
                when record collect record))
        (lambda ()
          (error "Could not create the IOHID Product property key."))))))
@@ -189,18 +209,14 @@
                   (%make-iohid-matching-dictionary)
                   #'%cf-release
                   (lambda (matching)
-                    (let ((status
-                            (%iohid-event-system-client-set-matching
-                             client matching)))
-                      (unless (zerop status)
-                        (error "IOHIDEventSystemClientSetMatching failed: ~D."
-                               status)))
+                    (%iohid-event-system-client-set-matching client matching)
                     (call-with-owned-cf-reference
                      (%iohid-event-system-client-copy-services client)
                      #'%cf-release
                      (lambda (services)
                        (%copy-named-iohid-services
                         services
+                        client
                         (lambda (handle)
                           (push handle retained-handles))))
                      (lambda ()
@@ -230,7 +246,8 @@
        (lambda () nil)))))
 
 #+darwin
-(defun %require-darwin-iohid-symbols ()
+(defun %require-darwin-iohid-symbols
+    (&optional (symbol-lookup #'sb-sys:foreign-symbol-sap))
   (dolist (name
            '("CFRetain" "CFNumberCreate" "CFDictionaryCreate"
              "IOHIDEventSystemClientCreate"
@@ -238,7 +255,7 @@
              "IOHIDEventSystemClientCopyServices"
              "IOHIDServiceClientCopyProperty"
              "IOHIDServiceClientCopyEvent" "IOHIDEventGetFloatValue"))
-    (unless (sb-sys:foreign-symbol-sap name nil)
+    (unless (funcall symbol-lookup name nil)
       (error "The Darwin IOHID API symbol ~A is unavailable." name))))
 
 (defun load-darwin-iohid-api ()
