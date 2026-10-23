@@ -95,13 +95,14 @@
               (when previous-device
                 (funcall counter-accessor previous-device))))
         (if previous-counter
-            (ntop.shared.domain:counter-rate-per-second previous-counter
-                                                        current-counter
-                                                        (-
-                                                         (ntop.shared.domain:sample-record-sampled-at
-                                                          current-sample)
-                                                         (ntop.shared.domain:sample-record-sampled-at
-                                                          previous-sample)))
+            (ntop.shared.domain:counter-rate-per-second
+             previous-counter
+             current-counter
+             (-
+              (ntop.shared.domain:sample-record-sampled-at
+               current-sample)
+              (ntop.shared.domain:sample-record-sampled-at
+               previous-sample)))
             0)))))
 
 (defun %disk-sample-row (previous-sample current-sample mount)

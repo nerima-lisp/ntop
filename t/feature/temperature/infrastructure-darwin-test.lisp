@@ -213,10 +213,12 @@
                                                  (lambda () '((101 "CPU" :cpu)))
                                                  :read-temperature (lambda (handle)
                                                                      (declare (ignore handle))
-                                                                     (error "Injected read failure."))))
+                                                                     (error
+                                                                      "Injected read failure."))))
                              :now (lambda () 0.0d0)))
                            (result (%collect-darwin-temperature-sample collector)))
                       (cl-weave:expect (first result) :to-be :sample)
                       (cl-weave:expect (%darwin-temperature-rows (second result))
                                        :to-equal
                                        '(("CPU" nil))))))
+

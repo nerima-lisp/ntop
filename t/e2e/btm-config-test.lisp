@@ -4,11 +4,20 @@
   (not (null (search fragment text))))
 
 (defun btm-config-test-count (text fragment)
-  (loop with position = 0
-        for found = (search fragment text :start2 position)
-        while found
-        count t
-        do (setf position (+ found (length fragment)))))
+  (loop with
+    position
+    =
+    0
+    for
+    found
+    =
+    (search fragment text :start2 position)
+    while
+    found
+    count
+    t
+    do
+    (setf position (+ found (length fragment)))))
 
 (defun btm-config-test-layout-order-p (text)
   (let ((positions
@@ -17,9 +26,16 @@
             (search (format nil "type = ~s" type) text))
           '("cpu" "mem" "net" "disk" "temp" "proc"))))
     (and (every #'integerp positions)
-         (loop for previous in positions
-               for next in (cdr positions)
-               always (< previous next)))))
+         (loop for
+           previous
+           in
+           positions
+           for
+           next
+           in
+           (cdr positions)
+           always
+           (< previous next)))))
 
 (cl-weave:describe "btm configuration projection"
                    (cl-weave:it "expands declarative layout rows"
@@ -44,14 +60,20 @@
                       (cl-weave:expect
                        (btm-config-test-contains-p text
                                                    (format nil
-                                                           "[flags]~%basic = false~%dot_marker = false~%rate = ~d"
+                                                           (concatenate 'string
+                                                                        "[flags]~%basic = "
+                                                                        "false~%dot_marker = "
+                                                                        "false~%rate = ~d")
                                                            rate))
                        :to-be
                        t)
                       (cl-weave:expect
                        (btm-config-test-contains-p text
                                                    (format nil
-                                                           "[processes]~%case_sensitive = false~%default_grouped = true"))
+                                                           (concatenate 'string
+                                                                        "[processes]~%case_"
+                                                                        "sensitive = false~%"
+                                                                        "default_grouped = true")))
                        :to-be
                        t)
                       (cl-weave:expect (btm-config-test-count text "[[row]]")

@@ -1,88 +1,60 @@
 (in-package #:ntop.test)
 
 (cl-weave:describe "Darwin IOKit block-storage readers"
-                   (cl-weave:it-run-if (member :darwin *features*)
-                                       "decodes an IOKit BSD name and releases both CoreFoundation references"
-                                       (let ((release-count 0))
-                                         (cl-weave:with-mocked-functions
-                                          (((symbol-function
-                                             'ntop.platform.darwin::%cf-string-create-with-c-string)
-                                            (lambda (allocator value encoding)
-                                              (declare (ignore allocator
-                                                               value
-                                                               encoding))
-                                              (sb-sys:int-sap 1)))
-                                           ((symbol-function
-                                             'ntop.platform.darwin::%io-registry-entry-search-cf-property)
-                                            (lambda
-                                                (service plane
-                                                         key
-                                                         allocator
-                                                         options)
-                                              (declare (ignore service
-                                                               plane
-                                                               key
-                                                               allocator
-                                                               options))
-                                              (sb-sys:int-sap 2)))
-                                           ((symbol-function
-                                             'ntop.platform.darwin:cf-value-to-lisp)
-                                            (lambda (reference)
-                                              (declare (ignore reference))
-                                              "disk9"))
-                                           ((symbol-function
-                                             'ntop.platform.darwin::%cf-release)
-                                            (lambda (reference)
-                                              (declare (ignore reference))
-                                              (incf release-count))))
-                                          (cl-weave:expect
-                                           (ntop.platform.darwin::%darwin-iokit-device-name
-                                            17)
-                                           :to-equal
-                                           "disk9"))
-                                         (cl-weave:expect release-count
-                                                          :to-be
-                                                          2)))
-                   (cl-weave:it-run-if (member :darwin *features*)
-                                       "rejects empty or non-string IOKit BSD names"
-                                       (dolist (name '(nil ""))
-                                         (cl-weave:with-mocked-functions
-                                          (((symbol-function
-                                             'ntop.platform.darwin::%cf-string-create-with-c-string)
-                                            (lambda (allocator value encoding)
-                                              (declare (ignore allocator
-                                                               value
-                                                               encoding))
-                                              (sb-sys:int-sap 1)))
-                                           ((symbol-function
-                                             'ntop.platform.darwin::%io-registry-entry-search-cf-property)
-                                            (lambda
-                                                (service plane
-                                                         key
-                                                         allocator
-                                                         options)
-                                              (declare (ignore service
-                                                               plane
-                                                               key
-                                                               allocator
-                                                               options))
-                                              (sb-sys:int-sap 2)))
-                                           ((symbol-function
-                                             'ntop.platform.darwin:cf-value-to-lisp)
-                                            (lambda (reference)
-                                              (declare (ignore reference))
-                                              name))
-                                           ((symbol-function
-                                             'ntop.platform.darwin::%cf-release)
-                                            (lambda (reference)
-                                              (declare (ignore reference))
-                                              nil)))
-                                          (cl-weave:expect
-                                           (lambda ()
-                                             (ntop.platform.darwin::%darwin-iokit-device-name
-                                              17))
-                                           :to-throw
-                                           'error))))
+                   (cl-weave:it-run-if
+                    (member :darwin *features*)
+                    "decodes an IOKit BSD name and releases both CoreFoundation references"
+                    (let ((release-count 0))
+                     (cl-weave:with-mocked-functions
+                      (((symbol-function 'ntop.platform.darwin::%cf-string-create-with-c-string)
+                        (lambda (allocator value encoding)
+                         (declare (ignore allocator value encoding))
+                         (sb-sys:int-sap 1)))
+                       ((symbol-function
+                         'ntop.platform.darwin::%io-registry-entry-search-cf-property)
+                        (lambda (service plane key allocator options)
+                         (declare (ignore service plane key allocator options))
+                         (sb-sys:int-sap 2)))
+                       ((symbol-function 'ntop.platform.darwin:cf-value-to-lisp)
+                        (lambda (reference)
+                         (declare (ignore reference))
+                         "disk9"))
+                       ((symbol-function 'ntop.platform.darwin::%cf-release)
+                        (lambda (reference)
+                         (declare (ignore reference))
+                         (incf release-count))))
+                      (cl-weave:expect (ntop.platform.darwin::%darwin-iokit-device-name 17)
+                                       :to-equal
+                                       "disk9"))
+                     (cl-weave:expect release-count :to-be 2)))
+                   (cl-weave:it-run-if
+                    (member :darwin *features*)
+                    "rejects empty or non-string IOKit BSD names"
+                    (dolist
+                     (name '(nil ""))
+                     (cl-weave:with-mocked-functions
+                      (((symbol-function 'ntop.platform.darwin::%cf-string-create-with-c-string)
+                        (lambda (allocator value encoding)
+                         (declare (ignore allocator value encoding))
+                         (sb-sys:int-sap 1)))
+                       ((symbol-function
+                         'ntop.platform.darwin::%io-registry-entry-search-cf-property)
+                        (lambda (service plane key allocator options)
+                         (declare (ignore service plane key allocator options))
+                         (sb-sys:int-sap 2)))
+                       ((symbol-function 'ntop.platform.darwin:cf-value-to-lisp)
+                        (lambda (reference)
+                         (declare (ignore reference))
+                         name))
+                       ((symbol-function 'ntop.platform.darwin::%cf-release)
+                        (lambda (reference)
+                         (declare (ignore reference))
+                         nil)))
+                      (cl-weave:expect
+                       (lambda ()
+                        (ntop.platform.darwin::%darwin-iokit-device-name 17))
+                       :to-throw
+                       'error))))
                    (cl-weave:it-run-if (member :darwin *features*)
                                        "reads validated byte counters from IOKit properties"
                                        (let ((properties
@@ -168,9 +140,10 @@
                                                     (funcall on-value
                                                              reader-value)))))
                                             (cl-weave:expect
-                                             (lambda ()
-                                               (ntop.platform.darwin::%darwin-iokit-device-statistics
-                                                17))
+                                             (lambda
+                                              ()
+                                              (ntop.platform.darwin::%darwin-iokit-device-statistics
+                                               17))
                                              :to-throw
                                              'error)))))
                    (cl-weave:it-run-if (member :darwin *features*)
@@ -199,33 +172,24 @@
                                                           :to-be
                                                           :permission-denied))))
 
+
 (cl-weave:describe "Darwin IOKit enumeration error handling"
-                   (cl-weave:it-run-if (member :darwin *features*)
-                                       "converts an enumeration exception into an unavailable result"
-                                       (let ((value nil)
-                                             (reason nil))
-                                         (cl-weave:with-mocked-functions
-                                          (((symbol-function
-                                             'ntop.platform.darwin::call-with-iokit-services)
-                                            (lambda
-                                                (service-class on-service
-                                                               on-complete
-                                                               on-error)
-                                              (declare (ignore service-class
-                                                               on-service
-                                                               on-complete
-                                                               on-error))
-                                              (error "IOKit enumeration failed"))))
-                                          (ntop.platform.darwin:read-darwin-block-storage-stats
-                                           (lambda (devices)
-                                             (setf value devices))
-                                           (lambda (unavailable)
-                                             (setf reason unavailable))))
-                                         (cl-weave:expect value :to-be-null)
-                                         (cl-weave:expect (first reason)
-                                                          :to-be
-                                                          :iokit-read-error)
-                                         (cl-weave:expect
-                                          (typep (second reason) 'error)
-                                          :to-be
-                                          t))))
+                   (cl-weave:it-run-if
+                    (member :darwin *features*)
+                    "converts an enumeration exception into an unavailable result"
+                    (let ((value nil)
+                          (reason nil))
+                     (cl-weave:with-mocked-functions
+                      (((symbol-function 'ntop.platform.darwin::call-with-iokit-services)
+                        (lambda (service-class on-service on-complete on-error)
+                         (declare (ignore service-class on-service on-complete on-error))
+                         (error "IOKit enumeration failed"))))
+                      (ntop.platform.darwin:read-darwin-block-storage-stats
+                       (lambda (devices)
+                        (setf value devices))
+                       (lambda (unavailable)
+                        (setf reason unavailable))))
+                     (cl-weave:expect value :to-be-null)
+                     (cl-weave:expect (first reason) :to-be :iokit-read-error)
+                     (cl-weave:expect (typep (second reason) 'error) :to-be t))))
+

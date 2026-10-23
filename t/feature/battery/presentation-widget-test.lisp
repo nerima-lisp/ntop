@@ -1,14 +1,23 @@
 (in-package #:ntop.test)
 
-(defstruct (%battery-screen-target (:constructor %make-battery-screen-target (cells roles))) cells roles)
+(defstruct
+  (%battery-screen-target
+   (:constructor %make-battery-screen-target (cells roles)))
+ cells
+ roles)
+
 
 (defmethod ntop.ui:draw-table-text ((target %battery-screen-target) x y text role)
   (loop for character across text
         for column from x
-        when (and (<= 0 y) (< y (array-dimension (%battery-screen-target-cells target) 0))
-                  (<= 0 column) (< column (array-dimension (%battery-screen-target-cells target) 1)))
+        when (and
+              (<= 0 y)
+              (< y (array-dimension (%battery-screen-target-cells target) 0))
+              (<= 0 column)
+              (< column (array-dimension (%battery-screen-target-cells target) 1)))
           do (setf (aref (%battery-screen-target-cells target) y column) character
                    (aref (%battery-screen-target-roles target) y column) role)))
+
 
 (defun %battery-screen-target (width height)
   (%make-battery-screen-target

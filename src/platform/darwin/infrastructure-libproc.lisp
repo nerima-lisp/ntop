@@ -157,14 +157,19 @@
                                                (getf layout :rusage-read) 8)
           :write-bytes (%darwin-process-integer octets
                                                 (getf layout :rusage-write) 8))))
-  (defun decode-darwin-pid-buffer (octets &optional (width (getf +darwin-process-layout+ :pid-width)))
-  (check-type octets (vector (unsigned-byte 8)))
-  (check-type width (integer 1 *))
-  (unless (zerop (mod (length octets) width))
+  (defun decode-darwin-pid-buffer (octets &optional
+                                          (width
+                                           (getf +darwin-process-layout+
+                                                 :pid-width)))
+   (check-type octets (vector (unsigned-byte 8)))
+   (check-type width (integer 1 *))
+   (unless (zerop (mod (length octets) width))
     (error "A process or thread ID buffer must contain whole values."))
-  (loop for offset from 0 below (length octets) by width
-        for pid = (%darwin-process-integer octets offset width)
-        when (plusp pid) collect pid))
+   (loop for offset from 0 below (length octets) by width
+         for pid = (%darwin-process-integer octets offset width)
+         when (plusp pid)
+          collect pid))
+
   (defun decode-darwin-procargs2 (octets)
   (check-type octets (vector (unsigned-byte 8)))
   (when (< (length octets) 5)

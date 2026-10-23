@@ -150,15 +150,20 @@
   (call-with-terminal-session
    (lambda (poll-terminal-event)
      (let* ((state
-             (ntop.app.domain:make-app-state :selected-widget
-                                             (ntop.shared.application:application-config-default-widget-type
-                                              config)
-                                             :expanded-p
-                                             (ntop.shared.application:application-config-expanded-p
-                                              config)
-                                             :basic-mode-p
-                                             (ntop.shared.application:application-config-basic-p
-                                              config)))
+             (let* ((default-widget
+                     (ntop.shared.application:application-config-default-widget-type
+                      config))
+                    (expanded-p
+                     (ntop.shared.application:application-config-expanded-p
+                      config))
+                    (basic-mode-p
+                     (ntop.shared.application:application-config-basic-p config)))
+               (ntop.app.domain:make-app-state :selected-widget
+                                               default-widget
+                                               :expanded-p
+                                               expanded-p
+                                               :basic-mode-p
+                                               basic-mode-p)))
             (worker
              (start-collection-worker collectors
                                       clock

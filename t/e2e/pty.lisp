@@ -66,14 +66,16 @@
 
 (defun %signal-timeout (operation timeout-seconds)
   (error 'e2e-timeout :operation operation :timeout-seconds timeout-seconds))
+
 (progn
-  (defvar *e2e-deadline* nil)
+  (defvar *e2e-deadline*
+    nil)
   (defun %effective-timeout-seconds (timeout-seconds operation
-                                     &optional (now (%now)))
+                                                     &optional
+                                                     (now (%now)))
     (let* ((timeout-seconds
             (%validate-seconds timeout-seconds "TIMEOUT-SECONDS"))
-           (requested-deadline
-            (+ now (%seconds-to-ticks timeout-seconds)))
+           (requested-deadline (+ now (%seconds-to-ticks timeout-seconds)))
            (deadline
             (if *e2e-deadline*
                 (min requested-deadline *e2e-deadline*)
@@ -92,6 +94,7 @@
   (when (e2e-session-closed-p session)
     (error "The E2E PTY session is closed."))
   session)
+
 (declaim (ftype function close-e2e-session))
 
 (defun %deadline-for-call (session operation timeout-seconds)
@@ -108,8 +111,7 @@
           (min overall-deadline
                (or local-deadline overall-deadline)
                (or *e2e-deadline* overall-deadline)))
-         (deadline-seconds
-          (%ticks-to-seconds (max 0 (- deadline now)))))
+         (deadline-seconds (%ticks-to-seconds (max 0 (- deadline now)))))
     (when (<= deadline now)
       (%signal-timeout operation deadline-seconds))
     (values deadline deadline-seconds)))
@@ -170,9 +172,10 @@
                                                  session-timeout))
                 (when (>= (%now) deadline)
                   (%signal-timeout "launch" session-timeout))
-                (with-e2e-operation-timeout
-                 ("launch" deadline session-timeout)
-                 (cl-tty-kit:pty-resize pty cols rows))
+                (with-e2e-operation-timeout ("launch" deadline session-timeout)
+                                            (cl-tty-kit:pty-resize pty
+                                                                   cols
+                                                                   rows))
                 (setf completed t)
                 session)))
         (unless completed
@@ -217,97 +220,79 @@
                                                       :fill-pointer
                                                       0))
                                          (last-output-at nil))
-                                    (loop for now = (%now)
-                                          do (when (>= now deadline)
-                                               (%signal-timeout "read"
-                                                                deadline-seconds)) (when
-                                                                                       (and
-                                                                                        last-output-at
-                                                                                        (frame-ready-p
-                                                                                         (%ticks-to-seconds
-                                                                                          started-at)
-                                                                                         (%ticks-to-seconds
-                                                                                          last-output-at)
-                                                                                         (%ticks-to-seconds
-                                                                                          now)
-                                                                                         (%ticks-to-seconds
-                                                                                          first-frame-at)
-                                                                                         quiet-ticks-seconds))
-                                                                                     (return
-                                                                                      (values
-                                                                                       (make-array
-                                                                                        (length
-                                                                                         output)
-                                                                                        :element-type
-                                                                                        '(unsigned-byte
-                                                                                          8)
-                                                                                        :initial-contents
-                                                                                        output)
-                                                                                       (%elapsed-seconds
-                                                                                        session
-                                                                                        last-output-at)
-                                                                                       (%elapsed-seconds
-                                                                                        session
-                                                                                        now)))) (let* ((idle-deadline
-                                                                                                        (when
-                                                                                                            last-output-at
-                                                                                                          (+
-                                                                                                           last-output-at
-                                                                                                           quiet-ticks)))
-                                                                                                       (wake-at
-                                                                                                        (if idle-deadline
-                                                                                                            (min
-                                                                                                             deadline
-                                                                                                             (max
-                                                                                                              idle-deadline
-                                                                                                              first-frame-at))
-                                                                                                            deadline))
-                                                                                                       (wait-seconds
-                                                                                                        (%ticks-to-seconds
-                                                                                                         (-
-                                                                                                          wake-at
-                                                                                                          now))))
-                                                                                                  (unless
-                                                                                                      (plusp
-                                                                                                       wait-seconds)
-                                                                                                    (error
-                                                                                                     "PTY frame timing did not advance."))
-                                                                                                  (when
-                                                                                                      (with-e2e-operation-timeout
-                                                                                                       ("read wait"
-                                                                                                        deadline
-                                                                                                        deadline-seconds)
-                                                                                                       (cl-tty-kit:fd-wait
-                                                                                                        (e2e-session-fd
-                                                                                                         session)
-                                                                                                        :input
-                                                                                                        wait-seconds))
-                                                                                                    (let ((count
-                                                                                                           (with-e2e-operation-timeout
-                                                                                                            ("read"
-                                                                                                             deadline
-                                                                                                             deadline-seconds)
-                                                                                                            (cl-tty-kit:fd-read-octets
-                                                                                                             (e2e-session-fd
-                                                                                                              session)
-                                                                                                             buffer))))
-                                                                                                      (cond
-                                                                                                        ((null
-                                                                                                          count)
-                                                                                                         nil)
-                                                                                                        ((zerop
-                                                                                                          count)
-                                                                                                         (error
-                                                                                                          "PTY closed before a frame was complete."))
-                                                                                                        (t
-                                                                                                          (loop for index below
-                                                                                                                count
-                                                                                                                do (vector-push-extend
-                                                                                                                    (aref
-                                                                                                                     buffer
-                                                                                                                     index)
-                                                                                                                    output))
-                                                                                                          (setf last-output-at (%now)))))))))))))
+                                    (loop for
+                                      now
+                                      =
+                                      (%now)
+                                      do
+                                      (when (>= now deadline)
+                                        (%signal-timeout "read"
+                                                         deadline-seconds))
+                                      (when
+                                          (and last-output-at
+                                               (frame-ready-p
+                                                (%ticks-to-seconds started-at)
+                                                (%ticks-to-seconds
+                                                 last-output-at)
+                                                (%ticks-to-seconds now)
+                                                (%ticks-to-seconds
+                                                 first-frame-at)
+                                                quiet-ticks-seconds))
+                                        (return
+                                         (values
+                                          (make-array (length output)
+                                                      :element-type
+                                                      '(unsigned-byte 8)
+                                                      :initial-contents
+                                                      output)
+                                          (%elapsed-seconds session
+                                                            last-output-at)
+                                          (%elapsed-seconds session now))))
+                                      (let* ((idle-deadline
+                                              (when last-output-at
+                                                (+ last-output-at quiet-ticks)))
+                                             (wake-at
+                                              (if idle-deadline
+                                                  (min deadline
+                                                       (max idle-deadline
+                                                            first-frame-at))
+                                                  deadline))
+                                             (wait-seconds
+                                              (%ticks-to-seconds
+                                               (- wake-at now))))
+                                        (unless (plusp wait-seconds)
+                                          (error
+                                           "PTY frame timing did not advance."))
+                                        (when
+                                            (with-e2e-operation-timeout
+                                             ("read wait" deadline
+                                                          deadline-seconds)
+                                             (cl-tty-kit:fd-wait
+                                              (e2e-session-fd session)
+                                              :input
+                                              wait-seconds))
+                                          (let ((count
+                                                 (with-e2e-operation-timeout
+                                                  ("read" deadline
+                                                          deadline-seconds)
+                                                  (cl-tty-kit:fd-read-octets
+                                                   (e2e-session-fd session)
+                                                   buffer))))
+                                            (cond
+                                              ((null count) nil)
+                                              ((zerop count)
+                                               (error
+                                                "PTY closed before a frame was complete."))
+                                              (t
+                                                (loop for
+                                                  index
+                                                  below
+                                                  count
+                                                  do
+                                                  (vector-push-extend
+                                                   (aref buffer index)
+                                                   output))
+                                                (setf last-output-at (%now)))))))))))))
 
 (defun pty-send-input (session octets &key timeout-seconds)
   (%call-with-session-cleanup session
@@ -330,55 +315,46 @@
                                           (make-array 1
                                                       :element-type
                                                       '(unsigned-byte 8))))
-                                    (loop with offset = 0
-                                          while (< offset (length input))
-                                          for now = (%now)
-                                          do (when (>= now deadline)
-                                               (%signal-timeout "write"
-                                                                deadline-seconds)) (unless
-                                                                                       (with-e2e-operation-timeout
-                                                                                        ("write wait"
-                                                                                         deadline
-                                                                                         deadline-seconds)
-                                                                                        (cl-tty-kit:fd-wait
-                                                                                         (e2e-session-fd
-                                                                                          session)
-                                                                                         :output
-                                                                                         (%ticks-to-seconds
-                                                                                          (-
-                                                                                           deadline
-                                                                                           now))))
-                                                                                     (%signal-timeout
-                                                                                      "write"
-                                                                                      deadline-seconds)) (setf (aref
-                                                                                                                byte
-                                                                                                                0) (aref
-                                                                                                                    input
-                                                                                                                    offset)) (let ((count
-                                                                                                                                    (with-e2e-operation-timeout
-                                                                                                                                     ("write"
-                                                                                                                                      deadline
-                                                                                                                                      deadline-seconds)
-                                                                                                                                     (cl-tty-kit:fd-write-octets
-                                                                                                                                      (e2e-session-fd
-                                                                                                                                       session)
-                                                                                                                                      byte))))
-                                                                                                                               (unless
-                                                                                                                                   (and
-                                                                                                                                    (integerp
-                                                                                                                                     count)
-                                                                                                                                    (<=
-                                                                                                                                     0
-                                                                                                                                     count
-                                                                                                                                     1))
-                                                                                                                                 (error
-                                                                                                                                  "PTY returned an invalid write count."))
-                                                                                                                               (incf
-                                                                                                                                offset
-                                                                                                                                count))
-                                          finally (return
-                                                   (%elapsed-seconds session
-                                                                     (%now)))))))))
+                                    (loop with
+                                      offset
+                                      =
+                                      0
+                                      while
+                                      (< offset (length input))
+                                      for
+                                      now
+                                      =
+                                      (%now)
+                                      do
+                                      (when (>= now deadline)
+                                        (%signal-timeout "write"
+                                                         deadline-seconds))
+                                      (unless
+                                          (with-e2e-operation-timeout
+                                           ("write wait" deadline
+                                                         deadline-seconds)
+                                           (cl-tty-kit:fd-wait
+                                            (e2e-session-fd session)
+                                            :output
+                                            (%ticks-to-seconds (- deadline now))))
+                                        (%signal-timeout "write"
+                                                         deadline-seconds))
+                                      (setf (aref byte 0) (aref input offset))
+                                      (let ((count
+                                             (with-e2e-operation-timeout
+                                              ("write" deadline
+                                                       deadline-seconds)
+                                              (cl-tty-kit:fd-write-octets
+                                               (e2e-session-fd session)
+                                               byte))))
+                                        (unless
+                                            (and (integerp count)
+                                                 (<= 0 count 1))
+                                          (error
+                                           "PTY returned an invalid write count."))
+                                        (incf offset count))
+                                      finally
+                                      (return (%elapsed-seconds session (%now)))))))))
 
 (defun pty-resize-session (session rows cols &key timeout-seconds)
   (%call-with-session-cleanup session
@@ -409,19 +385,18 @@
       (when (sb-ext:process-alive-p process)
         (sb-ext:process-kill process 9 :pid))
       (with-e2e-operation-timeout ("child reap" deadline 1d0)
-        (sb-ext:process-wait process))
+                                  (sb-ext:process-wait process))
       (when (sb-ext:process-alive-p process)
         (%signal-timeout "child reap" 1d0))
       (sb-ext:process-close process)))
-
   (defun close-e2e-session (session)
     (unless (e2e-session-closed-p session)
       (let* ((process (e2e-session-process session))
              (deadline (+ (%now) (%seconds-to-ticks 1d0)))
              (close-error nil))
-        (handler-case
-            (with-e2e-operation-timeout ("close" deadline 1d0)
-              (cl-tty-kit:close-pty (e2e-session-pty session)))
+        (handler-case (with-e2e-operation-timeout ("close" deadline 1d0)
+                                                  (cl-tty-kit:close-pty
+                                                   (e2e-session-pty session)))
           (error (condition)
             (setf close-error condition)))
         (when (or close-error (sb-ext:process-alive-p process))

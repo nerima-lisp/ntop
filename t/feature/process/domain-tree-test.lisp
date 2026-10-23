@@ -46,7 +46,7 @@
                              records))
                            (tree
                             (ntop.process.domain::build-process-tree rows
-                                                                     (ntop.process.domain::make-process-sort-state
+                                                                     (wp4-sort-state
                                                                       :key
                                                                       :pid))))
                       (cl-weave:expect (%wp4-tree-shape tree)
@@ -60,7 +60,7 @@
                                   (%wp4-tree-row 3 1 :cpu 10)))
                            (tree
                             (ntop.process.domain::build-process-tree rows
-                                                                     (ntop.process.domain::make-process-sort-state))))
+                                                                     (wp4-sort-state))))
                       (cl-weave:expect (%wp4-tree-shape tree)
                                        :to-equal
                                        '((1 ((3 nil) (2 nil)))))))
@@ -72,7 +72,7 @@
                                        (tree
                                         (ntop.process.domain::build-process-tree
                                          rows
-                                         (ntop.process.domain::make-process-sort-state))))
+                                         (wp4-sort-state))))
                                   (cl-weave:expect (%wp4-tree-shape tree)
                                                    :to-equal
                                                    '((1 ((7 nil) (5 nil)))))))
@@ -82,7 +82,7 @@
                                                  (ntop.process.domain::build-process-tree
                                                   (list (%wp4-tree-row 1 nil)
                                                         (%wp4-tree-row 1 nil))
-                                                  (ntop.process.domain::make-process-sort-state))
+                                                  (wp4-sort-state))
                                                  :returned)
                                    (error ()
                                      :signaled))
@@ -100,7 +100,7 @@
                        (handler-case (progn
                                        (ntop.process.domain::build-process-tree
                                         (list grouped)
-                                        (ntop.process.domain::make-process-sort-state))
+                                        (wp4-sort-state))
                                        :returned)
                          (error ()
                            :signaled))
@@ -114,11 +114,10 @@
                                    (%wp4-tree-row 2 1)
                                    (%wp4-tree-row 3 1)
                                    (%wp4-tree-row 4 2))
-                             (ntop.process.domain::make-process-sort-state :key
-                                                                           :pid)))
+                             (wp4-sort-state :key :pid)))
                            (entries
                             (ntop.process.domain::process-tree-visible-rows tree
-                                                                            (ntop.process.domain::make-process-tree-state))))
+                                                                            (wp4-tree-state))))
                       (cl-weave:expect
                        (mapcar
                         (lambda (entry)
@@ -138,11 +137,10 @@
                               (list (%wp4-tree-row 1 nil :cpu 10 :memory 100)
                                     (%wp4-tree-row 2 1 :cpu 20 :memory 200)
                                     (%wp4-tree-row 3 1 :cpu 30 :memory 300))
-                              (ntop.process.domain::make-process-sort-state :key
-                                                                            :pid)))
+                              (wp4-sort-state :key :pid)))
                             (state
                              (ntop.process.domain::process-tree-state-set-collapsed
-                              (ntop.process.domain::make-process-tree-state)
+                              (wp4-tree-state)
                               1
                               t))
                             (entries
@@ -170,9 +168,8 @@
                      (case-name default-collapsed-p expected)
                      (declare (ignorable case-name))
                      (let ((state
-                            (ntop.process.domain::make-process-tree-state
-                             :default-collapsed-p
-                             default-collapsed-p)))
+                            (wp4-tree-state :default-collapsed-p
+                                            default-collapsed-p)))
                        (cl-weave:expect
                         (ntop.process.domain::process-tree-state-collapsed-p
                          state
@@ -181,8 +178,7 @@
                         expected)))
                     (cl-weave:it
                      "toggles a branch without mutating its previous state"
-                     (let* ((original
-                             (ntop.process.domain::make-process-tree-state))
+                     (let* ((original (wp4-tree-state))
                             (collapsed
                              (ntop.process.domain::process-tree-state-toggle
                               original
@@ -206,9 +202,7 @@
                         '(nil t nil))))
                     (cl-weave:it "resets an override to the default state"
                                  (let* ((state
-                                         (ntop.process.domain::make-process-tree-state
-                                          :default-collapsed-p
-                                          t))
+                                         (wp4-tree-state :default-collapsed-p t))
                                         (expanded
                                          (ntop.process.domain::process-tree-state-set-collapsed
                                           state
@@ -233,12 +227,10 @@
                                  (let* ((tree
                                          (ntop.process.domain::build-process-tree
                                           (list (%wp4-tree-row 20 nil))
-                                          (ntop.process.domain::make-process-sort-state
-                                           :key
-                                           :pid)))
+                                          (wp4-sort-state :key :pid)))
                                         (state
                                          (ntop.process.domain::process-tree-state-set-collapsed
-                                          (ntop.process.domain::make-process-tree-state)
+                                          (wp4-tree-state)
                                           20
                                           t))
                                         (entry
@@ -257,12 +249,12 @@
                     (cl-weave:it "returns an empty forest for no processes"
                                  (cl-weave:expect
                                   (ntop.process.domain::build-process-tree nil
-                                                                           (ntop.process.domain::make-process-sort-state))
+                                                                           (wp4-sort-state))
                                   :to-equal
                                   nil)))
                    (cl-weave:it
                     "ignores collapse updates without a PID and rejects invalid states"
-                    (let ((state (ntop.process.domain::make-process-tree-state)))
+                    (let ((state (wp4-tree-state)))
                       (cl-weave:expect
                        (eq state
                            (ntop.process.domain::process-tree-state-set-collapsed
@@ -288,9 +280,7 @@
                                         (list (%wp4-tree-row 5 4)
                                               (%wp4-tree-row 4 3)
                                               (%wp4-tree-row 3 5))
-                                        (ntop.process.domain::make-process-sort-state
-                                         :key
-                                         :pid))))
+                                        (wp4-sort-state :key :pid))))
                                   (cl-weave:expect (%wp4-tree-shape tree)
                                                    :to-equal
                                                    (list
@@ -306,11 +296,10 @@
                              (list (%wp4-tree-row 1 nil)
                                    (%wp4-tree-row 2 1)
                                    (%wp4-tree-row 3 2))
-                             (ntop.process.domain::make-process-sort-state :key
-                                                                           :pid)))
+                             (wp4-sort-state :key :pid)))
                            (state
                             (ntop.process.domain::process-tree-state-set-collapsed
-                             (ntop.process.domain::make-process-tree-state)
+                             (wp4-tree-state)
                              2
                              t))
                            (entries
@@ -333,9 +322,7 @@
                                        (ntop.process.domain::build-process-tree
                                         (list (%wp4-tree-row 0 nil)
                                               (%wp4-tree-row 1 0))
-                                        (ntop.process.domain::make-process-sort-state
-                                         :key
-                                         :pid))))
+                                        (wp4-sort-state :key :pid))))
                                   (cl-weave:expect (%wp4-tree-shape tree)
                                                    :to-equal
                                                    (list
@@ -344,15 +331,12 @@
                                 (cl-weave:expect
                                  (ntop.process.domain::process-tree-visible-rows
                                   nil
-                                  (ntop.process.domain::make-process-tree-state))
+                                  (wp4-tree-state))
                                  :to-be
                                  nil))
                    (cl-weave:it
                     "keeps a nil PID toggle from changing the default state"
-                    (let* ((collapsed
-                            (ntop.process.domain::make-process-tree-state
-                             :default-collapsed-p
-                             t))
+                    (let* ((collapsed (wp4-tree-state :default-collapsed-p t))
                            (after-toggle
                             (ntop.process.domain::process-tree-state-toggle
                              collapsed

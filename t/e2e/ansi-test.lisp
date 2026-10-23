@@ -72,7 +72,9 @@
                     (let* ((escape #\Escape)
                            (text
                             (format nil
-                                    "~c[?1049h~c]0;test title~c~c[2J~c[2;2HA~c[1DB~c[3;3HZ~c[2K~c[1;4HXY"
+                                    (concatenate 'string
+                                                 "~c[?1049h~c]0;test title~c~c[2J"
+                                                 "~c[2;2HA~c[1DB~c[3;3HZ~c[2K~c[1;4HXY")
                                     escape
                                     escape
                                     #\Bell
@@ -93,9 +95,32 @@
                                                    (error condition)))))
                       (cl-weave:expect result :to-be :ok)
                       (cl-weave:expect
-                       (list (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 1)) (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 1 0)) (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 1 1)) (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 2 0)) (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 2 1)) (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 2 2)) (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 2 3)) (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 3)))
+                       (list
+                        (ntop.e2e:cell-character
+                         (ntop.e2e:grid-cell-at grid 0 1))
+                        (ntop.e2e:cell-character
+                         (ntop.e2e:grid-cell-at grid 1 0))
+                        (ntop.e2e:cell-character
+                         (ntop.e2e:grid-cell-at grid 1 1))
+                        (ntop.e2e:cell-character
+                         (ntop.e2e:grid-cell-at grid 2 0))
+                        (ntop.e2e:cell-character
+                         (ntop.e2e:grid-cell-at grid 2 1))
+                        (ntop.e2e:cell-character
+                         (ntop.e2e:grid-cell-at grid 2 2))
+                        (ntop.e2e:cell-character
+                         (ntop.e2e:grid-cell-at grid 2 3))
+                        (ntop.e2e:cell-character
+                         (ntop.e2e:grid-cell-at grid 0 3)))
                        :to-equal
-                       (list #\Space #\Y #\B #\Space #\Space #\Space #\Space #\X))))
+                       (list #\Space
+                             #\Y
+                             #\B
+                             #\Space
+                             #\Space
+                             #\Space
+                             #\Space
+                             #\X))))
                    (cl-weave:it
                     "passes malformed SGR data to the failure continuation"
                     (let ((grid (ntop.e2e:make-terminal-grid :rows 1 :cols 1))

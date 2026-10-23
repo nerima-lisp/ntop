@@ -81,25 +81,28 @@
                  (funcall on-value values)))))
     (funcall read-file-system-stats
              (lambda (file-systems)
-               (%collect-darwin-disk-mounts file-systems
-                                            read-volume-space-used
-                                            (lambda (mounts)
-                                              (funcall read-block-storage-stats
-                                                       (lambda (device-rows)
-                                                         (deliver-values mounts
-                                                                         device-rows))
-                                                       (lambda (reason)
-                                                         (if mounts
-                                                             (deliver-values
-                                                              mounts
-                                                              nil)
-                                                             (funcall
-                                                              on-unavailable
-                                                              (if (eq reason
-                                                                      :no-block-storage-statistics)
-                                                                  :not-present
-                                                                  (ntop.disk.infrastructure::%disk-unavailable-reason
-                                                                   reason)))))))))
+               (%collect-darwin-disk-mounts
+                file-systems
+                read-volume-space-used
+                (lambda
+                 (mounts)
+                 (funcall
+                  read-block-storage-stats
+                  (lambda
+                   (device-rows)
+                   (deliver-values mounts device-rows))
+                  (lambda
+                   (reason)
+                   (if
+                    mounts
+                    (deliver-values mounts nil)
+                    (funcall
+                     on-unavailable
+                     (if
+                      (eq reason :no-block-storage-statistics)
+                      :not-present
+                      (ntop.disk.infrastructure::%disk-unavailable-reason
+                       reason)))))))))
              (lambda (reason)
                (funcall on-unavailable
                         (ntop.disk.infrastructure::%disk-unavailable-reason

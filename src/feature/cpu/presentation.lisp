@@ -357,17 +357,20 @@
 (defun %cpu-state (state config rows)
   (let ((table-state
          (or state
-             (ntop.ui:make-table-state :selected-index
-                                       (if (and
-                                            (eq
-                                             (ntop.shared.application:application-config-default-cpu-entry
-                                              config)
-                                             :average)
-                                            (> (length rows) 1)
-                                            (eq (getf (second rows) :kind)
-                                                :average))
-                                           1
-                                           0)))))
+             (ntop.ui:make-table-state
+              :selected-index
+              (if
+               (and
+                (eq
+                 (ntop.shared.application:application-config-default-cpu-entry
+                  config)
+                 :average)
+                (> (length rows) 1)
+                (eq
+                 (getf (second rows) :kind)
+                 :average))
+               1
+               0)))))
     (unless (typep table-state (quote ntop.ui:table-state))
       (error "CPU presentation state must be a table-state."))
     (setf (ntop.ui:table-state-selected-index table-state) (min

@@ -201,99 +201,69 @@
                       (cl-weave:expect value-count :to-be 0)
                       (cl-weave:expect other-reader-count :to-be 0)
                       (cl-weave:expect failure :to-be :read-failed)))
-                   (cl-weave:it-run-if (member :darwin *features*)
-                                       "skips block-storage services without BSD names"
-                                       (let ((value nil)
-                                             (failure nil)
-                                             (include-named-p t)
-                                             (properties
-                                              (make-hash-table :test #'equal))
-                                             (statistics
-                                              (make-hash-table :test #'equal)))
-                                         (setf (gethash "Statistics" properties) statistics
-                                               (gethash "Bytes (Read)"
-                                                        statistics) 4096
-                                               (gethash "Bytes (Write)"
-                                                        statistics) 8192)
-                                         (cl-weave:with-mocked-functions
-                                          (((symbol-function
-                                             'ntop.platform.darwin::%cf-string-create-with-c-string)
-                                            (lambda (allocator value encoding)
-                                              (declare (ignore allocator
-                                                               value
-                                                               encoding))
-                                              (sb-sys:int-sap 1)))
-                                           ((symbol-function
-                                             'ntop.platform.darwin::%io-registry-entry-search-cf-property)
-                                            (lambda
-                                                (service plane
-                                                         key
-                                                         allocator
-                                                         options)
-                                              (declare (ignore service
-                                                               plane
-                                                               key
-                                                               allocator
-                                                               options))
-                                              (sb-sys:int-sap 0)))
-                                           ((symbol-function
-                                             'ntop.platform.darwin::%cf-release)
-                                            (lambda (reference)
-                                              (declare (ignore reference))
-                                              nil)))
-                                          (cl-weave:expect
-                                           (ntop.platform.darwin::%darwin-iokit-device-name
-                                            17)
-                                           :to-be-null))
-                                         (cl-weave:with-mocked-functions
-                                          (((symbol-function
-                                             'ntop.platform.darwin::call-with-iokit-services)
-                                            (lambda
-                                                (service-class on-service
-                                                               on-complete
-                                                               on-error)
-                                              (declare (ignore service-class
-                                                               on-error))
-                                              (funcall on-service :unnamed)
-                                              (when include-named-p
-                                                (funcall on-service :named))
-                                              (funcall on-complete)))
-                                           ((symbol-function
-                                             'ntop.platform.darwin::%darwin-iokit-device-name)
-                                            (lambda (service)
-                                              (when (eq service :named)
-                                                "disk7")))
-                                           ((symbol-function
-                                             'ntop.platform.darwin::iokit-registry-properties)
-                                            (lambda (service on-value on-error)
-                                              (declare (ignore service on-error))
-                                              (funcall on-value properties))))
-                                          (ntop.platform.darwin:read-darwin-block-storage-stats
-                                           (lambda (devices)
-                                             (setf value devices))
-                                           (lambda (reason)
-                                             (setf failure reason)))
-                                          (cl-weave:expect value
-                                                           :to-equal
-                                                           '((:device-name
-                                                              "disk7"
-                                                              :read-bytes
-                                                              4096
-                                                              :write-bytes
-                                                              8192)))
-                                          (cl-weave:expect failure :to-be-null)
-                                          (setf value nil
-                                                failure nil
-                                                include-named-p nil)
-                                          (ntop.platform.darwin:read-darwin-block-storage-stats
-                                           (lambda (devices)
-                                             (setf value devices))
-                                           (lambda (reason)
-                                             (setf failure reason)))
-                                          (cl-weave:expect value :to-be-null)
-                                          (cl-weave:expect failure
-                                                           :to-be
-                                                           :no-block-storage-statistics)))))
+                   (cl-weave:it-run-if
+                    (member :darwin *features*)
+                    "skips block-storage services without BSD names"
+                    (let
+                     ((value nil) (failure nil)
+                      (include-named-p t)
+                      (properties (make-hash-table :test #'equal))
+                      (statistics (make-hash-table :test #'equal)))
+                     (setf (gethash "Statistics" properties) statistics
+                           (gethash "Bytes (Read)" statistics) 4096
+                           (gethash "Bytes (Write)" statistics) 8192)
+                     (cl-weave:with-mocked-functions
+                      (((symbol-function 'ntop.platform.darwin::%cf-string-create-with-c-string)
+                        (lambda (allocator value encoding)
+                         (declare (ignore allocator value encoding))
+                         (sb-sys:int-sap 1)))
+                       ((symbol-function
+                         'ntop.platform.darwin::%io-registry-entry-search-cf-property)
+                        (lambda (service plane key allocator options)
+                         (declare (ignore service plane key allocator options))
+                         (sb-sys:int-sap 0)))
+                       ((symbol-function 'ntop.platform.darwin::%cf-release)
+                        (lambda (reference)
+                         (declare (ignore reference))
+                         nil)))
+                      (cl-weave:expect (ntop.platform.darwin::%darwin-iokit-device-name 17)
+                                       :to-be-null))
+                     (cl-weave:with-mocked-functions
+                      (((symbol-function 'ntop.platform.darwin::call-with-iokit-services)
+                        (lambda (service-class on-service on-complete on-error)
+                         (declare (ignore service-class on-error))
+                         (funcall on-service :unnamed)
+                         (when include-named-p
+                          (funcall on-service :named))
+                         (funcall on-complete)))
+                       ((symbol-function 'ntop.platform.darwin::%darwin-iokit-device-name)
+                        (lambda (service)
+                         (when (eq service :named)
+                          "disk7")))
+                       ((symbol-function 'ntop.platform.darwin::iokit-registry-properties)
+                        (lambda (service on-value on-error)
+                         (declare (ignore service on-error))
+                         (funcall on-value properties))))
+                      (ntop.platform.darwin:read-darwin-block-storage-stats
+                       (lambda (devices)
+                        (setf value devices))
+                       (lambda (reason)
+                        (setf failure reason)))
+                      (cl-weave:expect value
+                                       :to-equal
+                                       '((:device-name "disk7" :read-bytes 4096 :write-bytes 8192)))
+                      (cl-weave:expect failure :to-be-null)
+                      (setf value nil
+                            failure nil
+                            include-named-p nil)
+                      (ntop.platform.darwin:read-darwin-block-storage-stats
+                       (lambda (devices)
+                        (setf value devices))
+                       (lambda (reason)
+                        (setf failure reason)))
+                      (cl-weave:expect value :to-be-null)
+                      (cl-weave:expect failure :to-be :no-block-storage-statistics)))))
+
 
 (cl-weave:describe "Darwin disk reader entry points"
                    (cl-weave:it-run-if (member :darwin *features*)

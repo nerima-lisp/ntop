@@ -35,8 +35,12 @@
                                                             (%temperature-screen-target-cells
                                                              target)
                                                             1)
-                                          collect (aref (%temperature-screen-target-cells target) row column))
+                                          collect (aref
+                                                   (%temperature-screen-target-cells target)
+                                                   row
+                                                   column))
                                     'string))))
+
 
 (defun %temperature-screen-golden (target)
   (format nil "~{~A~%~}" (%temperature-screen-lines target)))
@@ -126,17 +130,11 @@
                        (ntop.ui:table-column-max-percent (second columns))
                        :to-be
                        nil)))
-                   (cl-weave:it "defaults to Sensor ascending"
-                                (let ((config
-                                       (ntop.temperature.presentation:make-temperature-table-config)))
-                                  (cl-weave:expect
-                                   (ntop.ui:table-config-sort-column config)
-                                   :to-be
-                                   :sensor)
-                                  (cl-weave:expect
-                                   (ntop.ui:table-config-sort-order config)
-                                   :to-be
-                                   :ascending)))
+                   (cl-weave:it
+                    "defaults to Sensor ascending"
+                    (let ((config (ntop.temperature.presentation:make-temperature-table-config)))
+                     (cl-weave:expect (ntop.ui:table-config-sort-column config) :to-be :sensor)
+                     (cl-weave:expect (ntop.ui:table-config-sort-order config) :to-be :ascending)))
                    (cl-weave:it
                     "uses the shared temperature unit and ceiling formatter"
                     (cl-weave:expect (%temperature-column-text :celsius 37.2)
@@ -152,13 +150,13 @@
                                      :to-equal
                                      "N/A"))
                    (cl-weave:it "sorts the rendered rows by Sensor ASCII order"
-                                (let ((target
-                                       (%render-temperature-table
-                                        (ntop.temperature.presentation:make-temperature-table-config))))
-                                  (cl-weave:expect
-                                   (%temperature-screen-row-labels target)
-                                   :to-equal
-                                   (list "" "CPU (1)" "CPU (2)" "GPU"))))
+                                (let
+                                 ((target
+                                   (%render-temperature-table
+                                    (ntop.temperature.presentation:make-temperature-table-config))))
+                                 (cl-weave:expect (%temperature-screen-row-labels target)
+                                                  :to-equal
+                                                  (list "" "CPU (1)" "CPU (2)" "GPU"))))
                    (cl-weave:it "sorts the rendered rows by temperature"
                                 (let ((target
                                        (%render-temperature-table
@@ -201,8 +199,9 @@
                                        (make-list 4 :initial-element ""))))
                    (cl-weave:it "matches the fixture-data screen golden"
                                 (let* ((golden-path
-                                        (asdf:system-relative-pathname "ntop"
-                                                                       "t/feature/temperature/fixtures/screen-golden.txt"))
+                                        (asdf:system-relative-pathname
+                                         "ntop"
+                                         "t/feature/temperature/fixtures/screen-golden.txt"))
                                        (expected
                                         (string-right-trim (format nil "~%")
                                                            (uiop:read-file-string
@@ -256,3 +255,4 @@
                         gpu
                         :sensor
                         :sideways)))))
+

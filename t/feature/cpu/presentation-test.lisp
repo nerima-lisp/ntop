@@ -406,7 +406,17 @@
        (not (null (search "AVG" (cl-tty-kit:screen-to-string screen))))
        :to-be t))
     (let* ((sample
-             (ntop.cpu.domain:make-cpu-sample :sampled-at 1d0 :core-values (list (ntop.cpu.domain:make-cpu-core-value :core-index nil :usage-percent nil :frequency-mhz nil))))
+             (ntop.cpu.domain:make-cpu-sample :sampled-at
+                                              1d0
+                                              :core-values
+                                              (list
+                                               (ntop.cpu.domain:make-cpu-core-value
+                                                :core-index
+                                                nil
+                                                :usage-percent
+                                                nil
+                                                :frequency-mhz
+                                                nil))))
            (gauges (ntop.cpu.presentation::%cpu-basic-gauges sample "default"))
            (gauge (first gauges))
            (screen (cl-tty-kit:make-screen 64 2))
@@ -441,6 +451,7 @@
       (cl-weave:expect
        (search "AVG" (cl-tty-kit:screen-to-string screen))
        :to-equal nil))))
+
 
 (cl-weave:describe "CPU legend text styling"
   (cl-weave:it "uses theme text for missing row styles and unknown roles"

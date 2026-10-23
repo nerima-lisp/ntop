@@ -284,7 +284,10 @@
           (getf layout :maximum-buffer-size) 16)
     (cl-weave:with-mocked-functions
      (((symbol-function 'ntop.platform.darwin::%darwin-info)
-       (lambda (pid flavor size exact-p) (declare (ignore pid flavor size exact-p)) (when (eq mode :growth) (%f8a-darwin-test-write-integer (%f8a-darwin-test-octets 8) 0 8 77)))))
+       (lambda (pid flavor size exact-p)
+        (declare (ignore pid flavor size exact-p))
+        (when (eq mode :growth)
+         (%f8a-darwin-test-write-integer (%f8a-darwin-test-octets 8) 0 8 77)))))
      (cl-weave:expect
       (ntop.platform.darwin::%darwin-thread-ids 1)
       :to-be-null)

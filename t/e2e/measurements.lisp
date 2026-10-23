@@ -37,30 +37,27 @@
   timeout-seconds)
 
 (defun %make-measurement-directory ()
-  (loop for directory = (merge-pathnames
-                         (format nil
-                                 "ntop-measure-~d-~d/"
-                                 (get-universal-time)
-                                 (random 1000000000))
-                         (uiop:temporary-directory))
-        unless (probe-file directory)
-          do (ensure-directories-exist (merge-pathnames ".claim" directory)) (let ((claim
-                                                                                    (open
-                                                                                     (merge-pathnames
-                                                                                      ".claim"
-                                                                                      directory)
-                                                                                     :direction
-                                                                                     :output
-                                                                                     :if-exists
-                                                                                     nil
-                                                                                     :if-does-not-exist
-                                                                                     :create)))
-                                                                               (when
-                                                                                   claim
-                                                                                 (close
-                                                                                  claim)
-                                                                                 (return
-                                                                                  directory)))))
+  (loop for
+    directory
+    =
+    (merge-pathnames
+     (format nil "ntop-measure-~d-~d/" (get-universal-time) (random 1000000000))
+     (uiop:temporary-directory))
+    unless
+    (probe-file directory)
+    do
+    (ensure-directories-exist (merge-pathnames ".claim" directory))
+    (let ((claim
+           (open (merge-pathnames ".claim" directory)
+                 :direction
+                 :output
+                 :if-exists
+                 nil
+                 :if-does-not-exist
+                 :create)))
+      (when claim
+        (close claim)
+        (return directory)))))
 
 (defun %write-sexp (path value)
   (with-open-file
@@ -108,8 +105,12 @@
   path)
 
 (defun %append-octets (destination source)
-  (loop for octet across source
-        do (vector-push-extend octet destination))
+  (loop for
+    octet
+    across
+    source
+    do
+    (vector-push-extend octet destination))
   destination)
 
 (defun %octets-to-text (octets)
@@ -183,42 +184,41 @@
     (unless definition
       (%measurement-fail "Unknown measurement procedure: ~s" measurement))
     (%validate-duration definition duration-seconds timeout-seconds)
-    (let* ((deadline
-            (+ (%now) (%seconds-to-ticks timeout-seconds)))
+    (let* ((deadline (+ (%now) (%seconds-to-ticks timeout-seconds)))
            (directory nil)
            (*e2e-deadline* deadline))
-      (handler-case
-          (with-e2e-operation-timeout
-           ((format nil "measurement ~a" measurement)
-            deadline
-            timeout-seconds)
-           (setf directory (%make-measurement-directory))
-           (%write-manifest directory resolved-target measurement :running nil)
-           (funcall (symbol-function (getf definition :function))
-                    directory
-                    resolved-target
-                    rows
-                    columns
-                    rate
-                    runs
-                    duration-seconds
-                    timeout-seconds)
-           (%write-manifest directory
-                            resolved-target
-                            measurement
-                            :complete
-                            nil)
-           (format t
-                   "~a btm measurement complete; samples: ~a~%"
-                   measurement
-                   (namestring directory))
-           0)
+      (handler-case (with-e2e-operation-timeout
+                     ((format nil "measurement ~a" measurement) deadline
+                      timeout-seconds)
+                     (setf directory (%make-measurement-directory))
+                     (%write-manifest directory
+                                      resolved-target
+                                      measurement
+                                      :running
+                                      nil)
+                     (funcall (symbol-function (getf definition :function))
+                              directory
+                              resolved-target
+                              rows
+                              columns
+                              rate
+                              runs
+                              duration-seconds
+                              timeout-seconds)
+                     (%write-manifest directory
+                                      resolved-target
+                                      measurement
+                                      :complete
+                                      nil)
+                     (format t
+                             "~a btm measurement complete; samples: ~a~%"
+                             measurement
+                             (namestring directory))
+                     0)
         (error (condition)
           (when directory
             (with-e2e-operation-timeout
-             ("failure manifest"
-              (+ (%now) (%seconds-to-ticks 1d0))
-              1d0)
+             ("failure manifest" (+ (%now) (%seconds-to-ticks 1d0)) 1d0)
              (%write-manifest directory
                               resolved-target
                               measurement

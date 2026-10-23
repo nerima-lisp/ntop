@@ -47,6 +47,8 @@
 (defun keymap-test-action-label (entry)
   (ntop.app.application::keymap-entry-action-label entry))
 
+(defun keymap-test-entry-contexts (entry) (ntop.app.application::keymap-entry-contexts entry))
+
 (defun keymap-test-find-entry (kind action-label)
   (find-if
    (lambda (entry)
@@ -98,7 +100,7 @@
                                        entry)
                        unless (string= "Enter search text"
                                        (keymap-test-action-label entry))
-                         append (loop for context-label in (ntop.app.application::keymap-entry-contexts
+                         append (loop for context-label in (keymap-test-entry-contexts
                                                             entry)
                                       for context = (keymap-test-context-for
                                                      context-label

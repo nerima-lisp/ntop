@@ -65,7 +65,15 @@
                                        :to-equal
                                        expected)))
                    (cl-weave:it-each
-                    ((:page-up "PageUp") (:page-down "PageDown") (:up "Up") (:left "Left") (:enter "Enter") (:escape "Escape") (:backtab "Shift+Tab") (:control-a "Ctrl+A") (:shift-a "Shift+A") (:alt-a "Alt+A"))
+                    ((:page-up "PageUp") (:page-down "PageDown")
+                     (:up "Up")
+                     (:left "Left")
+                     (:enter "Enter")
+                     (:escape "Escape")
+                     (:backtab "Shift+Tab")
+                     (:control-a "Ctrl+A")
+                     (:shift-a "Shift+A")
+                     (:alt-a "Alt+A"))
                     "labels special key ~A as ~A"
                     (code expected)
                     (cl-weave:expect
@@ -74,7 +82,44 @@
                        (cl-tty-kit:make-key-event :type :special :code code)))
                      :to-equal
                      expected))
-                   (cl-weave:it "uses parity labels for control, alt, and extended modifiers" (let ((control (%captured-input-meaning (cl-tty-kit:make-key-event :type :character :code (code-char 99) :modifiers (list :control)))) (alt (%captured-input-meaning (cl-tty-kit:make-key-event :type :character :code (code-char 99) :modifiers (list :alt)))) (extended (%captured-input-meaning (cl-tty-kit:make-key-event :type :character :code (code-char 99) :modifiers (list :super))))) (cl-weave:expect (ntop.ui::input-meaning-key control) :to-equal "Ctrl+C") (cl-weave:expect (ntop.ui::input-meaning-key alt) :to-equal "Alt+c") (cl-weave:expect (ntop.ui::input-meaning-key extended) :to-equal "Super+c") (cl-weave:expect (ntop.ui::input-meaning-text control) :to-equal "c")))
+                   (cl-weave:it
+                    "uses parity labels for control, alt, and extended modifiers"
+                    (let ((control
+                           (%captured-input-meaning
+                            (cl-tty-kit:make-key-event :type
+                                                       :character
+                                                       :code
+                                                       (code-char 99)
+                                                       :modifiers
+                                                       (list :control))))
+                          (alt
+                           (%captured-input-meaning
+                            (cl-tty-kit:make-key-event :type
+                                                       :character
+                                                       :code
+                                                       (code-char 99)
+                                                       :modifiers
+                                                       (list :alt))))
+                          (extended
+                           (%captured-input-meaning
+                            (cl-tty-kit:make-key-event :type
+                                                       :character
+                                                       :code
+                                                       (code-char 99)
+                                                       :modifiers
+                                                       (list :super)))))
+                      (cl-weave:expect (ntop.ui::input-meaning-key control)
+                                       :to-equal
+                                       "Ctrl+C")
+                      (cl-weave:expect (ntop.ui::input-meaning-key alt)
+                                       :to-equal
+                                       "Alt+c")
+                      (cl-weave:expect (ntop.ui::input-meaning-key extended)
+                                       :to-equal
+                                       "Super+c")
+                      (cl-weave:expect (ntop.ui::input-meaning-text control)
+                                       :to-equal
+                                       "c")))
                    (cl-weave:it
                     "normalizes modifier order for special key labels"
                     (let ((meaning
@@ -94,7 +139,55 @@
                        (ntop.ui::input-meaning-modifiers meaning)
                        :to-equal
                        '(:control :alt :shift))))
-                   (cl-weave:it "uses shifted printable text and normalizes shifted fallback and space keys" (let ((shifted (%captured-input-meaning (cl-tty-kit:make-key-event :type :character :code (code-char 103) :modifiers (list :shift) :shifted-key (code-char 71)))) (shifted-code (%captured-input-meaning (cl-tty-kit:make-key-event :type :character :code (code-char 103) :modifiers (list :shift)))) (space (%captured-input-meaning (cl-tty-kit:make-key-event :type :character :code (code-char 32))))) (cl-weave:expect (ntop.ui::input-meaning-key shifted) :to-equal "G") (cl-weave:expect (ntop.ui::input-meaning-text shifted) :to-equal "G") (cl-weave:expect (ntop.ui::input-meaning-modifiers shifted) :to-equal (list :shift)) (cl-weave:expect (ntop.ui::input-meaning-key shifted-code) :to-equal "G") (cl-weave:expect (ntop.ui::input-meaning-text shifted-code) :to-equal "G") (cl-weave:expect (ntop.ui::input-meaning-key space) :to-equal "Space") (cl-weave:expect (ntop.ui::input-meaning-text space) :to-equal " ")))
+                   (cl-weave:it
+                    "uses shifted printable text and normalizes shifted fallback and space keys"
+                    (let ((shifted
+                           (%captured-input-meaning
+                            (cl-tty-kit:make-key-event :type
+                                                       :character
+                                                       :code
+                                                       (code-char 103)
+                                                       :modifiers
+                                                       (list :shift)
+                                                       :shifted-key
+                                                       (code-char 71))))
+                          (shifted-code
+                           (%captured-input-meaning
+                            (cl-tty-kit:make-key-event :type
+                                                       :character
+                                                       :code
+                                                       (code-char 103)
+                                                       :modifiers
+                                                       (list :shift))))
+                          (space
+                           (%captured-input-meaning
+                            (cl-tty-kit:make-key-event :type
+                                                       :character
+                                                       :code
+                                                       (code-char 32)))))
+                      (cl-weave:expect (ntop.ui::input-meaning-key shifted)
+                                       :to-equal
+                                       "G")
+                      (cl-weave:expect (ntop.ui::input-meaning-text shifted)
+                                       :to-equal
+                                       "G")
+                      (cl-weave:expect
+                       (ntop.ui::input-meaning-modifiers shifted)
+                       :to-equal
+                       (list :shift))
+                      (cl-weave:expect (ntop.ui::input-meaning-key shifted-code)
+                                       :to-equal
+                                       "G")
+                      (cl-weave:expect
+                       (ntop.ui::input-meaning-text shifted-code)
+                       :to-equal
+                       "G")
+                      (cl-weave:expect (ntop.ui::input-meaning-key space)
+                                       :to-equal
+                                       "Space")
+                      (cl-weave:expect (ntop.ui::input-meaning-text space)
+                                       :to-equal
+                                       " ")))
                    (cl-weave:it
                     "preserves IME text independently of the key code"
                     (let ((meaning
@@ -159,7 +252,21 @@
                     (%expect-unhandled-input
                      (cl-tty-kit:make-key-event :type :special :code code)))
                    (cl-weave:it-each
-                    ((:press :left "left-button-down") (:press :right "right-button-down") (:press :middle "middle-button-down") (:press :none "other-button-down") (:press :wheel-up "wheel-up") (:press :wheel-down "wheel-down") (:press :wheel-left "wheel-left") (:press :wheel-right "wheel-right") (:scroll :wheel-up "wheel-up") (:scroll :wheel-down "wheel-down") (:scroll :wheel-left "wheel-left") (:scroll :wheel-right "wheel-right") (:move :none "move") (:drag :left "drag") (:release :left "release"))
+                    ((:press :left "left-button-down")
+                     (:press :right "right-button-down")
+                     (:press :middle "middle-button-down")
+                     (:press :none "other-button-down")
+                     (:press :wheel-up "wheel-up")
+                     (:press :wheel-down "wheel-down")
+                     (:press :wheel-left "wheel-left")
+                     (:press :wheel-right "wheel-right")
+                     (:scroll :wheel-up "wheel-up")
+                     (:scroll :wheel-down "wheel-down")
+                     (:scroll :wheel-left "wheel-left")
+                     (:scroll :wheel-right "wheel-right")
+                     (:move :none "move")
+                     (:drag :left "drag")
+                     (:release :left "release"))
                     "maps mouse action ~A and button ~A"
                     (action button expected)
                     (let ((meaning

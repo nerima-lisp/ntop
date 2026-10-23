@@ -57,10 +57,8 @@
                    (cl-weave:it
                     "does not restore a row when the old PID is unavailable"
                     (cl-weave:expect
-                     (ntop.process.application::find-process-index-by-pid nil
-                                                                          (wp4-process-rows-with-pids
-                                                                           (list
-                                                                            nil
-                                                                            10)))
+                     (let ((rows (wp4-process-rows-with-pids (list nil 10))))
+                       (ntop.process.application::find-process-index-by-pid nil
+                                                                            rows))
                      :to-be
                      nil)))

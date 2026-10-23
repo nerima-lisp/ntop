@@ -1,6 +1,7 @@
 (in-package #:ntop.e2e)
 
-(defparameter *measurement-target-choices* (quote ("btm")))
+(defparameter *measurement-target-choices*
+  (quote ("btm")))
 
 (defparameter *measurement-name-choices*
   '("n1" "n2" "n3" "n4" "n5" "n6"))
@@ -102,9 +103,12 @@
                                       :description
                                       "Maximum wait for each process and frame."))
                    (:command "compare"
-                             (:description "Compare a baseline golden set with a candidate capture using FR-001 condition A."
-                                           :handler
-                                           #'%handle-compare)
+                             (:description
+                              (concatenate 'string
+                                           "Compare a baseline golden set with a candidate "
+                                           "capture using FR-001 condition A.")
+                              :handler
+                              #'%handle-compare)
                              (:option "scope"
                                       :kind
                                       :value
@@ -129,9 +133,10 @@
                                           :description
                                           "Candidate capture."))
                    (:command "measure"
-                             (:description "Run one bounded N1-N6 measurement against btm."
-                                           :handler
-                                           #'%handle-measure)
+                             (:description
+                              "Run one bounded N1-N6 measurement against btm."
+                              :handler
+                              #'%handle-measure)
                              (:option "measurement"
                                       :kind
                                       :value
@@ -140,7 +145,10 @@
                                       :required-p
                                       t
                                       :description
-                                      "N1 CPU, N2 RSS, N3 btm version, N4 key response, N5 resize response, N6 terminal mode.")
+                                      (concatenate 'string
+                                                   "N1 CPU, N2 RSS, N3 btm version, "
+                                                   "N4 key response, N5 resize response, "
+                                                   "N6 terminal mode."))
                              (:option "target"
                                       :kind
                                       :value
@@ -193,7 +201,9 @@
                                       :default
                                       1
                                       :description
-                                      "Number of runs. N1 and N2 sample for the specified duration.")
+                                      (concatenate 'string
+                                                   "Number of runs. N1 and N2 sample "
+                                                   "for the specified duration."))
                              (:option "duration-seconds"
                                       :kind
                                       :value
@@ -243,7 +253,9 @@
                                       :value-hint
                                       :dir
                                       :description
-                                      "On macOS, scan the golden directory for host-specific data.")))
+                                      (concatenate 'string
+                                                   "On macOS, scan the golden directory "
+                                                   "for host-specific data."))))
 
 (defun main (&optional (argv (cl-cli:application-argv)))
   (cl-cli:run-app *e2e-app* :argv argv))

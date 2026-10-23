@@ -17,19 +17,22 @@
             rate)
     (format stream
             "[processes]~%case_sensitive = false~%default_grouped = true~%~%")
-    (loop for row in *btm-layout*
-          do (format stream "[[row]]~%") (loop for (type ratio marker) in row
-                                               do (format stream
-                                                          "[[row.child]]~%type = ~s~%"
-                                                          (string-downcase
-                                                           (symbol-name type))) (when
-                                                                                    ratio
-                                                                                  (format
-                                                                                   stream
-                                                                                   "ratio = ~d~%"
-                                                                                   ratio)) (when
-                                                                                               marker
-                                                                                             (format
-                                                                                              stream
-                                                                                              "default = true~%"))) (terpri
-                                                                                                                     stream))))
+    (loop for
+      row
+      in
+      *btm-layout*
+      do
+      (format stream "[[row]]~%")
+      (loop for
+        (type ratio marker)
+        in
+        row
+        do
+        (format stream
+                "[[row.child]]~%type = ~s~%"
+                (string-downcase (symbol-name type)))
+        (when ratio
+          (format stream "ratio = ~d~%" ratio))
+        (when marker
+          (format stream "default = true~%")))
+      (terpri stream))))

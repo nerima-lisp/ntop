@@ -85,11 +85,18 @@
       (let ((handle
               (ntop.platform.darwin::%make-retained-darwin-iohid-service-handle
                service 30 client)))
-        (cl-weave:expect (sb-sys:sap-int (ntop.platform.darwin::darwin-iohid-service-handle-client-pointer handle)) :to-be (sb-sys:sap-int retained-client))
+        (cl-weave:expect
+         (sb-sys:sap-int
+          (ntop.platform.darwin::darwin-iohid-service-handle-client-pointer handle))
+         :to-be
+         (sb-sys:sap-int retained-client))
         (cl-weave:expect finalized :to-be handle)
         (ntop.platform.darwin::%release-darwin-iohid-service-handle handle)
         (ntop.platform.darwin::%release-darwin-iohid-service-handle handle)
-        (cl-weave:expect (mapcar (function sb-sys:sap-int) released) :to-equal (mapcar (function sb-sys:sap-int) (list retained-client service)))
+        (cl-weave:expect (mapcar (function sb-sys:sap-int) released)
+                         :to-equal
+                         (mapcar (function sb-sys:sap-int)
+                                 (list retained-client service)))
         (cl-weave:expect cancelled :to-equal (list handle))
         (setf retain-result nil
               released nil)
@@ -99,7 +106,9 @@
             service 31 client))
          :to-throw
          'error)
-        (cl-weave:expect (mapcar (function sb-sys:sap-int) released) :to-equal (mapcar (function sb-sys:sap-int) (list service)))
+        (cl-weave:expect (mapcar (function sb-sys:sap-int) released)
+                         :to-equal
+                         (mapcar (function sb-sys:sap-int) (list service)))
         (setf retain-result retained-client
               fail-finalize t
               released nil)
@@ -109,7 +118,10 @@
             service 32 client))
          :to-throw
          'error)
-        (cl-weave:expect (mapcar (function sb-sys:sap-int) released) :to-equal (mapcar (function sb-sys:sap-int) (list retained-client service)))))))
+        (cl-weave:expect (mapcar (function sb-sys:sap-int) released)
+                         :to-equal
+                         (mapcar (function sb-sys:sap-int)
+                                 (list retained-client service)))))))
   (cl-weave:it-run-if
    (member :darwin *features*)
    "creates and releases matching dictionary values on success and failure"
@@ -158,7 +170,9 @@
        :to-throw
        'error)
       (cl-weave:expect calls :to-be 0)
-      (cl-weave:expect (mapcar (function sb-sys:sap-int) released) :to-equal (mapcar (function sb-sys:sap-int) (list (sb-sys:int-sap 20))))
+      (cl-weave:expect (mapcar (function sb-sys:sap-int) released)
+                       :to-equal
+                       (mapcar (function sb-sys:sap-int) (list (sb-sys:int-sap 20))))
       (setf keys (list (sb-sys:int-sap 21) (sb-sys:int-sap 22))
             released nil
             number-fails t)
@@ -167,7 +181,10 @@
          (ntop.platform.darwin::%make-iohid-matching-dictionary))
        :to-throw
        'error)
-      (cl-weave:expect (mapcar (function sb-sys:sap-int) released) :to-equal (mapcar (function sb-sys:sap-int) (list (sb-sys:int-sap 22) (sb-sys:int-sap 21))))
+      (cl-weave:expect (mapcar (function sb-sys:sap-int) released)
+                       :to-equal
+                       (mapcar (function sb-sys:sap-int)
+                               (list (sb-sys:int-sap 22) (sb-sys:int-sap 21))))
       (setf keys (list (sb-sys:int-sap 23) (sb-sys:int-sap 24))
             numbers (list (sb-sys:int-sap 25) (sb-sys:int-sap 26))
             dictionary nil
@@ -178,8 +195,13 @@
          (ntop.platform.darwin::%make-iohid-matching-dictionary))
        :to-throw
        'error)
-      (cl-weave:expect (mapcar (function sb-sys:sap-int) released) :to-equal (mapcar (function sb-sys:sap-int) (list (sb-sys:int-sap 26) (sb-sys:int-sap 25)
-                             (sb-sys:int-sap 24) (sb-sys:int-sap 23)))))))
+      (cl-weave:expect (mapcar (function sb-sys:sap-int) released)
+                       :to-equal
+                       (mapcar (function sb-sys:sap-int)
+                               (list (sb-sys:int-sap 26)
+                                     (sb-sys:int-sap 25)
+                                     (sb-sys:int-sap 24)
+                                     (sb-sys:int-sap 23)))))))
   (cl-weave:it-run-if
  (member :darwin *features*)
  "reads Product values and copies only named services"
@@ -349,7 +371,10 @@
        (ntop.platform.darwin::%enumerate-darwin-iohid-services)
        :to-equal
        '((63 "Sensor" :handle)))
-      (cl-weave:expect (mapcar (function sb-sys:sap-int) (reverse released)) :to-equal (mapcar (function sb-sys:sap-int) (list services matching client)))
+      (cl-weave:expect (mapcar (function sb-sys:sap-int) (reverse released))
+                       :to-equal
+                       (mapcar (function sb-sys:sap-int)
+                               (list services matching client)))
       (setf client-result nil
             released nil)
       (cl-weave:expect
@@ -366,7 +391,9 @@
          (ntop.platform.darwin::%enumerate-darwin-iohid-services))
        :to-throw
        'error)
-      (cl-weave:expect (mapcar (function sb-sys:sap-int) released) :to-equal (mapcar (function sb-sys:sap-int) (list client)))
+      (cl-weave:expect (mapcar (function sb-sys:sap-int) released)
+                       :to-equal
+                       (mapcar (function sb-sys:sap-int) (list client)))
       (setf matching-result matching
             services-result nil
             released nil)
@@ -375,7 +402,9 @@
          (ntop.platform.darwin::%enumerate-darwin-iohid-services))
        :to-throw
        'error)
-      (cl-weave:expect (mapcar (function sb-sys:sap-int) (reverse released)) :to-equal (mapcar (function sb-sys:sap-int) (list matching client)))
+      (cl-weave:expect (mapcar (function sb-sys:sap-int) (reverse released))
+                       :to-equal
+                       (mapcar (function sb-sys:sap-int) (list matching client)))
       (setf services-result services
             released nil
             copy-fails t)
@@ -384,7 +413,10 @@
          (ntop.platform.darwin::%enumerate-darwin-iohid-services))
        :to-throw
        'error)
-      (cl-weave:expect (mapcar (function sb-sys:sap-int) (reverse released)) :to-equal (mapcar (function sb-sys:sap-int) (list services matching client)))
+      (cl-weave:expect (mapcar (function sb-sys:sap-int) (reverse released))
+                       :to-equal
+                       (mapcar (function sb-sys:sap-int)
+                               (list services matching client)))
       (cl-weave:expect released-handles :to-equal (list handle)))))
   (cl-weave:it-run-if
    (member :darwin *features*)
@@ -455,56 +487,4 @@
       'error)
      (cl-weave:expect (length looked-up) :to-be 8)
      (cl-weave:expect (first looked-up) :to-equal missing)))))
-(cl-weave:describe "Darwin IOHID API setup"
-  (cl-weave:it-run-if
-   (member :darwin *features*)
-   "passes number type and value to CFNumberCreate"
-   (let ((reference (sb-sys:int-sap 8))
-         (arguments nil))
-     (with-iohid-mocked-functions (((symbol-function 'ntop.platform.darwin::%cf-number-create)
-        (lambda (allocator type value)
-          (setf arguments
-                (list (sb-sys:sap-int allocator)
-                      type
-                      (sb-sys:sap-ref-32 value 0)))
-          reference)))
-      (cl-weave:expect
-       (ntop.platform.darwin::%make-iohid-number #xff00)
-       :to-be
-       reference)
-      (cl-weave:expect arguments :to-equal '(0 3 #xff00))
-      (setf reference nil)
-      (cl-weave:expect
-       (lambda ()
-         (ntop.platform.darwin::%make-iohid-number 5))
-       :to-throw
-       'error))))
-  (cl-weave:it-run-if
-   (member :darwin *features*)
-   "loads the framework before exposing the two IOHID operations"
-   (let ((loaded nil)
-         (required 0))
-     (with-iohid-mocked-functions (((symbol-function 'sb-alien:load-shared-object)
-        (lambda (path &key dont-save)
-          (setf loaded (list path dont-save))))
-       ((symbol-function
-        'ntop.platform.darwin::%require-darwin-iohid-symbols)
-        (lambda ()
-          (incf required))))
-      (let ((api (ntop.platform.darwin:load-darwin-iohid-api)))
-        (cl-weave:expect
-         loaded
-         :to-equal
-         (list "/System/Library/Frameworks/IOKit.framework/IOKit" t))
-        (cl-weave:expect required :to-be 1)
-        (cl-weave:expect
-         (getf api :enumerate-services)
-         :to-equal
-         (symbol-function
-          'ntop.platform.darwin::%enumerate-darwin-iohid-services))
-        (cl-weave:expect
-         (getf api :read-temperature)
-         :to-equal
-         (symbol-function
-          'ntop.platform.darwin::%read-darwin-iohid-service-temperature)))))))
 

@@ -154,7 +154,8 @@
                          :style (or (aref styles x y)
                                     (presentation-theme-style
                                      (chart-config-theme-name config)
-                                     :graph))))))) (defun %rasterize-chart-series (series config x-range width height dots markers styles)
+                                     :graph)))))))
+ (defun %rasterize-chart-series (series config x-range width height dots markers styles)
   (let ((style (or (chart-series-style series)
                    (presentation-theme-style
                     (chart-config-theme-name config)

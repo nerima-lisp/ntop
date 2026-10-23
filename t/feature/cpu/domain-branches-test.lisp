@@ -156,7 +156,9 @@
                                                                               sample)))
                                                                   (lambda
                                                                       (unavailable-reason)
-                                                                    (setf reason unavailable-reason)))
+                                                                    (setf
+                                                                     reason
+                                                                     unavailable-reason)))
                       (cl-weave:expect reason :to-be :read-failed)))
                    (cl-weave:it
                     "rejects a source that is not a CPU source sample"
@@ -178,7 +180,9 @@
                                                                               sample)))
                                                                   (lambda
                                                                       (unavailable-reason)
-                                                                    (setf reason unavailable-reason)))
+                                                                    (setf
+                                                                     reason
+                                                                     unavailable-reason)))
                       (cl-weave:expect reason :to-be :read-failed)))
                    (cl-weave:it "rejects a non-real monotonic timestamp"
                                 (let ((reason nil)
@@ -251,6 +255,7 @@
                                           t))
                                  :to-be
                                  t)))
+
 (cl-weave:describe
  "CPU collector cgroup integration"
  (cl-weave:it

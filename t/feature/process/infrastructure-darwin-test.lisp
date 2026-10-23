@@ -122,7 +122,23 @@
      (%f8a-darwin-start-writer (pathname)
        (let ((form
                (format nil
-                       "(let* ((stream (open ~S :direction :output :if-exists :append :if-does-not-exist :create :element-type '(unsigned-byte 8))) (chunk (make-array 65536 :element-type '(unsigned-byte 8))) (interval (floor internal-time-units-per-second 16)) (next-write (get-internal-real-time)) (deadline (+ next-write (* 12 internal-time-units-per-second)))) (dotimes (index (length chunk)) (setf (aref chunk index) (random 256))) (unwind-protect (loop while (< (get-internal-real-time) deadline) do (write-sequence chunk stream) (finish-output stream) (sb-posix:fsync (sb-sys:fd-stream-fd stream)) (incf next-write interval) (let ((remaining (- next-write (get-internal-real-time)))) (when (plusp remaining) (sleep (/ remaining internal-time-units-per-second))))) (close stream)))"
+                       (concatenate 'string
+                                    "(let* ((stream (open ~S :direction :output :if-exists "
+                                    ":append :if-does-not-exist :create :element-type "
+                                    "'(unsigned-byte 8))) (chunk (make-array 65536 "
+                                    ":element-type '(unsigned-byte 8))) (interval (floor "
+                                    "internal-time-units-per-second 16)) (next-write "
+                                    "(get-internal-real-time)) (deadline (+ next-write (* 12 "
+                                    "internal-time-units-per-second)))) (dotimes (index "
+                                    "(length chunk)) (setf (aref chunk index) (random 256))) "
+                                    "(unwind-protect (loop while (< (get-internal-real-time) "
+                                    "deadline) do (write-sequence chunk stream) "
+                                    "(finish-output stream) (sb-posix:fsync "
+                                    "(sb-sys:fd-stream-fd stream)) (incf next-write "
+                                    "interval) (let ((remaining (- next-write "
+                                    "(get-internal-real-time)))) (when (plusp remaining) "
+                                    "(sleep (/ remaining internal-time-units-per-second))))) "
+                                    "(close stream)))")
                        (namestring pathname))))
          (sb-ext:run-program
           (namestring sb-ext:*runtime-pathname*)
@@ -401,3 +417,4 @@
 )
 
 )
+

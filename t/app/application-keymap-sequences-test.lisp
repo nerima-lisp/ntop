@@ -4,7 +4,14 @@
                    (cl-weave:it
                     "waits for catalog-derived prefixes and completes them within one second"
                     (let ((sequence-rows (keymap-test-sequence-rows)))
-                      (cl-weave:expect (length (remove-duplicates (mapcar (function second) sequence-rows) :test (function string=))) :to-equal 2)
+                      (cl-weave:expect
+                       (length
+                        (remove-duplicates
+                         (mapcar (function second) sequence-rows)
+                         :test
+                         (function string=)))
+                       :to-equal
+                       2)
                       (dolist (sequence-row sequence-rows)
                         (destructuring-bind (entry binding context) sequence-row
                           (let* ((state
@@ -268,9 +275,9 @@
                                   (cl-weave:expect (length unhandled)
                                                    :to-equal
                                                    1))
-                              (progn
-                                (cl-weave:expect (length actions) :to-equal 1)
-                                (cl-weave:expect unhandled :to-equal nil))))
+                                (progn
+                                  (cl-weave:expect (length actions) :to-equal 1)
+                                  (cl-weave:expect unhandled :to-equal nil))))
                           (multiple-value-bind (result actions unhandled)
                               (keymap-test-dispatch-once
                                (ntop.app.application:make-application-keymap-state)
@@ -295,9 +302,9 @@
                                   (cl-weave:expect (length unhandled)
                                                    :to-equal
                                                    1))
-                              (progn
-                                (cl-weave:expect (length actions) :to-equal 1)
-                                (cl-weave:expect unhandled :to-equal nil))))))))
+                                (progn
+                                  (cl-weave:expect (length actions) :to-equal 1)
+                                  (cl-weave:expect unhandled :to-equal nil))))))))
                    (cl-weave:it
                     "suppresses expand and view-cycle keys in basic mode"
                     (dolist

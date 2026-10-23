@@ -244,7 +244,17 @@
                    (cl-weave:it "drops invalid cgroup counters and limits"
                                 (cl-weave:expect
                                  (ntop.cpu.infrastructure::%linux-cgroup-source-data
-                                  (list :version 1 :cpu-quota 0 :cpu-period -1 :cpu-usage -1 :cpu-stat nil))
+                                  (list
+                                   :version
+                                   1
+                                   :cpu-quota
+                                   0
+                                   :cpu-period
+                                   -1
+                                   :cpu-usage
+                                   -1
+                                   :cpu-stat
+                                   nil))
                                  :to-be
                                  nil))
                    (cl-weave:it "looks up present and absent cgroup statistics"
@@ -261,3 +271,4 @@
                                   "throttled_usec")
                                  :to-be
                                  nil)))
+

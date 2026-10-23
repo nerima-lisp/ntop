@@ -1,70 +1,5 @@
 (in-package #:ntop.test)
 
-(defun %wp4-metrics-record (pid &key
-                                ppid
-                                name
-                                command
-                                cpu-time-ns
-                                resident-memory-bytes
-                                virtual-memory-bytes
-                                read-bytes
-                                write-bytes
-                                uid
-                                user-name
-                                state
-                                start-time-unix-seconds
-                                priority
-                                nice
-                                gpu-usage-percent
-                                gpu-memory-bytes
-                                ps-fallback-cpu-percent)
-  (ntop.process.domain:make-process-record :pid
-                                           pid
-                                           :ppid
-                                           ppid
-                                           :name
-                                           name
-                                           :command
-                                           command
-                                           :cpu-time-ns
-                                           cpu-time-ns
-                                           :resident-memory-bytes
-                                           resident-memory-bytes
-                                           :virtual-memory-bytes
-                                           virtual-memory-bytes
-                                           :read-bytes
-                                           read-bytes
-                                           :write-bytes
-                                           write-bytes
-                                           :uid
-                                           uid
-                                           :user-name
-                                           user-name
-                                           :state
-                                           state
-                                           :start-time-unix-seconds
-                                           start-time-unix-seconds
-                                           :priority
-                                           priority
-                                           :nice
-                                           nice
-                                           :gpu-usage-percent
-                                           gpu-usage-percent
-                                           :gpu-memory-bytes
-                                           gpu-memory-bytes
-                                           :ps-fallback-cpu-percent
-                                           ps-fallback-cpu-percent))
-
-(defun %wp4-metrics-sample (sampled-at &optional record)
-  (ntop.process.domain:make-process-sample :sampled-at
-                                           sampled-at
-                                           :processes
-                                           (if record
-                                               (list record)
-                                               nil)
-                                           :signals
-                                           nil))
-
 (cl-weave:describe "WP4 process metrics"
                    (cl-weave:it-each
                     ((:cpu-normal 0 1000000000 2 4 nil nil nil nil 12.5)
@@ -275,8 +210,7 @@
                            (current-sample
                             (%wp4-metrics-sample (+ 5 elapsed) current-record)))
                       (let ((rate
-                             (ntop.process.domain::process-read-bytes-per-second
-                              previous-sample
+                             (%wp4-read-bytes-per-second previous-sample
                               current-sample
                               23)))
                         (cl-weave:expect
@@ -311,8 +245,7 @@
                                                                      :read-bytes
                                                                      20))))
                       (cl-weave:expect
-                       (ntop.process.domain::process-read-bytes-per-second
-                        previous-sample
+                       (%wp4-read-bytes-per-second previous-sample
                         current-sample
                         31)
                        :to-be
@@ -326,8 +259,7 @@
                                                              2))))
                                   (cl-weave:expect
                                    (handler-case (progn
-                                                   (ntop.process.domain::process-read-bytes-per-second
-                                                    sample
+                                                   (%wp4-read-bytes-per-second sample
                                                     sample
                                                     41)
                                                    :returned)
@@ -512,146 +444,4 @@
                                                                      1)
                                                                     71)
                      :to-be
-                     nil))
-                   (cl-weave:around-each (next)
-                                         (let ((cl-weave:*property-seed*
-                                                20261024))
-                                           (funcall next)))
-                   (cl-weave:it-property
-                    "WP4 process read rate follows fractional elapsed time"
-                    ((values
-                      (cl-weave:gen-tuple
-                       (cl-weave:gen-integer :min 0 :max 1000000)
-                       (cl-weave:gen-integer :min 0 :max 1000000)
-                       (cl-weave:gen-integer :min 1 :max 60))))
-                    (destructuring-bind (previous increment elapsed) values
-                      (let* ((before
-                              (%wp4-metrics-record 81 :read-bytes previous))
-                             (after
-                              (%wp4-metrics-record 81
-                                                   :read-bytes
-                                                   (+ previous increment)))
-                             (actual
-                              (ntop.process.domain::process-read-bytes-per-second
-                               (%wp4-metrics-sample 0 before)
-                               (%wp4-metrics-sample elapsed after)
-                               81)))
-                        (cl-weave:expect actual :to-equal (/ increment elapsed)))))
-                   (cl-weave:it-property
-                    "WP4 reset read counters never produce negative rates"
-                    ((values
-                      (cl-weave:gen-tuple
-                       (cl-weave:gen-integer :min 0 :max 1000000)
-                       (cl-weave:gen-integer :min 0 :max 1000000)
-                       (cl-weave:gen-integer :min 1 :max 60))))
-                    (destructuring-bind (previous current elapsed) values
-                      (let ((actual
-                             (ntop.process.domain::process-read-bytes-per-second
-                              (%wp4-metrics-sample 0
-                                                   (%wp4-metrics-record 91
-                                                                        :read-bytes
-                                                                        previous))
-                              (%wp4-metrics-sample elapsed
-                                                   (%wp4-metrics-record 91
-                                                                        :read-bytes
-                                                                        current))
-                              91)))
-                        (cl-weave:expect actual
-                                         :to-satisfy
-                                         (lambda (rate)
-                                           (>= rate 0))))))
-                   (cl-weave:it
-                    "returns no current-usage percentage without system activity data"
-                    (let* ((previous
-                            (%wp4-metrics-sample 0
-                                                 (%wp4-metrics-record 101
-                                                                      :cpu-time-ns
-                                                                      0)))
-                           (current
-                            (%wp4-metrics-sample 1
-                                                 (%wp4-metrics-record 101
-                                                                      :cpu-time-ns
-                                                                      1000000000))))
-                      (cl-weave:expect
-                       (ntop.process.domain::process-cpu-percent previous
-                                                                 current
-                                                                 101
-                                                                 4
-                                                                 :current-usage-p
-                                                                 t)
-                       :to-be
-                       nil)))
-                   (cl-weave:it "rejects unsupported CPU accounting modes"
-                                (let* ((previous
-                                        (%wp4-metrics-sample 0
-                                                             (%wp4-metrics-record
-                                                              102
-                                                              :cpu-time-ns
-                                                              0)))
-                                       (current
-                                        (%wp4-metrics-sample 1
-                                                             (%wp4-metrics-record
-                                                              102
-                                                              :cpu-time-ns
-                                                              1000000000))))
-                                  (cl-weave:expect
-                                   (handler-case (progn
-                                                   (ntop.process.domain::process-cpu-percent
-                                                    previous
-                                                    current
-                                                    102
-                                                    2
-                                                    :cpu-mode
-                                                    :unsupported)
-                                                   :returned)
-                                     (error ()
-                                       :signaled))
-                                   :to-be
-                                   :signaled)))
-                   (cl-weave:it
-                    "leaves normalized CPU unavailable when capacity is zero"
-                    (let* ((previous
-                            (%wp4-metrics-sample 0
-                                                 (%wp4-metrics-record 103
-                                                                      :cpu-time-ns
-                                                                      0)))
-                           (current
-                            (%wp4-metrics-sample 1
-                                                 (%wp4-metrics-record 103
-                                                                      :cpu-time-ns
-                                                                      1000000000))))
-                      (cl-weave:expect
-                       (ntop.process.domain::process-cpu-percent previous
-                                                                 current
-                                                                 103
-                                                                 0)
-                       :to-be
-                       nil)))
-                   (cl-weave:it
-                    "keeps zero-total memory and future start times unavailable or clamped"
-                    (let* ((sample
-                            (%wp4-metrics-sample 1
-                                                 (%wp4-metrics-record 104
-                                                                      :resident-memory-bytes
-                                                                      10
-                                                                      :gpu-memory-bytes
-                                                                      4
-                                                                      :start-time-unix-seconds
-                                                                      100)))
-                           (row
-                            (ntop.process.domain::process-row-from-samples nil
-                                                                           sample
-                                                                           104
-                                                                           :memory-total-bytes
-                                                                           0
-                                                                           :gpu-memory-total-bytes
-                                                                           0
-                                                                           :current-time-unix-seconds
-                                                                           90)))
-                      (cl-weave:expect
-                       (list
-                        (ntop.process.domain:process-row-memory-percent row)
-                        (ntop.process.domain:process-row-gpu-memory-percent row)
-                        (ntop.process.domain:process-row-elapsed-seconds row))
-                       :to-equal
-                       (list nil nil 0)))))
+                     nil)))

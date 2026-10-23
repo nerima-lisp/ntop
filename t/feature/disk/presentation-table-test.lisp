@@ -181,8 +181,9 @@
                                    '("disk1" "disk4"))))
                    (cl-weave:it "matches the fixture-data screen golden"
                                 (let* ((golden-path
-                                        (asdf:system-relative-pathname "ntop"
-                                                                       "t/feature/disk/goldens/presentation-table-96x4.txt"))
+                                        (asdf:system-relative-pathname
+                                         "ntop"
+                                         "t/feature/disk/goldens/presentation-table-96x4.txt"))
                                        (expected
                                         (string-right-trim '(#\Newline #\Return)
                                                            (uiop:read-file-string
@@ -227,3 +228,4 @@
                         columns)
                        :to-equal
                        (make-list (length columns) :initial-element "N/A")))))
+
