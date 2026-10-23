@@ -81,7 +81,7 @@
    #:load-darwin-iohid-api
    ;; F7, infrastructure-power.lisp: power bindings.
    ;; F8a, infrastructure-libproc.lisp: libproc bindings.
-   ))
+   #:read-darwin-process-rows))
 
 (define-ntop-package #:ntop.platform.linux
   (:documentation "Linux procfs and sysfs access.")
@@ -91,7 +91,7 @@
    #:read-linux-proc-meminfo #:read-linux-cgroup-data #:read-linux-process-stat
    #:read-linux-process-status #:read-linux-process-io #:read-linux-process-cmdline
    #:read-linux-process-tasks #:read-proc-mounts #:read-proc-diskstats #:read-linux-statvfs
-   #:read-linux-network-statistics #:read-linux-cpu-frequency-khz #:read-linux-temperatures
+   #:read-linux-network-statistics #:read-linux-cpu-frequency-khz
    #:enumerate-linux-temperature-sources #:read-linux-temperature-values
    #:read-linux-batteries #:read-linux-amd-gpus))
 
@@ -384,10 +384,11 @@
    #:update-process-termination-targets #:select-process-signal
    #:send-process-termination))
 
-(define-ntop-package #:ntop.process.infrastructure (:documentation "Process data and signals.")
+(define-ntop-package #:ntop.process.infrastructure
+    (:documentation "Process data and signals.")
   (:export
    ;; F8a: process data collection.
-   ))
+   #:process-collector #:make-process-collector #:send-process-signal))
 
 (define-ntop-package #:ntop.process.presentation (:documentation "Process tables and dialogs.")
   (:export
@@ -453,13 +454,20 @@
  #:parity-extension-key #:parity-extension-contexts #:parity-extension-behavior
  #:parity-extension-relation #:parity-extension-source))
 
-(define-ntop-package #:ntop.app.application (:documentation "Application event handling.")
+(define-ntop-package #:ntop.app.application
+    (:documentation "Application event handling.")
   (:export
    ;; WP10: key bindings.
    #:application-keymap-state #:application-keymap-state-p
    #:make-application-keymap-state #:dispatch-application-input
    ;; WP12a: event loop and sampler.
-   #:collect-application-snapshot #:run-fixed-rate-sampler
+   #:collect-application-snapshot #:collect-application-result
+   #:application-collection-result #:application-collection-result-p
+   #:application-collection-result-snapshot
+   #:application-collection-result-unavailability-reasons
+   #:application-unavailability-reasons #:application-unavailability-reasons-p
+   #:application-unavailability-reason
+   #:run-fixed-rate-sampler
    #:apply-application-action #:run-application-loop
    ;; WP12b: application composition.
    ))
