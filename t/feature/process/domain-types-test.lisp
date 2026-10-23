@@ -115,4 +115,11 @@
        (every (lambda (accessor)
                 (not (fboundp (list 'setf accessor))))
               accessors)
-       :to-be t))))
+       :to-be t)))
+  (cl-weave:it "constructs process rows with a read-only parent PID"
+    (let ((row
+            (ntop.process.domain:make-process-row :pid 42 :ppid 7)))
+      (cl-weave:expect (ntop.process.domain:process-row-ppid row) :to-be 7)
+      (cl-weave:expect
+       (fboundp (quote (setf ntop.process.domain:process-row-ppid)))
+       :to-be nil))))

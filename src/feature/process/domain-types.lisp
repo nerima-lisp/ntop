@@ -43,6 +43,7 @@
 (defstruct (process-row (:copier nil))
   (count nil :type (or null integer) :read-only t)
   (pid nil :type (or null integer) :read-only t)
+  (ppid nil :type (or null integer) :read-only t)
   (name nil :type (or null string) :read-only t)
   (command nil :type (or null string) :read-only t)
   (cpu-percent nil :type ntop.shared.domain:measurement-value :read-only t)
