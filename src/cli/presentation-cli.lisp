@@ -11,14 +11,8 @@
   (declare (ignore state action))
   nil)
 
-(defun %supported-platform-p ()
-  #+(or darwin linux) t
-  #-(or darwin linux) nil)
-
+#+(or darwin linux)
 (defun %run-application (config)
-  (unless (%supported-platform-p)
-    (return-from %run-application
-      1))
   (funcall *application-runner*
            config
            nil
@@ -27,6 +21,11 @@
            :on-action
            #'%minimal-action-handler)
   0)
+
+#-(or darwin linux)
+(defun %run-application (config)
+  (declare (ignore config))
+  1)
 
 (defun %run-cli (argv)
   (handler-case (let* ((app (%make-cli-app))
