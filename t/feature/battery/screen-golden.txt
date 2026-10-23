@@ -1,0 +1,8 @@
+Charge
+[|||||||||||||||||||        73%]
+
+Rate           14.40W
+State          Charging
+To full         1h 2m 3s
+Health          82.35%
+
