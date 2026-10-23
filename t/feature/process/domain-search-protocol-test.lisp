@@ -4,7 +4,9 @@
     ((query (eql :successful-query)) regex-p case-sensitive-p whole-word-p
      on-success on-syntax-error)
   (declare (ignore query regex-p case-sensitive-p whole-word-p on-syntax-error))
-  (funcall on-success #'identity))
+  (funcall on-success
+           (lambda (row)
+             (string= (ntop.process.domain:process-row-name row) "worker"))))
 
 (defmethod ntop.process.domain::compile-process-search
     ((query (eql :invalid-query)) regex-p case-sensitive-p whole-word-p
@@ -17,14 +19,19 @@
             :message "unexpected token")))
 
 (cl-weave:describe "process search protocol"
-  (cl-weave:it "sends a predicate to the success continuation"
+  (cl-weave:it "sends a predicate that accepts one process row"
     (let ((predicate nil)
-          (syntax-error nil))
+          (syntax-error nil)
+          (row (ntop.process.domain:make-process-row :name "worker")))
       (ntop.process.domain::compile-process-search
        :successful-query nil t nil
        (lambda (value) (setf predicate value))
        (lambda (value) (setf syntax-error value)))
-      (cl-weave:expect (funcall predicate :value) :to-be :value)
+      (cl-weave:expect (funcall predicate row) :to-be t)
+      (cl-weave:expect
+       (funcall predicate
+                (ntop.process.domain:make-process-row :name "other"))
+       :to-be nil)
       (cl-weave:expect syntax-error :to-be nil)))
 
   (cl-weave:it "sends a positioned syntax error to its continuation"

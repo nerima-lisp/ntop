@@ -8,4 +8,6 @@
 (defgeneric compile-process-search
     (query regex-p case-sensitive-p whole-word-p on-success on-syntax-error)
   (:documentation
-   "Compile QUERY; error offsets are zero-based and half-open character positions."))
+   "Compile QUERY; ON-SUCCESS receives a PROCESS-ROW predicate.
+   ON-SYNTAX-ERROR receives a PROCESS-SEARCH-SYNTAX-ERROR with zero-based,
+   half-open offsets."))

@@ -36,7 +36,7 @@
               '(defstruct (ntop.test::sample-value
                             (:include ntop.shared.domain:sample-record)
                             (:copier nil))
-                 (ntop.test::amount 0))))))
+                 (ntop.test::amount 0 :read-only t))))))
 
   (cl-weave:it "constructs a shared record with its monotonic timestamp"
     (let ((sample (ntop.shared.domain:make-sample-record :sampled-at 12.5)))
@@ -50,3 +50,10 @@
     (funcall (symbol-function
               (intern "MAKE-MEASUREMENT-FIXTURE-SAMPLE" "NTOP.TEST"))
              :amount 3)))
+(cl-weave:it
+  "does not generate sample slot writers"
+  (cl-weave:expect
+   (list
+    (fboundp '(setf ntop.shared.domain:sample-record-sampled-at))
+    (fboundp '(setf ntop.test::measurement-fixture-sample-amount)))
+   :to-equal '(nil nil)))

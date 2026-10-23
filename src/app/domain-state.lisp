@@ -42,3 +42,15 @@
     :process-search
     :process-terminate
     :quit))
+(defstruct (collection-snapshot (:copier nil))
+  (sampled-at (error "Snapshot timestamp is required.")
+              :type ntop.shared.domain:monotonic-seconds
+              :read-only t)
+  (cpu-sample nil :type (or null ntop.cpu.domain:cpu-sample) :read-only t)
+  (memory-sample nil :type (or null ntop.memory.domain:memory-sample) :read-only t)
+  (gpu-sample nil :type (or null ntop.gpu.domain:gpu-sample) :read-only t)
+  (network-sample nil :type (or null ntop.network.domain:network-sample) :read-only t)
+  (disk-sample nil :type (or null ntop.disk.domain:disk-sample) :read-only t)
+  (temperature-sample nil :type (or null ntop.temperature.domain:temperature-sample) :read-only t)
+  (battery-sample nil :type (or null ntop.battery.domain:battery-sample) :read-only t)
+  (process-sample nil :type (or null ntop.process.domain:process-sample) :read-only t))

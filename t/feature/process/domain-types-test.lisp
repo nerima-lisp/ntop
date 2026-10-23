@@ -60,4 +60,59 @@
                     :cpu-time-ns value)))
       (cl-weave:expect
        (ntop.process.domain:process-record-cpu-time-ns process)
-       :to-be expected))))
+       :to-be expected)))
+  (cl-weave:it "constructs immutable computed process rows"
+    (let* ((row
+             (ntop.process.domain:make-process-row
+              :count 2
+              :pid 42
+              :name "worker"
+              :command "worker --child"
+              :cpu-percent 0.0
+              :memory-percent nil
+              :memory-bytes 0
+              :virtual-memory-bytes 8192
+              :read-bytes-per-second 1.5
+              :write-bytes-per-second nil
+              :total-read-bytes 100
+              :total-write-bytes 200
+              :user-name "user"
+              :state "Running"
+              :elapsed-seconds 3.0
+              :priority 20
+              :nice 0
+              :gpu-usage-percent 25.0
+              :gpu-memory-bytes 4096
+              :gpu-memory-percent 10.0))
+           (accessors
+             '(ntop.process.domain:process-row-count
+               ntop.process.domain:process-row-pid
+               ntop.process.domain:process-row-name
+               ntop.process.domain:process-row-command
+               ntop.process.domain:process-row-cpu-percent
+               ntop.process.domain:process-row-memory-percent
+               ntop.process.domain:process-row-memory-bytes
+               ntop.process.domain:process-row-virtual-memory-bytes
+               ntop.process.domain:process-row-read-bytes-per-second
+               ntop.process.domain:process-row-write-bytes-per-second
+               ntop.process.domain:process-row-total-read-bytes
+               ntop.process.domain:process-row-total-write-bytes
+               ntop.process.domain:process-row-user-name
+               ntop.process.domain:process-row-state
+               ntop.process.domain:process-row-elapsed-seconds
+               ntop.process.domain:process-row-priority
+               ntop.process.domain:process-row-nice
+               ntop.process.domain:process-row-gpu-usage-percent
+               ntop.process.domain:process-row-gpu-memory-bytes
+               ntop.process.domain:process-row-gpu-memory-percent)))
+      (cl-weave:expect (ntop.process.domain:process-row-p row) :to-be t)
+      (cl-weave:expect
+       (mapcar (lambda (accessor) (funcall accessor row)) accessors)
+       :to-equal
+       '(2 42 "worker" "worker --child" 0.0 nil 0 8192 1.5 nil
+         100 200 "user" "Running" 3.0 20 0 25.0 4096 10.0))
+      (cl-weave:expect
+       (every (lambda (accessor)
+                (not (fboundp (list 'setf accessor))))
+              accessors)
+       :to-be t))))
