@@ -1,0 +1,237 @@
+(in-package #:ntop.platform.darwin)
+
+(defparameter *mach-timebase-layout*
+  '(:size 8 :field-size 4 :numerator-offset 0 :denominator-offset 4))
+
+(defun decode-little-endian-unsigned (octets &key
+                                             (start 0)
+                                             (end (length octets)))
+  (check-type octets (vector (unsigned-byte 8)))
+  (unless (<= 0 start end (length octets))
+    (error "Invalid byte range ~D..~D for ~D octets." start end (length octets)))
+  (loop with value = 0
+        for offset downfrom (1- end) to start
+        do (setf value (+ (ash value 8) (aref octets offset)))
+        finally (return value)))
+
+(defun decode-little-endian-signed (octets &key (start 0) (end (length octets)))
+  (let* ((unsigned (decode-little-endian-unsigned octets :start start :end end))
+         (bits (* 8 (- end start))))
+    (if (and (plusp bits) (logbitp (1- bits) unsigned))
+        (- unsigned (ash 1 bits))
+        unsigned)))
+
+(defun decode-c-string (octets &key (start 0) (end (length octets)))
+  (check-type octets (vector (unsigned-byte 8)))
+  (unless (<= 0 start end (length octets))
+    (error "Invalid byte range ~D..~D for ~D octets." start end (length octets)))
+  (sb-ext:octets-to-string octets
+                           :start
+                           start
+                           :end
+                           (or (position 0 octets :start start :end end) end)
+                           :external-format
+                           :utf-8))
+
+(defun decode-mach-timebase (octets)
+  (let* ((layout *mach-timebase-layout*)
+         (field-size (getf layout :field-size))
+         (numerator
+          (decode-little-endian-unsigned octets
+                                         :start
+                                         (getf layout :numerator-offset)
+                                         :end
+                                         (+ (getf layout :numerator-offset)
+                                            field-size)))
+         (denominator
+          (decode-little-endian-unsigned octets
+                                         :start
+                                         (getf layout :denominator-offset)
+                                         :end
+                                         (+ (getf layout :denominator-offset)
+                                            field-size))))
+    (unless (= (length octets) (getf layout :size))
+      (error "Expected ~D timebase octets, got ~D."
+             (getf layout :size)
+             (length octets)))
+    (when (or (zerop numerator) (zerop denominator))
+      (error "Mach timebase fields must be non-zero."))
+    (values numerator denominator)))
+
+(defun mach-ticks-to-nanoseconds (ticks numerator denominator)
+  (when (zerop denominator)
+    (error "Mach timebase denominator must be non-zero."))
+  (floor (* ticks numerator) denominator))
+
+(defmacro define-darwin-ffi (&body declarations)
+  `(progn
+     ,@(mapcar
+        (lambda (declaration)
+          (destructuring-bind (kind name foreign-name type &rest arguments)
+              declaration
+            (ecase kind
+              (:routine
+               `(sb-alien:define-alien-routine (,foreign-name ,name)
+                                               ,type
+                                               ,@arguments))
+              (:variable
+               `(sb-alien:define-alien-variable (,foreign-name ,name) ,type)))))
+        declarations)))
+
+#+darwin
+(define-darwin-ffi
+  (:routine %sysctl-by-name "sysctlbyname" sb-alien:int
+    (name sb-alien:c-string)
+    (old-value sb-alien:system-area-pointer)
+    (old-length (* sb-alien:unsigned-long))
+    (new-value sb-alien:system-area-pointer)
+    (new-length sb-alien:unsigned-long))
+  (:routine %sysctl "sysctl" sb-alien:int
+    (mib (* sb-alien:int))
+    (mib-length sb-alien:unsigned-int)
+    (old-value sb-alien:system-area-pointer)
+    (old-length (* sb-alien:unsigned-long))
+    (new-value sb-alien:system-area-pointer)
+    (new-length sb-alien:unsigned-long))
+  (:routine %mach-host-self "mach_host_self" sb-alien:unsigned-int)
+  (:variable %mach-task-self "mach_task_self_" sb-alien:unsigned-int)
+  (:routine %mach-port-deallocate "mach_port_deallocate" sb-alien:int
+    (task sb-alien:unsigned-int)
+    (name sb-alien:unsigned-int))
+  (:routine %mach-timebase-info "mach_timebase_info" sb-alien:int
+    (info sb-alien:system-area-pointer))
+  (:routine %vm-deallocate "vm_deallocate" sb-alien:int
+    (task sb-alien:unsigned-int)
+    (address sb-alien:unsigned-long)
+    (size sb-alien:unsigned-long))
+  (:routine %getloadavg "getloadavg" sb-alien:int
+    (samples sb-alien:system-area-pointer)
+    (count sb-alien:int))
+  (:routine %strerror "strerror" sb-alien:c-string
+    (number sb-alien:int)))
+
+#+darwin
+(defun %read-sysctl (query on-value on-error)
+  (sb-alien:with-alien ((length sb-alien:unsigned-long 0))
+    (let ((status (funcall query (sb-sys:int-sap 0) (sb-alien:addr length))))
+      (unless (zerop status)
+        (return-from %read-sysctl
+          (funcall on-error
+                   (list :sysctl-error status (sb-alien::get-errno)))))
+      (let* ((capacity length)
+             (buffer
+               (make-array (max capacity 1)
+                           :element-type '(unsigned-byte 8))))
+        (setf length capacity)
+        (sb-sys:with-pinned-objects (buffer)
+          (setf status
+                (funcall query (sb-sys:vector-sap buffer)
+                         (sb-alien:addr length))))
+        (cond
+          ((not (zerop status))
+           (funcall on-error
+                    (list :sysctl-error status (sb-alien::get-errno))))
+          ((> length capacity)
+           (funcall on-error (list :sysctl-buffer-grew capacity length)))
+          (t
+           (funcall on-value (subseq buffer 0 length))))))))
+
+#+darwin
+(defun sysctl-read-by-name (name on-value on-error)
+  (%read-sysctl
+   (lambda (old-value old-length)
+     (%sysctl-by-name name old-value old-length (sb-sys:int-sap 0) 0))
+   on-value
+   on-error))
+
+#+darwin
+(defun sysctl-read-mib (mib on-value on-error)
+  (let ((codes (coerce mib 'vector)))
+    (when (zerop (length codes))
+      (error "A sysctl MIB must contain at least one integer."))
+    (let ((storage (sb-alien:make-alien sb-alien:int (length codes))))
+      (unwind-protect
+           (progn
+             (loop for code across codes
+                   for index from 0
+                   do (check-type code (signed-byte 32))
+                      (setf (sb-alien:deref storage index) code))
+             (%read-sysctl
+              (lambda (old-value old-length)
+                (%sysctl storage (length codes) old-value old-length
+                         (sb-sys:int-sap 0) 0))
+              on-value
+              on-error))
+        (sb-alien:free-alien storage)))))
+
+#+darwin
+(defun sysctl-read-integer-by-name (name width signedp on-value on-error)
+  (sysctl-read-by-name
+   name
+   (lambda (octets)
+     (if (= (length octets) width)
+         (funcall on-value
+                  (if signedp
+                      (decode-little-endian-signed octets)
+                      (decode-little-endian-unsigned octets)))
+         (funcall on-error
+                  (list :sysctl-width-mismatch width (length octets)))))
+   on-error))
+
+#+darwin
+(defun sysctl-read-string-by-name (name on-value on-error)
+  (sysctl-read-by-name
+   name
+   (lambda (octets)
+     (funcall on-value (decode-c-string octets)))
+   on-error))
+
+#+darwin
+(defun call-with-mach-host-port (on-value on-error)
+  (let ((port (%mach-host-self)))
+    (if (zerop port)
+        (funcall on-error :invalid-host-port)
+        (unwind-protect
+             (funcall on-value port)
+          (let ((status (%mach-port-deallocate %mach-task-self port)))
+            (unless (zerop status)
+              (error "mach_port_deallocate failed with code ~D." status)))))))
+
+#+darwin
+(defun mach-timebase-info (on-value on-error)
+  (let* ((layout *mach-timebase-layout*)
+         (octets
+           (make-array (getf layout :size)
+                       :element-type '(unsigned-byte 8))))
+    (sb-sys:with-pinned-objects (octets)
+      (let ((status (%mach-timebase-info (sb-sys:vector-sap octets))))
+        (if (zerop status)
+            (multiple-value-call on-value (decode-mach-timebase octets))
+            (funcall on-error (list :mach-error status)))))))
+
+#+darwin
+(defun mach-vm-deallocate (address size on-value on-error)
+  (let ((status
+          (%vm-deallocate %mach-task-self (sb-sys:sap-int address) size)))
+    (if (zerop status)
+        (funcall on-value)
+        (funcall on-error (list :mach-error status)))))
+
+#+darwin
+(defun mach-read-load-average (on-value on-error)
+  (sb-alien:with-alien ((samples (sb-alien:array sb-alien:double 3)))
+    (let ((count
+            (%getloadavg
+             (sb-alien:alien-sap
+              (sb-alien:cast samples (* sb-alien:double)))
+             3)))
+      (if (minusp count)
+          (funcall on-error
+                   (list :errno (sb-alien::get-errno)))
+          (funcall on-value
+                   (loop for index below count
+                         collect (sb-alien:deref samples index)))))))
+
+#+darwin
+(defun darwin-error-string (number)
+  (%strerror number))
