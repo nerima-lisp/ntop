@@ -114,7 +114,7 @@
 (defun linux-hwmon-device-temperature-sources (hwmon-name)
   (let ((directory (format nil "sys/class/hwmon/~A" hwmon-name)))
     (multiple-value-bind (entries reason) (linux-sysfs-read-directory directory)
-      (when (and reason (not (eq reason :unavailable)))
+      (when (and reason (not (eq reason :not-present)))
         (return-from linux-hwmon-device-temperature-sources
           (values nil reason)))
       (let ((inputs (linux-hwmon-inputs entries)))
@@ -127,7 +127,7 @@
              nil))))
       (multiple-value-bind (device-entries device-reason)
           (linux-sysfs-read-directory (format nil "~A/device" directory))
-        (when (and device-reason (not (eq device-reason :unavailable)))
+        (when (and device-reason (not (eq device-reason :not-present)))
           (return-from linux-hwmon-device-temperature-sources
             (values nil device-reason)))
         (let ((device-inputs (linux-hwmon-inputs device-entries)))
@@ -143,7 +143,7 @@
 (defun linux-hwmon-temperature-sources ()
   (multiple-value-bind (directories reason)
       (linux-sysfs-read-directory "sys/class/hwmon")
-    (when (and reason (not (eq reason :unavailable)))
+    (when (and reason (not (eq reason :not-present)))
       (return-from linux-hwmon-temperature-sources
         (values nil reason)))
     (let ((sources nil))
@@ -190,7 +190,7 @@
 (defun linux-thermal-zone-temperature-sources ()
   (multiple-value-bind (directories reason)
       (linux-sysfs-read-directory "sys/class/thermal")
-    (when (and reason (not (eq reason :unavailable)))
+    (when (and reason (not (eq reason :not-present)))
       (return-from linux-thermal-zone-temperature-sources
         (values nil reason)))
     (values
@@ -203,7 +203,7 @@
 (defun enumerate-linux-temperature-sources (on-sources on-unavailable)
   (multiple-value-bind (sources reason) (linux-hwmon-temperature-sources)
     (cond
-      ((and reason (not (eq reason :unavailable)))
+      ((and reason (not (eq reason :not-present)))
        (funcall on-unavailable
                 (cond
                   ((eq reason :root-unavailable) :unsupported-platform)
@@ -248,7 +248,7 @@
                (return-from read-linux-temperature-values
                  (funcall on-unavailable :unsupported-platform)))
               ((member reason
-                       '(:unavailable :invalid-data
+                       '(:not-present :invalid-data
                                       :too-large
                                       :invalid-encoding))
                (push (cons (getf source :identity) nil) values))
@@ -265,7 +265,7 @@
     (multiple-value-bind (type reason)
         (linux-sysfs-required-text (format nil "~A/type" directory))
       (cond
-        ((eq reason :unavailable) (values nil nil))
+        ((eq reason :not-present) (values nil nil))
         (reason (values nil reason))
         ((not (string= type "Battery")) (values nil nil))
         (t
@@ -303,7 +303,7 @@
   (multiple-value-bind (directories reason)
       (linux-sysfs-read-directory "sys/class/power_supply")
     (cond
-      ((and reason (not (eq reason :unavailable)))
+      ((and reason (not (eq reason :not-present)))
        (funcall on-unavailable reason))
       (t
        (let ((batteries nil))
@@ -350,7 +350,7 @@
          (format nil "sys/module/amdgpu/drivers/pci:amdgpu/~A" device)))
     (multiple-value-bind (card reason) (linux-amd-gpu-card directory)
       (cond
-        ((eq reason :unavailable) (values nil nil))
+        ((eq reason :not-present) (values nil nil))
         (reason (values nil reason))
         ((null card) (values nil nil))
         (t
@@ -385,7 +385,7 @@
   (multiple-value-bind (devices reason)
       (linux-sysfs-read-directory "sys/module/amdgpu/drivers/pci:amdgpu")
     (cond
-      ((and reason (not (eq reason :unavailable)))
+      ((and reason (not (eq reason :not-present)))
        (funcall on-unavailable reason))
       (t
        (let ((gpus nil))
