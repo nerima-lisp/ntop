@@ -155,4 +155,47 @@
                        :to-equal
                        (quote (:unavailable :not-present)))
                       (cl-weave:expect enumeration-count :to-be 1)
-                      (cl-weave:expect read-count :to-be 0))))
+                      (cl-weave:expect read-count :to-be 0)))
+                   (cl-weave:it
+                    "validates API loaders and maps enumeration and read exceptions"
+                    (cl-weave:signals
+                     simple-error
+                     (ntop.temperature.infrastructure:make-darwin-temperature-collector
+                      :api-loader nil))
+                    (let ((collector
+                           (ntop.temperature.infrastructure:make-darwin-temperature-collector
+                            :api-loader (lambda ()
+                                          (list :enumerate-services nil
+                                                :read-temperature (lambda (handle)
+                                                                    (declare (ignore handle)))))
+                            :now (lambda () 0.0d0))))
+                      (cl-weave:expect
+                       (%collect-darwin-temperature-sample collector)
+                       :to-equal
+                       '(:unavailable :private-api-unavailable)))
+                    (let ((collector
+                           (ntop.temperature.infrastructure:make-darwin-temperature-collector
+                            :api-loader (lambda ()
+                                          (list :enumerate-services
+                                                (lambda () (error "Injected enumeration failure."))
+                                                :read-temperature (lambda (handle)
+                                                                    (declare (ignore handle)))))
+                            :now (lambda () 0.0d0))))
+                      (cl-weave:expect
+                       (%collect-darwin-temperature-sample collector)
+                       :to-equal
+                       '(:unavailable :read-failed)))
+                    (let* ((collector
+                            (ntop.temperature.infrastructure:make-darwin-temperature-collector
+                             :api-loader (lambda ()
+                                           (list :enumerate-services
+                                                 (lambda () '((101 "CPU" :cpu)))
+                                                 :read-temperature (lambda (handle)
+                                                                     (declare (ignore handle))
+                                                                     (error "Injected read failure."))))
+                             :now (lambda () 0.0d0)))
+                           (result (%collect-darwin-temperature-sample collector)))
+                      (cl-weave:expect (first result) :to-be :sample)
+                      (cl-weave:expect (%darwin-temperature-rows (second result))
+                                       :to-equal
+                                       '(("CPU" nil))))))

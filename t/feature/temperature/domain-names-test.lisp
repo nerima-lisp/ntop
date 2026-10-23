@@ -24,4 +24,18 @@
          '("CPU (1)" "cpu" nil "CPU (2)"))
         (cl-weave:expect
          (every #'eq sensors (mapcar #'car labels))
-         :to-be t))))
+         :to-be t)))
+    (cl-weave:it
+     "keeps blank names and handles no sensors"
+     (let* ((blank
+             (ntop.temperature.domain:make-temperature-sensor
+              :name ""
+              :temperature-celsius nil))
+            (labels
+                (ntop.temperature.domain:temperature-sensor-labels (list blank))))
+       (cl-weave:expect (mapcar #'cdr labels) :to-equal '(""))
+       (cl-weave:expect (eq (caar labels) blank) :to-be t)
+       (cl-weave:expect
+        (ntop.temperature.domain:temperature-sensor-labels nil)
+        :to-be
+        nil))))

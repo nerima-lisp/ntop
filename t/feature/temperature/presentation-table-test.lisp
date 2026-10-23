@@ -212,4 +212,47 @@
                                     (%render-temperature-table
                                      (ntop.temperature.presentation:make-temperature-table-config)))
                                    :to-equal
-                                   (format nil "~A~%" expected)))))
+                                   (format nil "~A~%" expected))))
+                   (cl-weave:it
+                    "sorts descending and preserves equal row comparisons"
+                    (let* ((first-cpu '(:sensor "CPU" :temperature-celsius 20 :id 1))
+                           (second-cpu '(:sensor "CPU" :temperature-celsius 20 :id 2))
+                           (gpu '(:sensor "GPU" :temperature-celsius 30 :id 3))
+                           (rows (list first-cpu second-cpu gpu)))
+                      (cl-weave:expect
+                       (ntop.temperature.presentation::%temperature-row-comparison
+                        first-cpu
+                        second-cpu
+                        :sensor)
+                       :to-be
+                       0)
+                      (cl-weave:expect
+                       (ntop.temperature.presentation::%temperature-row-comparison
+                        first-cpu
+                        second-cpu
+                        :temperature)
+                       :to-be
+                       0)
+                      (cl-weave:expect
+                       (mapcar (lambda (row) (getf row :id))
+                               (ntop.temperature.presentation::%sort-temperature-table-rows
+                                (copy-list rows)
+                                :sensor
+                                :descending))
+                       :to-equal
+                       '(3 1 2))
+                      (cl-weave:expect
+                       (mapcar (lambda (row) (getf row :temperature-celsius))
+                               (ntop.temperature.presentation::%sort-temperature-table-rows
+                                (copy-list rows)
+                                :temperature
+                                :descending))
+                       :to-equal
+                       '(30 20 20))
+                      (cl-weave:signals
+                       simple-error
+                       (ntop.temperature.presentation::%temperature-row-less-p
+                        first-cpu
+                        gpu
+                        :sensor
+                        :sideways)))))

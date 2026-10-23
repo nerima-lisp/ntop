@@ -150,4 +150,14 @@
                           (cl-weave:expect
                            (%linux-temperature-sample-rows (second refreshed))
                            :to-equal
-                           '(("acpitz" -5) ("x86_pkg_temp" 65))))))))
+                           '(("acpitz" -5) ("x86_pkg_temp" 65)))))))
+                   (cl-weave:it
+                    "keeps an empty descriptor list empty"
+                    (cl-weave:expect
+                     (ntop.temperature.infrastructure::%linux-temperature-sources nil)
+                     :to-be
+                     nil)
+                    (cl-weave:expect
+                     (%collect-linux-temperature-fixture "empty")
+                     :to-equal
+                     '(:unavailable :not-present))))

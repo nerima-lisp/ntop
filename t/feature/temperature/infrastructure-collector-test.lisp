@@ -171,4 +171,40 @@
                        t)))
                    (cl-weave:it
                     "forwards enumeration failures without reading or emitting a sample"
-                    (let* ((reader-called nil) (sample nil) (unavailable nil) (collector (ntop.temperature.infrastructure:make-temperature-collector :enumerate-sensors (lambda (on-sources on-unavailable) (declare (ignore on-sources)) (funcall on-unavailable :read-failed)) :read-sensors (lambda (sources on-values on-unavailable) (declare (ignore sources on-values on-unavailable)) (setf reader-called t)) :now (lambda () 0)))) (ntop.shared.application:collect-temperature-sample collector (lambda (value) (setf sample value)) (lambda (reason) (setf unavailable reason))) (cl-weave:expect reader-called :to-be nil) (cl-weave:expect sample :to-be nil) (cl-weave:expect unavailable :to-be :read-failed))))
+                    (let* ((reader-called nil) (sample nil) (unavailable nil) (collector (ntop.temperature.infrastructure:make-temperature-collector :enumerate-sensors (lambda (on-sources on-unavailable) (declare (ignore on-sources)) (funcall on-unavailable :read-failed)) :read-sensors (lambda (sources on-values on-unavailable) (declare (ignore sources on-values on-unavailable)) (setf reader-called t)) :now (lambda () 0)))) (ntop.shared.application:collect-temperature-sample collector (lambda (value) (setf sample value)) (lambda (reason) (setf unavailable reason))) (cl-weave:expect reader-called :to-be nil) (cl-weave:expect sample :to-be nil) (cl-weave:expect unavailable :to-be :read-failed)))
+                   (cl-weave:it
+                    "validates collector callbacks and forwards reader failures"
+                    (cl-weave:signals
+                     simple-error
+                     (ntop.temperature.infrastructure:make-temperature-collector
+                      :read-sensors (lambda (sources on-values on-unavailable)
+                                      (declare (ignore sources on-values on-unavailable)))))
+                    (cl-weave:signals
+                     simple-error
+                     (ntop.temperature.infrastructure:make-temperature-collector
+                      :enumerate-sensors (lambda (on-sources on-unavailable)
+                                           (declare (ignore on-sources on-unavailable)))))
+                    (cl-weave:signals
+                     simple-error
+                     (ntop.temperature.infrastructure:make-temperature-collector
+                      :enumerate-sensors (lambda (on-sources on-unavailable)
+                                           (declare (ignore on-sources on-unavailable)))
+                      :read-sensors (lambda (sources on-values on-unavailable)
+                                      (declare (ignore sources on-values on-unavailable)))
+                      :now nil))
+                    (let* ((source
+                            (ntop.temperature.infrastructure:make-temperature-source
+                             :identity "cpu0" :name "CPU" :handle :cpu0))
+                           (collector
+                            (ntop.temperature.infrastructure:make-temperature-collector
+                             :enumerate-sensors
+                             (lambda (on-sources on-unavailable)
+                               (declare (ignore on-unavailable))
+                               (funcall on-sources (list source)))
+                             :read-sensors
+                             (lambda (sources on-values on-unavailable)
+                               (declare (ignore sources on-values))
+                               (funcall on-unavailable :permission-denied))
+                             :now (lambda () 0)))
+                           (result (%temperature-test-collect collector)))
+                      (cl-weave:expect result :to-equal '(:unavailable :permission-denied)))))
