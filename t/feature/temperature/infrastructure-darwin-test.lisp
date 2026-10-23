@@ -85,18 +85,25 @@
                        :to-be
                        nil)
                       (cl-weave:expect
-                       (list
-                        (not
-                         (null
-                          (ntop.app.domain:collection-snapshot-cpu-sample
-                           snapshot)))
-                        (ntop.cpu.domain:cpu-core-value-frequency-mhz
-                         (first
-                          (ntop.cpu.domain:cpu-sample-core-values
-                           (ntop.app.domain:collection-snapshot-cpu-sample
-                            snapshot)))))
+                       (let* ((cpu-sample
+                               (ntop.app.domain:collection-snapshot-cpu-sample
+                                snapshot))
+                              (cpu-row
+                               (find :cpu
+                                     (ntop.cpu.presentation::%cpu-legend-rows
+                                      cpu-sample
+                                      (ntop.shared.application:make-application-config)
+                                      5)
+                                     :key
+                                     (lambda (row) (getf row :kind)))))
+                         (list
+                          (not (null cpu-sample))
+                          (ntop.cpu.domain:cpu-core-value-frequency-mhz
+                           (first
+                            (ntop.cpu.domain:cpu-sample-core-values cpu-sample)))
+                          (getf cpu-row :frequency)))
                        :to-equal
-                       (quote (t nil)))
+                       (quote (t nil "N/A")))
                       (cl-weave:expect top-level-unavailable :to-be :not-called)))
                    (cl-weave:it
                     "keeps duplicate named services as rows and samples cached handles again"
