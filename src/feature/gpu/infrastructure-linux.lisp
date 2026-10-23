@@ -1,13 +1,13 @@
 (in-package #:ntop.gpu.infrastructure)
 
-(defparameter +linux-nvml-library+ "libnvidia-ml.so.1")
+(defparameter *linux-nvml-library* "libnvidia-ml.so.1")
 
 (defconstant +nvml-device-name-buffer-size+
   128)
 
 (defparameter *nvml-shared-library-loader*
   (lambda ()
-    (sb-alien:load-shared-object +linux-nvml-library+ :dont-save t)))
+    (sb-alien:load-shared-object *linux-nvml-library* :dont-save t)))
 
 #+linux
 (progn
