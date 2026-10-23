@@ -1,28 +1,28 @@
 (in-package #:ntop.process.domain)
-(defun %process-search-row-string-value (field row)
+(defun %process-search-row-string-value (field row command-p)
   (case field
-    (:name (or (process-row-name row) ""))
+    (:name
+     (or (if command-p (process-row-command row) (process-row-name row)) ""))
     (:pid (princ-to-string (or (process-row-pid row) 0)))
     (:state (or (process-row-state row) ""))
     (:user (or (process-row-user-name row) "N/A"))
     (otherwise "")))
 (defun %process-search-row-numeric-value (field row)
-  (or (case field
-        (:cpu-percent (process-row-cpu-percent row))
-        (:memory-percent (process-row-memory-percent row))
-        (:memory-bytes (process-row-memory-bytes row))
-        (:read-per-second (process-row-read-bytes-per-second row))
-        (:write-per-second (process-row-write-bytes-per-second row))
-        (:total-read (process-row-total-read-bytes row))
-        (:total-write (process-row-total-write-bytes row))
-        (:elapsed-seconds (process-row-elapsed-seconds row))
-        (:nice (process-row-nice row))
-        (:priority (process-row-priority row))
-        (:gpu-percent (process-row-gpu-usage-percent row))
-        (:gpu-memory-bytes (process-row-gpu-memory-bytes row))
-        (:gpu-memory-percent (process-row-gpu-memory-percent row))
-        (otherwise 0))
-      0))
+  (case field
+    (:cpu-percent (process-row-cpu-percent row))
+    (:memory-percent (process-row-memory-percent row))
+    (:memory-bytes (process-row-memory-bytes row))
+    (:read-per-second (process-row-read-bytes-per-second row))
+    (:write-per-second (process-row-write-bytes-per-second row))
+    (:total-read (process-row-total-read-bytes row))
+    (:total-write (process-row-total-write-bytes row))
+    (:elapsed-seconds (process-row-elapsed-seconds row))
+    (:nice (process-row-nice row))
+    (:priority (process-row-priority row))
+    (:gpu-percent (process-row-gpu-usage-percent row))
+    (:gpu-memory-bytes (process-row-gpu-memory-bytes row))
+    (:gpu-memory-percent (process-row-gpu-memory-percent row))
+    (otherwise nil)))
 (defun %process-search-compare-numbers (field operator actual expected)
   (let* ((actual (coerce actual 'double-float))
          (expected (coerce expected 'double-float))
@@ -42,7 +42,7 @@
       (:greater-or-equal (>= actual expected))
       (otherwise nil))))
 (defun %process-search-compile-match
-    (node regex-p case-sensitive-p whole-word-p spans &optional negate-p)
+    (node regex-p case-sensitive-p whole-word-p command-p spans &optional negate-p)
   (let* ((field (second node))
          (text (third node))
          (pattern (if regex-p text (cl-regex-kit:escape text)))
@@ -69,13 +69,11 @@
                  (%signal-process-search-error
                   start end "Invalid regular expression."))))))
     (lambda (row)
-      (let ((value (%process-search-row-string-value field row)))
-        (if (stringp value)
-            (let ((matched-p (cl-regex-kit:is-match-p regex value)))
-              (values (if negate-p (not matched-p) matched-p) t))
-            (values nil nil))))))
+      (let* ((value (%process-search-row-string-value field row command-p))
+             (matched-p (cl-regex-kit:is-match-p regex value)))
+        (values (if negate-p (not matched-p) matched-p) t)))))
 (defun %process-search-compile-ast
-    (ast regex-p case-sensitive-p whole-word-p spans)
+    (ast regex-p case-sensitive-p whole-word-p command-p spans)
   (case (first ast)
     (:true
      (lambda (row)
@@ -83,7 +81,7 @@
        (values t t)))
     (:match
      (%process-search-compile-match
-      ast regex-p case-sensitive-p whole-word-p spans))
+      ast regex-p case-sensitive-p whole-word-p command-p spans))
     (:compare
      (let ((field (second ast))
            (operator (third ast))
@@ -98,10 +96,10 @@
      (let ((child (second ast)))
        (if (eq (first child) :match)
            (%process-search-compile-match
-            child regex-p case-sensitive-p whole-word-p spans t)
+            child regex-p case-sensitive-p whole-word-p command-p spans t)
            (let ((evaluate-child
                    (%process-search-compile-ast
-                    child regex-p case-sensitive-p whole-word-p spans)))
+                    child regex-p case-sensitive-p whole-word-p command-p spans)))
              (lambda (row)
                (multiple-value-bind (matched-p available-p)
                    (funcall evaluate-child row)
@@ -112,7 +110,7 @@
             (children
               (mapcar (lambda (child)
                         (%process-search-compile-ast
-                         child regex-p case-sensitive-p whole-word-p spans))
+                         child regex-p case-sensitive-p whole-word-p command-p spans))
                       (rest ast))))
        (lambda (row)
          (let ((matched-p and-p)
@@ -129,7 +127,7 @@
     (otherwise
      (error "Invalid process search AST node: ~S." ast))))
 (defmethod compile-process-search
-    ((query string) regex-p case-sensitive-p whole-word-p
+    ((query string) regex-p case-sensitive-p whole-word-p command-p
      on-success on-syntax-error)
   (multiple-value-bind (predicate syntax-error)
       (handler-case
@@ -137,7 +135,7 @@
               (parse-process-search query)
             (let ((evaluate
                     (%process-search-compile-ast
-                     ast regex-p case-sensitive-p whole-word-p spans)))
+                     ast regex-p case-sensitive-p whole-word-p command-p spans)))
               (values (lambda (row)
                         (nth-value 0 (funcall evaluate row)))
                       nil)))

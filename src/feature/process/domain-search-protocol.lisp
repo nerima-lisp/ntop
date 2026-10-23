@@ -6,8 +6,8 @@
   (message "" :type string))
 
 (defgeneric compile-process-search
-    (query regex-p case-sensitive-p whole-word-p on-success on-syntax-error)
+    (query regex-p case-sensitive-p whole-word-p command-p on-success on-syntax-error)
   (:documentation
-   "Compile QUERY; ON-SUCCESS receives a PROCESS-ROW predicate.
-   ON-SYNTAX-ERROR receives a PROCESS-SEARCH-SYNTAX-ERROR with zero-based,
-   half-open offsets."))
+   "Compile QUERY. COMMAND-P makes Name-field terms search the full command.
+   ON-SUCCESS receives a PROCESS-ROW predicate. ON-SYNTAX-ERROR receives a
+   PROCESS-SEARCH-SYNTAX-ERROR with zero-based, half-open offsets."))

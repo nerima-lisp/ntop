@@ -51,19 +51,21 @@
      :gpu-memory-percent
      (unless (or (eq profile :no-gpu-memory) no-process-p) 12.5))))
 
-(defun process-query-test-result (query &optional regex-p case-sensitive-p whole-word-p)
+(defun process-query-test-result
+    (query &optional regex-p case-sensitive-p whole-word-p command-p)
   (let ((result nil))
     (ntop.process.domain::compile-process-search
-     query regex-p case-sensitive-p whole-word-p
+     query regex-p case-sensitive-p whole-word-p command-p
      (lambda (predicate)
        (setf result (list :predicate predicate)))
      (lambda (syntax-error)
        (setf result (list :syntax-error syntax-error))))
     result))
 
-(defun process-query-test-syntax-error (query &optional regex-p case-sensitive-p whole-word-p)
+(defun process-query-test-syntax-error
+    (query &optional regex-p case-sensitive-p whole-word-p command-p)
   (let ((result (process-query-test-result
-                 query regex-p case-sensitive-p whole-word-p)))
+                 query regex-p case-sensitive-p whole-word-p command-p)))
     (and (eq (first result) :syntax-error)
          (second result))))
 
@@ -133,7 +135,12 @@
     ("cpu < 20" :base nil)
     ("cpu > 40" :cpu-fallback t)
     ("cpu > 0" :no-cpu nil)
-    ("cpu = 0" :no-cpu t)
+    ("cpu = 0" :no-cpu nil)
+    ("cpu != 0" :no-cpu nil)
+    ("cpu < 42.5" :no-cpu nil)
+    ("cpu > 42.5" :no-cpu nil)
+    ("cpu <= 42.5" :no-cpu nil)
+    ("cpu >= 42.5" :no-cpu nil)
     ("mem > 20" :base t)
     ("mem = 25" :base t)
     ("mem% < 26" :base t)
@@ -143,7 +150,7 @@
     ("memb > 1000 MB" :base t)
     ("memb = 1073741824 B" :base t)
     ("memb > 1 TiB" :base nil)
-    ("mem > 20" :no-memory nil)
+    ("mem < 5" :no-memory nil)
     ("read > 2000" :base t)
     ("r/s = 2 KiB" :base t)
     ("rps = 2048" :base t)
@@ -202,10 +209,10 @@
     ("cpu = 0.000000000000001" :cpu-zero nil)
     ("cpu != 0.000000000000001" :cpu-zero t)
     ("!!(cpu > 5)" :base t)
-    ("!(cpu > 0)" :no-cpu t)
-    ("mem = 0" :no-memory t)
-    ("gmem% = 0" :no-gpu-memory t)
-    ("gpu% = 0" :no-gpu-percent t)
+    ("!(cpu > 0)" :no-cpu nil)
+    ("mem = 0" :no-memory nil)
+    ("gmem% = 0" :no-gpu-memory nil)
+    ("gpu% = 0" :no-gpu-percent nil)
     ("time = 1.5h" :fractional-time t)
     ("!(cpu = 0)" :no-cpu nil))
    "query ~S matches profile ~S as ~S"
@@ -217,21 +224,23 @@
       :to-be expected)))
 
   (cl-weave:it-each
-   (("Alpha" :base nil nil nil t)
-    ("alpha" :base nil t nil nil)
-    ("Alpha" :base nil t nil t)
-    ("alpha" :base nil t nil nil)
-    ("\"Alpha Worker\"" :base nil nil t t)
-    ("Alpha" :base nil nil t nil)
-    ("^Alpha" :base t nil nil t)
-    ("\"^[A-Z][a-z]+ Worker$\"" :base t t t t)
-    ("." :base t nil nil t)
-    ("\"Alpha|Gamma\"" :base t nil nil t)
-    ("Alpha Worker" :base nil nil t nil))
-   "query ~S honors regex ~S, case-sensitive ~S, and whole-field ~S"
-   (query profile regex-p case-sensitive-p whole-word-p expected)
+   (("Alpha" :base nil nil nil nil t)
+    ("alpha" :base nil t nil nil nil)
+    ("Alpha" :base nil t nil nil t)
+    ("alpha" :base nil t nil nil nil)
+    ("\"Alpha Worker\"" :base nil nil t nil t)
+    ("Alpha" :base nil nil t nil nil)
+    ("^Alpha" :base t nil nil nil t)
+    ("\"^[A-Z][a-z]+ Worker$\"" :base t t t nil t)
+    ("." :base t nil nil nil t)
+    ("\"Alpha|Gamma\"" :base t nil nil nil t)
+    ("Alpha Worker" :base nil nil t nil nil)
+    ("serve" :base nil nil nil t t)
+    ("serve" :base nil nil nil nil nil))
+   "query ~S for profile ~S honors regex ~S, case-sensitive ~S, whole-field ~S, command mode ~S"
+   (query profile regex-p case-sensitive-p whole-word-p command-p expected)
    (let ((result (process-query-test-result
-                  query regex-p case-sensitive-p whole-word-p)))
+                  query regex-p case-sensitive-p whole-word-p command-p)))
      (cl-weave:expect (first result) :to-be :predicate)
      (cl-weave:expect
       (funcall (second result) (process-query-test-row profile))
