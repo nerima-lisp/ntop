@@ -1,5 +1,6 @@
 (in-package #:ntop.test)
 (progn
+(progn
   (defclass %f8a-darwin-clock () ())
   (defmethod ntop.shared.domain:read-monotonic-time
       ((clock %f8a-darwin-clock) on-time on-unavailable)
@@ -308,3 +309,95 @@
                          :to-be t))))))
            (%f8a-darwin-stop-child child))))
      :prefix "ntop-f8a-process-")))))
+
+(cl-weave:describe
+ "Darwin process fallback error paths"
+ (cl-weave:it
+  "handles empty, malformed, and rejected ps CPU fallback output"
+  (multiple-value-bind (values reason)
+      (ntop.process.infrastructure::%darwin-ps-cpu-values nil)
+    (cl-weave:expect (hash-table-p values) :to-be t)
+    (cl-weave:expect (hash-table-count values) :to-be 0)
+    (cl-weave:expect reason :to-be-null))
+  (let* ((stdout
+           (format nil
+                   "41 2.5~%not-a-pid 3.0~%42 12.5 trailing~%43 nope~%44 4.0 extra columns~%"))
+         (success
+           (host-kit::make-process-result
+            :program "/bin/ps" :arguments nil :exit-code 0 :signal nil
+            :stdout stdout :stderr ""
+            :timed-out-p nil :stdout-truncated-p nil :stderr-truncated-p nil))
+         (exit-failure
+           (host-kit::make-process-result
+            :program "/bin/ps" :arguments nil :exit-code 1 :signal nil
+            :stdout "" :stderr ""
+            :timed-out-p nil :stdout-truncated-p nil :stderr-truncated-p nil))
+         (timeout-failure
+           (host-kit::make-process-result
+            :program "/bin/ps" :arguments nil :exit-code 0 :signal nil
+            :stdout "" :stderr ""
+            :timed-out-p t :stdout-truncated-p nil :stderr-truncated-p nil))
+         (stdout-failure
+           (host-kit::make-process-result
+            :program "/bin/ps" :arguments nil :exit-code 0 :signal nil
+            :stdout "" :stderr ""
+            :timed-out-p nil :stdout-truncated-p t :stderr-truncated-p nil))
+         (stderr-failure
+           (host-kit::make-process-result
+            :program "/bin/ps" :arguments nil :exit-code 0 :signal nil
+            :stdout "" :stderr ""
+            :timed-out-p nil :stdout-truncated-p nil :stderr-truncated-p t))
+         (mode :success))
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'host-kit:run-program)
+       (lambda (&rest arguments)
+         (declare (ignore arguments))
+         (case mode
+           (:raise (error "mock ps launch failure"))
+           (:exit exit-failure)
+           (:timeout timeout-failure)
+           (:stdout-truncated stdout-failure)
+           (:stderr-truncated stderr-failure)
+           (otherwise success)))))
+     (multiple-value-bind (values reason)
+         (ntop.process.infrastructure::%darwin-ps-cpu-values '(41 42 43 44))
+       (cl-weave:expect reason :to-be-null)
+       (cl-weave:expect (gethash 41 values) :to-be 2.5d0)
+       (cl-weave:expect (gethash 42 values) :to-be-null)
+       (cl-weave:expect (gethash 43 values) :to-be-null)
+       (cl-weave:expect
+        (ntop.process.infrastructure::%darwin-ps-number "12.5 trailing")
+        :to-be-null)
+       (cl-weave:expect
+        (ntop.process.infrastructure::%darwin-ps-number "nope")
+        :to-be-null))
+     (dolist (bad-mode
+              '(:exit :timeout :stdout-truncated :stderr-truncated :raise))
+       (setf mode bad-mode)
+       (multiple-value-bind (values reason)
+           (ntop.process.infrastructure::%darwin-ps-cpu-values '(41))
+         (cl-weave:expect values :to-be-null)
+         (cl-weave:expect reason :to-be :read-failed))))))
+ (cl-weave:it
+  "uses a numeric user name when lookup misses or errors"
+  (let ((fail-lookup nil))
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'sb-posix:getpwuid)
+       (lambda (uid)
+         (declare (ignore uid))
+         (when fail-lookup
+           (error "mock passwd lookup failure"))
+         nil)))
+     (cl-weave:expect
+      (ntop.process.infrastructure::%darwin-user-name 4242)
+      :to-equal "4242")
+     (setf fail-lookup t)
+     (cl-weave:expect
+      (ntop.process.infrastructure::%darwin-user-name 4242)
+      :to-equal "4242")
+     (cl-weave:expect
+      (ntop.process.infrastructure::%darwin-user-name "4242")
+      :to-be-null))))
+)
+
+)

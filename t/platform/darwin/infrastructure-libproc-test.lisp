@@ -15,7 +15,8 @@
           do (setf (aref octets index) (char-code character)))
     octets)
 
-  (cl-weave:describe
+  (progn
+(cl-weave:describe
    "Darwin libproc decoders"
    (cl-weave:it
     "decodes proc_bsdinfo identity, flags, and display fields"
@@ -161,3 +162,180 @@
        (lambda ()
          (ntop.platform.darwin::decode-darwin-procargs2 truncated-args))
        :to-throw 'error))))
+
+(cl-weave:describe
+ "Darwin libproc failure paths"
+ (cl-weave:it
+  "covers empty names, exact decoder sizes, and procargs boundaries"
+  (let ((bsd (%f8a-darwin-test-octets 136)))
+    (%f8a-darwin-test-write-string bsd 48 16 "short-name")
+    (cl-weave:expect
+     (getf (ntop.platform.darwin::decode-darwin-proc-bsdinfo bsd) :name)
+     :to-equal "short-name"))
+  (dolist (octets (list (%f8a-darwin-test-octets 231)
+                        (%f8a-darwin-test-octets 159)))
+    (cl-weave:expect
+     (lambda ()
+       (if (= (length octets) 231)
+           (ntop.platform.darwin::decode-darwin-taskallinfo octets)
+           (ntop.platform.darwin::decode-darwin-rusage-info octets)))
+     :to-throw 'error))
+  (let ((short (%f8a-darwin-test-octets 4))
+        (unterminated (%f8a-darwin-test-octets 5))
+        (empty-path (%f8a-darwin-test-octets 5)))
+    (%f8a-darwin-test-write-integer unterminated 4 1 120)
+    (cl-weave:expect
+     (lambda () (ntop.platform.darwin::decode-darwin-procargs2 short))
+     :to-throw 'error)
+    (cl-weave:expect
+     (lambda ()
+       (ntop.platform.darwin::decode-darwin-procargs2 unterminated))
+     :to-throw 'error)
+    (cl-weave:expect
+     (ntop.platform.darwin::decode-darwin-procargs2 empty-path)
+     :to-equal "")))
+ (cl-weave:it
+  "bounds native process buffers and catches decoder failures"
+  (let ((count 4)
+        (rusage-status 0))
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin::%proc-pidinfo)
+       (lambda (pid flavor argument sap size)
+         (declare (ignore pid flavor argument sap size))
+         count))
+      ((symbol-function 'ntop.platform.darwin::%proc-pid-rusage)
+       (lambda (pid flavor sap)
+         (declare (ignore pid flavor sap))
+         rusage-status)))
+     (cl-weave:expect
+      (length (ntop.platform.darwin::%darwin-info 1 2 4))
+      :to-be 4)
+     (setf count 0)
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-info 1 2 4)
+      :to-be-null)
+     (setf count 2)
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-info 1 2 4)
+      :to-be-null)
+     (cl-weave:expect
+      (length (ntop.platform.darwin::%darwin-info 1 2 4 nil))
+      :to-be 2)
+     (setf count -1)
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-info 1 2 4 nil)
+      :to-be-null)
+     (setf count 5)
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-info 1 2 4 nil)
+      :to-be-null)
+     (setf rusage-status 1)
+     (cl-weave:expect (ntop.platform.darwin::%darwin-rusage 1)
+                      :to-be-null))
+   (cl-weave:with-mocked-functions
+    (((symbol-function 'ntop.platform.darwin::%darwin-info)
+      (lambda (&rest arguments)
+        (declare (ignore arguments))
+        (%f8a-darwin-test-octets 4))))
+    (cl-weave:expect
+     (ntop.platform.darwin::%darwin-info-decoded
+      1 2 4
+      (lambda (octets)
+        (declare (ignore octets))
+        (error "mock decoder failure")))
+     :to-be-null))
+   (cl-weave:with-mocked-functions
+    (((symbol-function 'ntop.platform.darwin::%darwin-info)
+      (lambda (&rest arguments)
+        (declare (ignore arguments))
+        nil)))
+    (cl-weave:expect
+     (ntop.platform.darwin::%darwin-info-decoded
+      1 2 4 (lambda (octets) octets))
+     :to-be-null))))
+ (cl-weave:it
+  "handles PID and thread enumeration limits and unavailable callbacks"
+  (let* ((layout (copy-list ntop.platform.darwin::+darwin-process-layout+))
+         (ntop.platform.darwin::+darwin-process-layout+ layout)
+         (mode :negative)
+         (calls 0))
+    (setf (getf layout :initial-buffer-size) 4
+          (getf layout :maximum-buffer-size) 8)
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin::%proc-listpids)
+       (lambda (type type-info sap size)
+         (declare (ignore type type-info sap))
+         (incf calls)
+         (if (eq mode :negative) -1 size))))
+     (multiple-value-bind (pids reason)
+         (ntop.platform.darwin::%darwin-list-pids)
+       (cl-weave:expect pids :to-be-null)
+       (cl-weave:expect reason :to-be :private-api-unavailable))
+     (setf mode :full calls 0)
+     (multiple-value-bind (pids reason)
+         (ntop.platform.darwin::%darwin-list-pids)
+       (cl-weave:expect pids :to-be-null)
+       (cl-weave:expect reason :to-be :read-failed)
+       (cl-weave:expect calls :to-be 2))))
+  (let* ((layout (copy-list ntop.platform.darwin::+darwin-process-layout+))
+         (ntop.platform.darwin::+darwin-process-layout+ layout)
+         (mode :empty))
+    (setf (getf layout :initial-buffer-size) 8
+          (getf layout :maximum-buffer-size) 16)
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin::%darwin-info)
+       (lambda (pid flavor size exact-p) (declare (ignore pid flavor size exact-p)) (when (eq mode :growth) (%f8a-darwin-test-write-integer (%f8a-darwin-test-octets 8) 0 8 77)))))
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-thread-ids 1)
+      :to-be-null)
+     (setf mode :growth)
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-thread-ids 1)
+      :to-equal '(77))
+     (setf (getf layout :maximum-buffer-size) 8)
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-thread-ids 1)
+      :to-be-null)))
+  (let ((reason :unset)
+        (mode :raise))
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin::%darwin-list-pids)
+       (lambda ()
+         (if (eq mode :raise)
+             (error "mock proc_listpids failure")
+             (values nil :read-failed)))))
+     (ntop.platform.darwin:read-darwin-process-rows
+      (lambda (rows) (declare (ignore rows)))
+      (lambda (value) (setf reason value)))
+     (cl-weave:expect reason :to-be :private-api-unavailable)
+     (setf mode :failure reason :unset)
+     (ntop.platform.darwin:read-darwin-process-rows
+      (lambda (rows) (declare (ignore rows)))
+      (lambda (value) (setf reason value)))
+     (cl-weave:expect reason :to-be :read-failed)))
+  (let ((metadata nil))
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin::%darwin-metadata)
+       (lambda (pid) (declare (ignore pid)) metadata)))
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-process-row 1 501 nil)
+      :to-be-null)
+     (setf metadata '(:pid 1 :ruid :unknown))
+     (cl-weave:expect
+      (getf (ntop.platform.darwin::%darwin-process-row 1 501 nil) :ruid)
+      :to-be :unknown))
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin::%darwin-info-decoded)
+       (lambda (&rest arguments)
+         (declare (ignore arguments))
+         nil))
+      ((symbol-function 'ntop.platform.darwin::%darwin-sysctl)
+       (lambda (mib)
+         (declare (ignore mib))
+         (%f8a-darwin-test-octets 1))))
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-metadata 1)
+      :to-be-null))))
+)
+
+)

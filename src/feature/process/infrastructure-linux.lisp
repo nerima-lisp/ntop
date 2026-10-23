@@ -183,9 +183,10 @@
         :private-api-unavailable :read-failed)
        reason)
       (otherwise :read-failed)))
-  (defun %read-linux-process-data (collector on-value on-unavailable)
-  (let ((clock-ticks (%linux-process-clock-ticks-per-second))
-        (include-threads
+  (defun %read-linux-process-data
+    (collector on-value on-unavailable
+     &optional (clock-ticks (%linux-process-clock-ticks-per-second)))
+  (let ((include-threads
           (ntop.shared.application:application-config-process-get-threads-p
            (%process-collector-config collector))))
     (if (not (and (integerp clock-ticks) (plusp clock-ticks)))
