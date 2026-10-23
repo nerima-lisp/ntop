@@ -4,14 +4,7 @@
   (let* ((sort-state (process-table-config-sort-state config))
          (choices (process-table-sort-options config))
          (selected-index
-          (or
-           (position (ntop.process.domain:process-sort-state-key sort-state)
-                     choices
-                     :key
-                     #'car
-                     :test
-                     #'eq)
-           0)))
+          (or (position (ntop.process.domain:process-sort-state-key sort-state) choices :key #'car :test #'eq) 0)))
     (ntop.ui:make-table-state :selected-index selected-index)))
 
 (defun move-process-sort-menu-selection (state amount choice-count viewport-height)
@@ -33,8 +26,7 @@
         (let ((key (car choice)))
           (if (eq key (ntop.process.domain:process-sort-state-key sort-state))
               (values sort-state :selected)
-              (values (ntop.process.domain:process-sort-select-key sort-state key)
-                      :selected))))))
+              (values (ntop.process.domain:process-sort-select-key sort-state key) :selected))))))
 
 (defun %draw-process-sort-choice (target x y width choice selected-p)
   (let* ((label (cdr choice))
@@ -58,17 +50,9 @@
                               (body-height (max 0 (1- height)))
                               (areas nil))
                          (when (and (plusp width) (plusp height))
-                           (ntop.ui:draw-table-text target
-                                                    x
-                                                    y
-                                                    (ntop.ui:truncate-table-text
-                                                     "Sort By"
-                                                     width)
-                                                    :header)
+                           (ntop.ui:draw-table-text target x y (ntop.ui:truncate-table-text "Sort By" width) :header)
                            (multiple-value-bind (start end)
-                               (ntop.ui:table-visible-window state
-                                                             (length choice-list)
-                                                             body-height)
+                               (ntop.ui:table-visible-window state (length choice-list) body-height)
                              (loop for index from start below
                                    end
                                    for choice in (nthcdr start choice-list)
@@ -78,24 +62,22 @@
                                                                  row-y
                                                                  width
                                                                  choice
-                                                                 (= index
-                                                                    (ntop.ui:table-state-selected-index
-                                                                     state))) (push
-                                                                               (ntop.ui:make-clickable-area
-                                                                                :rectangle
-                                                                                (ntop.ui:make-rectangle
-                                                                                 :x
-                                                                                 x
-                                                                                 :y
-                                                                                 row-y
-                                                                                 :width
-                                                                                 width
-                                                                                 :height
-                                                                                 1)
-                                                                                :action
-                                                                                :sort-choice
-                                                                                :value
-                                                                                (car
-                                                                                 choice))
-                                                                               areas))))
+                                                                 (= index (ntop.ui:table-state-selected-index state))) (push
+                                                                                                                        (ntop.ui:make-clickable-area
+                                                                                                                         :rectangle
+                                                                                                                         (ntop.ui:make-rectangle
+                                                                                                                          :x
+                                                                                                                          x
+                                                                                                                          :y
+                                                                                                                          row-y
+                                                                                                                          :width
+                                                                                                                          width
+                                                                                                                          :height
+                                                                                                                          1)
+                                                                                                                         :action
+                                                                                                                         :sort-choice
+                                                                                                                         :value
+                                                                                                                         (car
+                                                                                                                          choice))
+                                                                                                                        areas))))
                          (nreverse areas)))
