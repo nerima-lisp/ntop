@@ -178,4 +178,4 @@
                                   (ntop.ui::format-rule-sources
                                    :cpu-basic-percent))
                                  :to-equal
-                                 ".mediator/ntop-define/agentD/src/b/src/canvas/widgets/cpu_basic.rs:159-173")))
+                                 "bottom 0.14.9 src/canvas/widgets/cpu_basic.rs:159-173")))

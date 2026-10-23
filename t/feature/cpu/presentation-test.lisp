@@ -96,7 +96,7 @@
         (declare (ignore ntop.ui::widget-key))
         :rendered)))
 
-  ;; btm 0.14.9: .mediator/ntop-define/agentD/src/b/src/widgets/cpu_graph.rs:34-97,118-125.
+  ;; bottom 0.14.9 src/widgets/cpu_graph.rs:34-97,118-125.
   (cl-weave:it "matches the All, AVG, core-label and usage cells from the btm rule table"
     (let* ((series (%f1-cpu-fixture-series))
            (sample (getf series :sample))
@@ -116,7 +116,7 @@
             (cl-weave:expect (getf row :usage) :to-equal usage)
             (cl-weave:expect (getf row :frequency) :to-equal frequency))))))
 
-  ;; btm 0.14.9: .mediator/ntop-define/agentD/src/b/src/collection/cpu/sysinfo.rs:6-40.
+  ;; bottom 0.14.9 src/collection/cpu/sysinfo.rs:6-40.
   (cl-weave:it "omits AVG rows when hide-average-cpu is enabled"
     (let* ((series (%f1-cpu-fixture-series))
            (config
@@ -131,7 +131,7 @@
        (not (find :average rows :key (lambda (row) (getf row :kind))))
        :to-be t)))
 
-  ;; btm 0.14.9 graph axis: .mediator/ntop-define/agentD/src/b/src/components/time_series/percent.rs:30-37.
+  ;; bottom 0.14.9 src/components/time_series/percent.rs:30-37.
   (cl-weave:it "uses the CPU percentage axis, title format, theme and marker setting"
     (let* ((config
              (ntop.shared.application:make-application-config :dot-marker-p t))
@@ -150,7 +150,7 @@
         (getf (%f1-cpu-fixture-series) :sample))
        :to-equal " CPU ─ 1.25 0.88 0.55 ")))
 
-  ;; btm 0.14.9: .mediator/ntop-define/agentD/src/b/src/canvas/widgets/cpu_graph.rs:26-87.
+  ;; bottom 0.14.9 src/canvas/widgets/cpu_graph.rs:26-87.
   (cl-weave:it "adds the MHz column only in expanded mode and preserves N/A frequency"
     (let* ((series (%f1-cpu-fixture-series))
            (sample (getf series :sample)))
@@ -177,7 +177,7 @@
                :to-equal
                "69%")))))))
 
-  ;; btm 0.14.9 selection behavior: .mediator/ntop-define/agentD/src/b/src/canvas/widgets/cpu_graph.rs:118-169.
+  ;; bottom 0.14.9 src/canvas/widgets/cpu_graph.rs:118-169.
   (cl-weave:it "shows all, average, or the selected core history"
     (let* ((series (%f1-cpu-fixture-series))
            (sample (getf series :sample))
@@ -199,7 +199,7 @@
                              :to-equal
                              expected-names))))))
 
-  ;; btm 0.14.9 basic gauges: .mediator/ntop-define/agentD/src/b/src/canvas/widgets/cpu_basic.rs:48-79,81-145,159-176.
+  ;; bottom 0.14.9 src/canvas/widgets/cpu_basic.rs:48-79,81-145,159-176.
   (cl-weave:it "draws basic CPU pipe gauges without changing the immutable sample"
     (let* ((screen (cl-tty-kit:make-screen 64 3))
            (rectangle
