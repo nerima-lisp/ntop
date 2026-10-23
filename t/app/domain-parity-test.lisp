@@ -109,28 +109,49 @@
     (cl-weave:expect (ntop.app.domain:parity-flag-kebab-case flag)
                      :to-equal (substitute #\- #\_ snake-case))))
  (cl-weave:it
-  "expands the common macro into a typed named table"
+  "expands the common macro into a named structure and table"
   (let ((form
           '(ntop.app.domain::define-parity-table
             *probe-parity-table* :key
             ("Probe" ("x") ("normal") "Probe action" ("test:1")))))
     (multiple-value-bind (expansion expanded-p) (macroexpand-1 form)
       (let* ((structure-form (find 'defstruct (cdr expansion) :key #'car))
+             (structure-definition (second structure-form))
+             (include-form
+               (find :include (cdr structure-definition) :key #'car))
              (table-form (find 'defparameter (cdr expansion) :key #'car))
-             (table-value (third table-form)))
+             (table-value (third table-form))
+             (record-form (second table-value)))
         (cl-weave:expect expanded-p :to-be t)
         (cl-weave:expect (car expansion) :to-equal 'progn)
-        (cl-weave:expect (first (second structure-form))
+        (cl-weave:expect (first structure-definition)
                          :to-equal 'ntop.app.domain:parity-key)
+        (cl-weave:expect (second include-form)
+                         :to-equal 'ntop.app.domain::parity-entry)
+        (cl-weave:expect (third include-form)
+                         :to-equal '(ntop.app.domain::kind :key))
         (cl-weave:expect
          (mapcar #'symbol-name (mapcar #'car (cddr structure-form)))
-         :to-equal '("KIND" "ACTION" "KEYS" "CONTEXTS" "BEHAVIOR" "SOURCE"))
+         :to-equal '("ACTION" "KEYS" "CONTEXTS" "BEHAVIOR" "SOURCE"))
         (cl-weave:expect (second table-form) :to-equal '*probe-parity-table*)
         (cl-weave:expect (car table-value) :to-equal 'list)
-        (cl-weave:expect (car (second table-value))
-                         :to-equal 'ntop.app.domain::make-parity-key)))))
+        (cl-weave:expect (car record-form)
+                         :to-equal 'ntop.app.domain::make-parity-key)
+        (cl-weave:expect (second record-form) :to-equal :action)
+        (cl-weave:expect (third record-form) :to-equal '(quote "Probe"))
+        (cl-weave:expect (fourth record-form) :to-equal :keys)
+        (cl-weave:expect (fifth record-form) :to-equal '(quote ("x")))
+        (cl-weave:expect
+         (notany (lambda (form)
+                   (member (car form) '(defgeneric defmethod)))
+                 (cdr expansion))
+         :to-be t)))))
  (cl-weave:it
-  "rejects unknown kinds and rows with the wrong width"
+  "rejects invalid table names, kinds and rows"
+  (cl-weave:expect
+   (parity-macro-expansion-error-p
+    '(ntop.app.domain::define-parity-table "invalid" :key))
+   :to-be t)
   (cl-weave:expect
    (parity-macro-expansion-error-p
     '(ntop.app.domain::define-parity-table *probe-parity-table* :unknown))
@@ -139,19 +160,21 @@
    (parity-macro-expansion-error-p
     '(ntop.app.domain::define-parity-table
       *probe-parity-table* :key ("Probe")))
+   :to-be t)
+  (cl-weave:expect
+   (parity-macro-expansion-error-p
+    '(ntop.app.domain::define-parity-table
+      *probe-parity-table* :key "not-a-row"))
    :to-be t))
  (cl-weave:it
-  "returns independent records and nested values"
+  "returns the defined records without copying them"
   (let* ((first-entry (first (ntop.app.domain:btm-parity-catalog)))
-         (second-entry (first (ntop.app.domain:btm-parity-catalog)))
-         (keys (ntop.app.domain:parity-key-keys first-entry)))
-    (cl-weave:expect (not (eq first-entry second-entry)) :to-be t)
-    (setf (char (first keys) 0) #\X
-          (car keys) "changed")
-    (cl-weave:expect (first (ntop.app.domain:parity-key-keys second-entry))
-                     :to-equal "q")
+         (repeated-entry (first (ntop.app.domain:btm-parity-catalog)))
+         (table-entry
+           (first ntop.app.domain::*btm-parity-key-data*)))
+    (cl-weave:expect (eq first-entry table-entry) :to-be t)
+    (cl-weave:expect (eq first-entry repeated-entry) :to-be t)
     (cl-weave:expect
-     (first
-      (ntop.app.domain:parity-key-keys
-       (first (ntop.app.domain:btm-parity-catalog))))
-     :to-equal "q"))))
+     (eq (ntop.app.domain:parity-key-keys first-entry)
+         (ntop.app.domain:parity-key-keys repeated-entry))
+     :to-be t))))
