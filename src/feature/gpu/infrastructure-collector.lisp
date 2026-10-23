@@ -36,7 +36,10 @@
                                                         sampled-at
                                                         :devices
                                                         devices)))
-                                            on-unavailable)))
+                                            (lambda (reason)
+                                              (declare (ignore reason))
+                                              (funcall on-unavailable
+                                                       :read-failed)))))
 
 (defmethod ntop.shared.application:collect-gpu-sample ((collector gpu-collector)
                                                        on-sample

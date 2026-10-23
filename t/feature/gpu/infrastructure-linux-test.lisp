@@ -6,11 +6,17 @@
                                          "t/platform/linux/fixtures/sysfs-device/~A/"
                                          fixture)))
 
-(defun %read-linux-gpu-fixture (fixture)
+(defun %read-linux-gpu-fixture (fixture &optional
+                                        (nvml-loader
+                                         (lambda ()
+                                           (error
+                                            "Injected missing NVML library.")))
+                                        (nvml-reader
+                                         (lambda ()
+                                           (values nil nil))))
   (let ((result nil)
-        (ntop.gpu.infrastructure::*nvml-shared-library-loader*
-         (lambda ()
-           (error "Injected missing NVML library."))))
+        (ntop.gpu.infrastructure::*nvml-shared-library-loader* nvml-loader)
+        (ntop.gpu.infrastructure::*nvml-device-data-reader* nvml-reader))
     (ntop.platform.linux:with-linux-root (%gpu-linux-fixture-root fixture)
                                          (ntop.gpu.infrastructure::read-linux-gpu-device-data
                                           (lambda (rows)
@@ -66,10 +72,10 @@
                                        :to-equal
                                        "Radeon Fixture")))
                    (cl-weave:it
-                    "reports no devices when the AMD sysfs tree is absent"
+                    "reports private API unavailability when the AMD sysfs tree is absent"
                     (cl-weave:expect (%read-linux-gpu-fixture "empty")
                                      :to-equal
-                                     '(:unavailable :no-devices)))
+                                     '(:unavailable :private-api-unavailable)))
                    (cl-weave:it
                     "combines AMD and injected NVML rows without loading NVML"
                     (let ((result nil)
@@ -210,4 +216,91 @@
                          (mapcar #'ntop.gpu.domain:gpu-device-name devices)
                          :to-equal
                          '("GPU0" "GPU1"))
+                        (cl-weave:expect *gpu-device-read-count* :to-be 1)))))
+
+(cl-weave:describe "Linux GPU unavailable reasons"
+                   (cl-weave:it
+                    "reports no GPU when NVML succeeds with no devices"
+                    (cl-weave:expect
+                     (%read-linux-gpu-fixture "empty"
+                                              (lambda ()
+                                                nil)
+                                              (lambda ()
+                                                (values nil nil)))
+                     :to-equal
+                     '(:unavailable :not-present)))
+                   (cl-weave:it "reports NVML query failures as read failures"
+                                (cl-weave:expect
+                                 (%read-linux-gpu-fixture "empty"
+                                                          (lambda ()
+                                                            nil)
+                                                          (lambda ()
+                                                            (values nil
+                                                                    :read-failed)))
+                                 :to-equal
+                                 '(:unavailable :read-failed)))
+                   (cl-weave:it
+                    "maps Linux GPU failures to the shared reason keywords"
+                    (dolist
+                        (case '((nil nil :not-present)
+                                (nil :not-present :not-present)
+                                (:permission-denied nil :permission-denied)
+                                (nil :permission-denied :permission-denied)
+                                (:root-unavailable nil :unsupported-platform)
+                                (nil :unsupported-platform
+                                     :unsupported-platform)
+                                (:invalid-data nil :read-failed)
+                                (nil :private-api-unavailable
+                                     :private-api-unavailable)
+                                (:unavailable :private-api-unavailable
+                                              :private-api-unavailable)
+                                (:unavailable :not-present :not-present)
+                                (:unavailable :read-failed :read-failed)
+                                (:unavailable :nvml-unavailable :read-failed)))
+                      (destructuring-bind (amd-reason nvml-reason expected) case
+                        (cl-weave:expect
+                         (ntop.gpu.infrastructure::%linux-gpu-unavailable-reason
+                          amd-reason
+                          nvml-reason)
+                         :to-be
+                         expected)))))
+
+(progn
+  (defclass gpu-failure-clock ()
+    ())
+  (defmethod ntop.shared.domain:read-monotonic-time ((clock gpu-failure-clock)
+                                                     on-time
+                                                     on-unavailable)
+    (declare (ignore clock on-time))
+    (funcall on-unavailable
+             (make-condition 'simple-error
+                             :format-control
+                             "Injected clock failure."
+                             :format-arguments
+                             nil)))
+  (cl-weave:describe "GPU collection clock failure"
+                     (cl-weave:it
+                      "passes a permitted reason when sample time is unavailable"
+                      (let* ((*gpu-device-read-count* 0)
+                             (collector
+                              (make-instance 'gpu-fixture-collector
+                                             :clock
+                                             (make-instance 'gpu-failure-clock)
+                                             :config
+                                             (ntop.shared.application:make-application-config)))
+                             (result nil))
+                        (ntop.shared.application:collect-gpu-sample collector
+                                                                    (lambda
+                                                                        (sample)
+                                                                      (setf result (list
+                                                                                    :value
+                                                                                    sample)))
+                                                                    (lambda
+                                                                        (reason)
+                                                                      (setf result (list
+                                                                                    :unavailable
+                                                                                    reason))))
+                        (cl-weave:expect result
+                                         :to-equal
+                                         '(:unavailable :read-failed))
                         (cl-weave:expect *gpu-device-read-count* :to-be 1)))))

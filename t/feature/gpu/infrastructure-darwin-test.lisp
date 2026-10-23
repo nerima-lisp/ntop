@@ -4,7 +4,7 @@
 (cl-weave:describe
  "Darwin IOAccelerator reader"
  (cl-weave:it-run-if (member :darwin *features*)
-   "calls exactly one result continuation"
+   "calls exactly one result continuation with a contract reason"
    (let ((continuation-count 0))
      (ntop.platform.darwin:darwin-read-gpu-device-data
       (lambda (rows)
@@ -18,6 +18,13 @@
          :to-be
          t))
       (lambda (reason)
-        (declare (ignore reason))
+        (cl-weave:expect
+         (and (keywordp reason)
+              (member
+               reason
+               '(:not-present :disabled :permission-denied
+                 :unsupported-platform :private-api-unavailable :read-failed)))
+         :to-be
+         t)
         (incf continuation-count)))
      (cl-weave:expect continuation-count :to-be 1))))

@@ -159,11 +159,13 @@
     (values nil :nvml-unavailable)))
 
 (defun %read-linux-nvidia-gpu-rows ()
-  (handler-case (progn
-                  (funcall *nvml-shared-library-loader*)
-                  (funcall *nvml-device-data-reader*))
+  (handler-case (funcall *nvml-shared-library-loader*)
     (error ()
-      (values nil :nvml-unavailable))))
+      (return-from %read-linux-nvidia-gpu-rows
+        (values nil :private-api-unavailable))))
+  (handler-case (funcall *nvml-device-data-reader*)
+    (error ()
+      (values nil :read-failed))))
 
 (defun %linux-amd-gpu-row (gpu)
   (list :name
@@ -187,9 +189,16 @@
 
 (defun %linux-gpu-unavailable-reason (amd-reason nvml-reason)
   (cond
-    ((and amd-reason (not (eq amd-reason :unavailable))) amd-reason)
-    ((and nvml-reason (not (eq nvml-reason :nvml-unavailable))) nvml-reason)
-    (t :no-devices)))
+    ((or (eq amd-reason :permission-denied) (eq nvml-reason :permission-denied))
+     :permission-denied)
+    ((or (eq amd-reason :root-unavailable)
+         (eq amd-reason :unsupported-platform)
+         (eq nvml-reason :unsupported-platform)) :unsupported-platform)
+    ((and amd-reason (not (eq amd-reason :unavailable))) :read-failed)
+    ((eq nvml-reason :private-api-unavailable) :private-api-unavailable)
+    ((eq nvml-reason :not-present) :not-present)
+    (nvml-reason :read-failed)
+    (t :not-present)))
 
 (defun read-linux-gpu-device-data (on-value on-unavailable)
   (let ((amd-gpus nil)
