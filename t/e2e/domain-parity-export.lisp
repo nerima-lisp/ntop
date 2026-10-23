@@ -61,7 +61,7 @@
                          (domain-parity-entry-to-json-object
                           (apply constructor initargs)))
                         :to-equal
-                        expected))))
+                        (apply #'concatenate 'string expected)))))
 
 (progn
   (defun domain-parity-json-value (entry accessor conversion)

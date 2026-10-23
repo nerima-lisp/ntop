@@ -23,12 +23,59 @@
 
 (cl-weave:describe "WP0-6 measurement helpers"
                    (cl-weave:it
-                    "expands duration rows into cl-weave table tests"
-                    (let ((expansion
-                           (macroexpand-1
-                            (quote (define-ps-duration-cases ("0:00.00" 0d0))))))
+                    "expands measurement macros into data and test forms"
+                    (let* ((duration-expansion
+                            (macroexpand-1
+                             '(define-ps-duration-cases ("0:00.00" 0d0))))
+                           (key-cycle-macro
+                            (find-symbol "DEFINE-MEASUREMENT-KEY-CYCLE"
+                                         "NTOP.E2E"))
+                           (key-cycle-expansion
+                            (macroexpand-1
+                             (list key-cycle-macro
+                                   (list #\? #x3f)
+                                   (list #\Escape #x1b))))
+                           (status-table-macro
+                            (find-symbol "DEFINE-N6-REPLY-STATUS-TABLE"
+                                         "NTOP.E2E"))
+                           (status-table-expansion
+                            (macroexpand-1
+                             (list status-table-macro
+                                   (list 0 #x30)
+                                   (list 1 #x31)
+                                   (list 2 #x32)
+                                   (list 3 #x33)
+                                   (list 4 #x34)))))
                       (cl-weave:expect
-                       (eq (first expansion) (find-symbol "IT-EACH" "CL-WEAVE"))
+                       (and
+                        (eq (first duration-expansion)
+                            (find-symbol "IT-EACH" "CL-WEAVE"))
+                        (equal key-cycle-expansion
+                               '(defparameter ntop.e2e::*measurement-key-cycle*
+                                  (vector
+                                   (list :key
+                                         #\?
+                                         :octets
+                                         (make-array 1
+                                                     :element-type
+                                                     (quote (unsigned-byte 8))
+                                                     :initial-element
+                                                     63))
+                                   (list :key
+                                         #\Escape
+                                         :octets
+                                         (make-array 1
+                                                     :element-type
+                                                     (quote (unsigned-byte 8))
+                                                     :initial-element
+                                                     27)))))
+                        (equal status-table-expansion
+                               '(defparameter ntop.e2e::*n6-reply-status-table*
+                                  (quote
+                                   ((48 . 0) (49 . 1)
+                                    (50 . 2)
+                                    (51 . 3)
+                                    (52 . 4))))))
                        :to-be
                        t)))
                    (cl-weave:it-each
@@ -82,7 +129,7 @@
                                             (not duration-p))
                               (ntop.e2e::measurement-error ()
                                 duration-p)))
-                           (key-octets ntop.e2e::*measurement-key-octets*))
+                           (key-cycle ntop.e2e::*measurement-key-cycle*))
                       (cl-weave:expect
                        (and (eq (first expansion) 'defparameter)
                             (eq (second expansion)
@@ -101,9 +148,14 @@
                             (functionp (symbol-function procedure-symbol))
                             window-valid-p
                             duration-policy-p
-                            (typep key-octets '(vector (unsigned-byte 8)))
-                            (= (length key-octets) 1)
-                            (= (aref key-octets 0) #x3f))
+                            (typep key-cycle 'vector)
+                            (= (length key-cycle) 2)
+                            (and (char= (getf (aref key-cycle 0) :key) #\?)
+                                 (equalp (getf (aref key-cycle 0) :octets)
+                                         #(#x3f))
+                                 (char= (getf (aref key-cycle 1) :key) #\Escape)
+                                 (equalp (getf (aref key-cycle 1) :octets)
+                                         #(#x1b))))
                        :to-be
                        t)))
                    (define-ps-duration-cases ("0:00.00" 0d0)
@@ -136,7 +188,8 @@
                                  t))
                    (define-n6-reply-cases (" 1b 5b 3f 32 35 3b 30 24 79" 0)
                                           (" 1b 5b 3f 32 35 3b 00 24 79" nil)
-                                          (" 1b 5b 3f 32 35 3b 31 24 79" 1)
+                                          ("  1b  5b  3f  32  35  3b  31  24  79"
+                                           1)
                                           (" 1b 5b 3f 32 35 3b 32 24 79" 2)
                                           (" 1b 5b 3f 32 35 3b 33 24 79" 3)
                                           (" 1b 5b 3f 32 35 3b 34 24 79" 4)
