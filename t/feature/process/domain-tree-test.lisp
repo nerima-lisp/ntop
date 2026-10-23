@@ -38,6 +38,7 @@
                                                    ((3 ((4 nil))))))
                     "WP4 tree case ~A preserves parentage and roots"
                     (case-name records expected-shape)
+                    (declare (ignorable case-name))
                     (let* ((rows
                             (mapcar
                              (lambda (pair)
@@ -167,6 +168,7 @@
                      ((:expand-default nil nil) (:collapse-default t t))
                      "WP4 tree default collapse state is ~A"
                      (case-name default-collapsed-p expected)
+                     (declare (ignorable case-name))
                      (let ((state
                             (ntop.process.domain::make-process-tree-state
                              :default-collapsed-p

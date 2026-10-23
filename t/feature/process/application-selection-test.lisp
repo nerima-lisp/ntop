@@ -31,6 +31,7 @@
                     "restores grouped selection only for the exact string key in the ~S case"
                     (case key
                       expected-index)
+                    (declare (ignorable case))
                     (let ((group-keys (list "Worker" "worker")))
                       (cl-weave:expect
                        (ntop.process.application::find-process-group-index-by-key

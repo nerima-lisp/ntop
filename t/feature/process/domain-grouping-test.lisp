@@ -200,6 +200,7 @@
                                first-command
                                second-command
                                expected-count)
+                    (declare (ignorable case-name))
                     (let* ((rows
                             (list
                              (%wp4-grouping-row 5

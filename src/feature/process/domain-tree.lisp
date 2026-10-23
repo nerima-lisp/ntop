@@ -104,6 +104,7 @@
         (when pid
           (multiple-value-bind (existing present-p)
               (gethash pid nodes-by-pid)
+            (declare (ignore existing))
             (when present-p
               (error "Duplicate process PID in tree: ~S" pid))
             (setf (gethash pid nodes-by-pid) node)))))

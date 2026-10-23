@@ -191,6 +191,7 @@
                                first-value
                                second-value
                                expected)
+                    (declare (ignorable case-name))
                     (let* ((rows
                             (list
                              (%wp4-sorting-row-with-values 1
@@ -253,6 +254,7 @@
                      (:nice-ascending :nice :ascending -5 5 (1 2)))
                     "WP4 column key case ~A sorts process values"
                     (case-name key order first-value second-value expected)
+                    (declare (ignorable case-name))
                     (let* ((rows
                             (list
                              (%wp4-sorting-row-for-column 1 key first-value)

@@ -113,6 +113,7 @@
                                active-fraction
                                fallback
                                expected)
+                    (declare (ignorable case-name))
                     (let* ((previous-record
                             (%wp4-metrics-record 17 :cpu-time-ns previous))
                            (current-record
@@ -211,6 +212,7 @@
                                active-fraction
                                active-delta
                                expected)
+                    (declare (ignorable case-name))
                     (let* ((previous-record
                             (%wp4-metrics-record 18 :cpu-time-ns previous))
                            (current-record
@@ -255,6 +257,7 @@
                                elapsed
                                expected-read
                                expected-write)
+                    (declare (ignorable case-name))
                     (let* ((previous-record
                             (%wp4-metrics-record 23
                                                  :read-bytes
