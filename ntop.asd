@@ -296,6 +296,9 @@
 
    ;; WP13: CLI parity parser and configuration tests.
    (:file "t/cli/presentation-cli-test")
+
+   ;; WP13: CLI config conversion coverage.
+   (:file "t/cli/presentation-cli-config-test")
    )
   :perform (asdf:test-op (operation system)
   (declare (ignore operation system))
