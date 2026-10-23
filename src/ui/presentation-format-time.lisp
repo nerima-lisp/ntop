@@ -49,3 +49,9 @@
                 (+ (mod total-seconds seconds-per-minute)
                    (/ milliseconds milliseconds-per-second))
                 second-precision))))))
+
+;; Source: btm time-series x-axis labels, base.rs lines 111-130.
+(defun format-time-axis-labels (width-milliseconds)
+  (unless (and (realp width-milliseconds) (plusp width-milliseconds))
+    (error "A time-axis width must be a positive number of milliseconds."))
+  (list (format nil "~Ds" (floor width-milliseconds 1000)) "0s"))

@@ -50,3 +50,43 @@
                       (ntop.ui::format-disk-io-axis-labels max-entry)
                       (cl-weave:expect (= actual-upper expected-upper) :to-be t)
                       (cl-weave:expect actual-labels :to-equal expected-labels))))
+
+(cl-weave:describe "btm logarithmic axis format values"
+  (cl-weave:it-each
+   ((0d0 :decimal :bit 6d0 (" 0b" "1Kb" "1Mb"))
+    (999d0 :decimal :byte 6d0 (" 0B" "1KB" "1MB"))
+    (1d6 :decimal :bit 9d0 (" 0b" "1Kb" "1Mb" "1Gb"))
+    (1d9 :decimal :byte 12d0 (" 0B" "1KB" "1MB" "1GB" "1TB"))
+    (1d12 :decimal :bit 15d0 (" 0b" "1Kb" "1Mb" "1Gb" "1Tb" "1Pb"))
+    (1d16 :decimal :byte 15d0 (" 0B" "1KB" "1MB" "1GB" "1TB" "1PB"))
+    (0d0 :binary :byte 20d0 ("  0B" "1KiB" "1MiB"))
+    (1d0 :binary :bit 20d0 ("  0b" "1Kib" "1Mib"))
+    (1.048576d6 :binary :byte 30d0 ("  0B" "1KiB" "1MiB" "1GiB"))
+    (1.073741824d9 :binary :bit 40d0 ("  0b" "1Kib" "1Mib" "1Gib" "1Tib"))
+    (1.099511627776d12 :binary :byte 50d0
+     ("  0B" "1KiB" "1MiB" "1GiB" "1TiB" "1PiB"))
+    (-1d0 :decimal :byte 6d0 (" 0B" "1KB" "1MB")))
+   "formats logarithmic network axis for ~A ~A ~A"
+   (max-entry prefix-system data-unit expected-upper expected-labels)
+   (multiple-value-bind (actual-upper actual-labels)
+       (ntop.ui:format-network-log-axis-labels
+        max-entry prefix-system data-unit)
+     (cl-weave:expect (= actual-upper expected-upper) :to-be t)
+     (cl-weave:expect actual-labels :to-equal expected-labels)))
+  (cl-weave:it-each
+   ((0d0 20d0 ("  0B/s" "1KiB/s" "1MiB/s"))
+    (1.048575d6 20d0 ("  0B/s" "1KiB/s" "1MiB/s"))
+    (1.048576d6 30d0 ("  0B/s" "1KiB/s" "1MiB/s" "1GiB/s"))
+    (1.073741824d9 40d0
+     ("  0B/s" "1KiB/s" "1MiB/s" "1GiB/s" "1TiB/s"))
+    (1.099511627776d12 50d0
+     ("  0B/s" "1KiB/s" "1MiB/s" "1GiB/s" "1TiB/s" "1PiB/s"))
+    (1.125899906842624d15 50d0
+     ("  0B/s" "1KiB/s" "1MiB/s" "1GiB/s" "1TiB/s" "1PiB/s"))
+    (-1d0 20d0 ("  0B/s" "1KiB/s" "1MiB/s")))
+   "formats logarithmic disk I/O axis for ~A bytes per second"
+   (max-entry expected-upper expected-labels)
+   (multiple-value-bind (actual-upper actual-labels)
+       (ntop.ui:format-disk-io-log-axis-labels max-entry)
+     (cl-weave:expect (= actual-upper expected-upper) :to-be t)
+     (cl-weave:expect actual-labels :to-equal expected-labels))))

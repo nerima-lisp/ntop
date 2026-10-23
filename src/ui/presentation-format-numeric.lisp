@@ -285,7 +285,52 @@
                   (format-fixed scaled-max precision width)
                   (format-fixed (* scaled-max 3/2) precision width)))))
 
-(defun format-aligned (value width alignment)
+;; Source: btm network_graph.rs log-axis tiers, lines 443-568.
+(defun format-network-log-axis-labels (max-entry prefix-system data-unit)
+  (let* ((binary-p (ecase prefix-system
+                     (:decimal nil)
+                     (:binary t)))
+         (base (if binary-p 2d0 10d0))
+         (thresholds (if binary-p
+                         '(20d0 30d0 40d0 50d0)
+                         '(6d0 9d0 12d0 15d0)))
+         (prefixes (if binary-p
+                       '("Ki" "Mi" "Gi" "Ti" "Pi")
+                       '("K" "M" "G" "T" "P")))
+         (unit (ecase data-unit
+                 (:bit "b")
+                 (:byte "B")))
+         (zero-padding (if binary-p "  " " "))
+         (tier (cond
+                 ((< max-entry (expt base (first thresholds))) 0)
+                 ((< max-entry (expt base (second thresholds))) 1)
+                 ((< max-entry (expt base (third thresholds))) 2)
+                 (t 3))))
+    (values (nth tier thresholds)
+            (loop for index below (+ tier 3)
+                  collect (if (zerop index)
+                              (format nil "~A0~A" zero-padding unit)
+                              (format nil "1~A~A"
+                                      (nth (1- index) prefixes)
+                                      unit)))))
+
+;; Source: btm disk_io_graph.rs log-axis tiers, lines 305-340.
+) (defun format-disk-io-log-axis-labels (max-entry)
+  (let* ((thresholds '(20d0 30d0 40d0 50d0))
+         (tier (cond
+                 ((< max-entry (expt 2d0 (first thresholds))) 0)
+                 ((< max-entry (expt 2d0 (second thresholds))) 1)
+                 ((< max-entry (expt 2d0 (third thresholds))) 2)
+                 (t 3))))
+    (values (nth tier thresholds)
+            (loop for index below (+ tier 3)
+                  collect (if (zerop index)
+                              "  0B/s"
+                              (format nil "1~A/s"
+                                      (nth (1- index)
+                                           '("KiB" "MiB" "GiB" "TiB" "PiB")))))))
+
+) (defun format-aligned (value width alignment)
   (ecase alignment
     (:left (format nil "~vA" width value))
     (:right (format nil "~v@A" width value))))

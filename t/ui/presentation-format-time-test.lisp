@@ -84,3 +84,25 @@
                                      :signaled))
                                  :to-be
                                  :signaled)))
+
+(cl-weave:describe "btm time-axis labels"
+  (cl-weave:it-each
+   ((1 "0s") (999 "0s") (1000 "1s") (1999 "1s")
+    (59999 "59s") (60000 "60s") (3599999 "3599s")
+    (3600000 "3600s") (86400000 "86400s") (2500.5 "2s"))
+   "formats a ~A millisecond time-axis width"
+   (width-milliseconds expected-left-label)
+   (cl-weave:expect
+    (ntop.ui:format-time-axis-labels width-milliseconds)
+    :to-equal
+    (list expected-left-label "0s")))
+  (cl-weave:it-each
+   ((0) (-1) ("1000"))
+   "rejects an invalid time-axis width of ~A"
+   (width-milliseconds)
+   (cl-weave:expect
+    (handler-case
+        (progn (ntop.ui:format-time-axis-labels width-milliseconds) :returned)
+      (error () :signaled))
+    :to-be
+    :signaled)))
