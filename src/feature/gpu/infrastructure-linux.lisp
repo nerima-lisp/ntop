@@ -1,7 +1,6 @@
 (in-package #:ntop.gpu.infrastructure)
 
-(defconstant +linux-nvml-library+
-  "libnvidia-ml.so.1")
+(defparameter +linux-nvml-library+ "libnvidia-ml.so.1")
 
 (defconstant +nvml-device-name-buffer-size+
   128)
