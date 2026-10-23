@@ -1,6 +1,6 @@
-;;; Treat samples and collection snapshots as immutable after construction. Collectors build
-;;; a fresh sample each cycle; UI code must not change slots or values they reference.
-;;; Read-only slots prevent reassignment; nested values follow this contract by convention.
+;;; Samples, snapshots, and value records are immutable after construction. Collectors build
+;;; a fresh sample each cycle; UI code must not change any struct slots.
+;;; Read-only slots do not prevent changes to lists or vectors stored in those slots.
 ;;; Handoff passes samples directly without copying.
 (in-package #:ntop.shared.domain)
 
@@ -22,7 +22,12 @@
               :read-only t))
 
 (defmacro define-value-type (name &body slots)
-  `(defstruct (,name (:copier nil)) ,@slots))
+  `(defstruct (,name (:copier nil))
+     ,@(mapcar (lambda (slot)
+                 (if (symbolp slot)
+                     `(,slot nil :read-only t)
+                     (append slot '(:read-only t))))
+               slots)))
 
 (defmacro define-sample-type (name &body slots)
   `(defstruct (,name (:include sample-record) (:copier nil))

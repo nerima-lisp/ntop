@@ -1,6 +1,7 @@
 (in-package #:ntop.test)
 
 (ntop.shared.domain:define-sample-type measurement-fixture-sample (amount 0 :type integer))
+(ntop.shared.domain:define-value-type measurement-fixture-value (amount 0))
 
 (cl-weave:describe "measurement values distinguish missing data from zero"
   (cl-weave:it-each ((nil nil)
@@ -15,16 +16,17 @@
      (ntop.shared.domain:measurement-available-p value)
      :to-be expected))
 
-  (cl-weave:it "defines value types with a copier-free structure"
+  (cl-weave:it "defines value types with read-only slots"
     (cl-weave:expect
      (macroexpand-1
-      '(ntop.shared.domain:define-value-type sample-value (amount 0)))
-     :to-satisfy
-     (lambda (form)
-       (equal form
-              '(defstruct (ntop.test::sample-value
-                            (:copier nil))
-                 (ntop.test::amount 0))))))
+      '(ntop.shared.domain:define-value-type sample-value
+         amount
+         (count 0 :type integer)))
+     :to-equal
+     '(defstruct (ntop.test::sample-value
+                  (:copier nil))
+        (ntop.test::amount nil :read-only t)
+        (count 0 :type integer :read-only t))))
 
   (cl-weave:it "defines sample types with the shared timestamp record"
     (cl-weave:expect
@@ -51,9 +53,10 @@
               (intern "MAKE-MEASUREMENT-FIXTURE-SAMPLE" "NTOP.TEST"))
              :amount 3)))
 (cl-weave:it
-  "does not generate sample slot writers"
+  "does not generate sample or value type slot writers"
   (cl-weave:expect
    (list
     (fboundp '(setf ntop.shared.domain:sample-record-sampled-at))
-    (fboundp '(setf ntop.test::measurement-fixture-sample-amount)))
-   :to-equal '(nil nil)))
+    (fboundp '(setf ntop.test::measurement-fixture-sample-amount))
+    (fboundp '(setf ntop.test::measurement-fixture-value-amount)))
+   :to-equal '(nil nil nil)))
