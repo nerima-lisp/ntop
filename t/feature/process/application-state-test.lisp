@@ -5,16 +5,16 @@
 
 (defmethod ntop.process.domain:compile-process-search
     ((query (eql :wp4-search-success)) regex-p case-sensitive-p whole-word-p
-     on-success on-syntax-error)
+     command-p on-success on-syntax-error)
   (declare (ignore query))
   (setf *wp4-process-search-call*
-        (list regex-p case-sensitive-p whole-word-p))
+        (list regex-p case-sensitive-p whole-word-p command-p))
   (funcall on-success #'identity))
 
 (defmethod ntop.process.domain:compile-process-search
     ((query (eql :wp4-search-error)) regex-p case-sensitive-p whole-word-p
-     on-success on-syntax-error)
-  (declare (ignore query regex-p case-sensitive-p whole-word-p on-success))
+     command-p on-success on-syntax-error)
+  (declare (ignore query regex-p case-sensitive-p whole-word-p command-p on-success))
   (funcall on-syntax-error *wp4-process-search-error*))
 
 (cl-weave:describe "process application search state"
@@ -27,23 +27,26 @@
         (ntop.process.application::process-search-state-syntax-error state))
        :to-equal '(nil nil nil))))
   (cl-weave:it-each
-    ((:literal nil nil nil)
-     (:case-sensitive nil t nil)
-     (:whole-word nil nil t)
-     (:all-options t t t))
+    ((:literal nil nil nil nil)
+     (:case-sensitive nil t nil nil)
+     (:whole-word nil nil t nil)
+     (:command nil nil nil t)
+     (:all-options t t t t))
     "passes the configured search flags for ~S"
-    (case regex-p case-sensitive-p whole-word-p)
+    (case regex-p case-sensitive-p whole-word-p command-p)
+    (declare (ignorable case))
     (let* ((*wp4-process-search-call* nil)
            (config
              (ntop.shared.application:make-application-config
               :process-regex-p regex-p
               :process-case-sensitive-p case-sensitive-p
-              :process-whole-word-p whole-word-p))
+              :process-whole-word-p whole-word-p
+              :process-show-command-p command-p))
            (state (ntop.process.application::make-process-search-state)))
       (ntop.process.application::compile-process-search-state
        state :wp4-search-success config)
       (cl-weave:expect *wp4-process-search-call*
-                       :to-equal (list regex-p case-sensitive-p whole-word-p))))
+                       :to-equal (list regex-p case-sensitive-p whole-word-p command-p))))
   (cl-weave:it "stores the predicate delivered to the success continuation"
     (let* ((*wp4-process-search-call* nil)
            (config (ntop.shared.application:make-application-config))

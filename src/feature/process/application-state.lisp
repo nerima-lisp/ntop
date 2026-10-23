@@ -15,6 +15,7 @@
           (ntop.shared.application:application-config-process-whole-word-p config)))
     (ntop.process.domain:compile-process-search
      query regex-p case-sensitive-p whole-word-p
+     (ntop.shared.application:application-config-process-show-command-p config)
      (lambda (predicate)
        (setf (process-search-state-query state) query
              (process-search-state-predicate state) predicate
