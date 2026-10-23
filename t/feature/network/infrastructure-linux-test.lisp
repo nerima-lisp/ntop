@@ -88,7 +88,7 @@
                     :to-equal
                     (quote (:unavailable :read-failed)))
    (let ((cases
-           (quote ((:unavailable :not-present)
+           (quote ((:unavailable :read-failed)
                    (:not-present :not-present)
                    (:disabled :disabled)
                    (:permission-denied :permission-denied)

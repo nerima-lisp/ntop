@@ -9,7 +9,6 @@
    (lambda (reason)
      (funcall on-unavailable
               (cond
-                ((eq reason :unavailable) :not-present)
                 ((typep reason 'ntop.shared.application:collector-unavailability-reason) reason)
                 (t :read-failed))))))
 
