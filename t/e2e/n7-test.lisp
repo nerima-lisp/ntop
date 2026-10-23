@@ -57,12 +57,16 @@
            (loop for index below 130
                  collect (format nil "PATTERN_~d" index)))
          (batches (ntop.e2e::%n7-pattern-batches patterns)))
-   (cl-weave:expect (mapcar (function length) batches)
-                    :to-equal
-                    (list 64 64 2))
-   (cl-weave:expect (apply (function append) batches)
-                    :to-equal
-                    patterns)))
+    (cl-weave:expect (every (lambda (batch)
+                              (<= (length batch)
+                                  ntop.e2e::+n7-pattern-batch-size+))
+                            batches)
+                     :to-be
+                     t)
+    (cl-weave:expect (length batches) :to-equal 9)
+    (cl-weave:expect (apply (function append) batches)
+                     :to-equal
+                     patterns)))
  (cl-weave:it-each
   ((:initial 0d0 12d0) (:final-second 179d0 1d0))
   "bounds each command timeout for the ~A scan"

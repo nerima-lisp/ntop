@@ -8,7 +8,7 @@
                  settings)))
   (define-n7-settings
     (+n7-command-timeout-seconds+ 12d0)
-    (+n7-pattern-batch-size+ 64)
+    (+n7-pattern-batch-size+ 16)
     (+n7-total-timeout-seconds+ 180d0)))
 
 (defconstant +n7-probe-output-limit+
