@@ -124,18 +124,27 @@
                                     (%make-octets (quote (1 0 0 0 0 0 0 0)))))
                                  :to-throw
                                  'error))
-                   (cl-weave:it "expands fixed FFI routines and variables"
-                                (let* ((form
-                                        '(ntop.platform.darwin::define-darwin-ffi
-                                          (:routine ntop.test::probe
-                                                    "probe"
-                                                    sb-alien:int
-                                                    (value sb-alien:int))
-                                          (:variable ntop.test::task-self
-                                                     "mach_task_self_"
-                                                     sb-alien:unsigned-int)))
-                                       (expansion (macroexpand-1 form)))
-                                  (cl-weave:expect expansion
+                   (cl-weave:it "expands optional FFI declarations into arity-specific routines and dispatcher"
+                                (let* ((fixed-expansion
+                                        (macroexpand-1
+                                         '(ntop.platform.darwin::define-darwin-ffi
+                                           (:routine ntop.test::probe
+                                                     "probe"
+                                                     sb-alien:int
+                                                     (value sb-alien:int))
+                                           (:variable ntop.test::task-self
+                                                      "mach_task_self_"
+                                                      sb-alien:unsigned-int))))
+                                       (optional-expansion
+                                        (macroexpand-1
+                                         '(ntop.platform.darwin::define-darwin-ffi
+                                           (:routine ntop.test::variadic-probe
+                                                     "variadic_probe"
+                                                     sb-alien:int
+                                                     (descriptor sb-alien:int)
+                                             &optional
+                                             (argument sb-alien:int))))))
+                                  (cl-weave:expect fixed-expansion
                                                    :to-equal
                                                    '(progn
                                                       (sb-alien:define-alien-routine
@@ -146,7 +155,60 @@
                                                       (sb-alien:define-alien-variable
                                                        ("mach_task_self_"
                                                         ntop.test::task-self)
-                                                       sb-alien:unsigned-int)))))
+                                                       sb-alien:unsigned-int)))
+                                  (cl-weave:expect (first optional-expansion) :to-be 'progn)
+                                  (cl-weave:expect (length optional-expansion) :to-be 2)
+                                  (let* ((routine-expansion (second optional-expansion))
+                                         (one-argument-routine (second routine-expansion))
+                                         (two-argument-routine (third routine-expansion))
+                                         (dispatcher (fourth routine-expansion))
+                                         (one-argument-name (second (second one-argument-routine)))
+                                         (two-argument-name (second (second two-argument-routine)))
+                                         (lambda-list (third dispatcher))
+                                         (optional-binding (third lambda-list))
+                                         (dispatch-body (fourth dispatcher))
+                                         (supplied-p (third optional-binding)))
+                                    (cl-weave:expect (first routine-expansion) :to-be 'progn)
+                                    (cl-weave:expect (length routine-expansion) :to-be 4)
+                                    (cl-weave:expect (first one-argument-routine)
+                                                     :to-be
+                                                     'sb-alien:define-alien-routine)
+                                    (cl-weave:expect (first two-argument-routine)
+                                                     :to-be
+                                                     'sb-alien:define-alien-routine)
+                                    (cl-weave:expect (first (second one-argument-routine))
+                                                     :to-equal
+                                                     "variadic_probe")
+                                    (cl-weave:expect (first (second two-argument-routine))
+                                                     :to-equal
+                                                     "variadic_probe")
+                                    (cl-weave:expect (length one-argument-routine) :to-be 4)
+                                    (cl-weave:expect (length two-argument-routine) :to-be 5)
+                                    (cl-weave:expect (first dispatcher) :to-be 'defun)
+                                    (cl-weave:expect (second dispatcher)
+                                                     :to-be
+                                                     'ntop.test::variadic-probe)
+                                    (cl-weave:expect (first lambda-list)
+                                                     :to-be
+                                                     'ntop.test::descriptor)
+                                    (cl-weave:expect (second lambda-list) :to-be '&optional)
+                                    (cl-weave:expect (first optional-binding)
+                                                     :to-be
+                                                     'ntop.test::argument)
+                                    (cl-weave:expect (second optional-binding) :to-be nil)
+                                    (cl-weave:expect (not (eq one-argument-name two-argument-name)) :to-be t)
+                                    (cl-weave:expect (first dispatch-body) :to-be 'if)
+                                    (cl-weave:expect (second dispatch-body) :to-be supplied-p)
+                                    (cl-weave:expect (first (third dispatch-body)) :to-be two-argument-name)
+                                    (cl-weave:expect (rest (third dispatch-body))
+                                                     :to-equal
+                                                     '(ntop.test::descriptor ntop.test::argument))
+                                    (cl-weave:expect (first (fourth dispatch-body))
+                                                     :to-be
+                                                     one-argument-name)
+                                    (cl-weave:expect (rest (fourth dispatch-body))
+                                                     :to-equal
+                                                     '(ntop.test::descriptor)))))
                    (cl-weave:it "expands table tests into cl-weave cases"
                                 (let ((expansion
                                        (macroexpand-1

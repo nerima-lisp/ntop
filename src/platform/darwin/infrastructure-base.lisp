@@ -2,6 +2,8 @@
 
 (defparameter *mach-timebase-layout*
   '(:size 8 :field-size 4 :numerator-offset 0 :denominator-offset 4))
+(defparameter *mach-vm-statistics64-layout*
+  '(:byte-size 152 :word-count 38 :flavor 4))
 
 (defun decode-little-endian-unsigned (octets &key
                                              (start 0)
@@ -151,6 +153,11 @@
     (name sb-alien:unsigned-int))
   (:routine %mach-timebase-info "mach_timebase_info" sb-alien:int
     (info sb-alien:system-area-pointer))
+  (:routine %host-statistics64 "host_statistics64" sb-alien:int
+    (host sb-alien:unsigned-int)
+    (flavor sb-alien:int)
+    (statistics sb-alien:system-area-pointer)
+    (count (* sb-alien:unsigned-int)))
   (:routine %vm-deallocate "vm_deallocate" sb-alien:int
     (task sb-alien:unsigned-int)
     (address sb-alien:unsigned-long)
@@ -252,6 +259,36 @@
           (let ((status (%mach-port-deallocate %mach-task-self port)))
             (unless (zerop status)
               (error "mach_port_deallocate failed with code ~D." status)))))))
+
+#+darwin
+(defun mach-read-host-vm-statistics64 (on-value on-error)
+  "Read the 152-byte HOST_VM_INFO64 revision-1 prefix.
+ON-VALUE receives a 152-element (vector (unsigned-byte 8)).
+ON-ERROR receives :INVALID-HOST-PORT, (:MACH-ERROR status), or
+(:MACH-COUNT-MISMATCH 38 actual). Port-deallocation failures signal a condition."
+  (let* ((layout *mach-vm-statistics64-layout*)
+         (expected-count (getf layout :word-count))
+         (octets (make-array (getf layout :byte-size)
+                             :element-type '(unsigned-byte 8))))
+    (call-with-mach-host-port
+     (lambda (host)
+       (sb-alien:with-alien ((count sb-alien:unsigned-int expected-count))
+         (sb-sys:with-pinned-objects (octets)
+           (let ((status (%host-statistics64
+                          host
+                          (getf layout :flavor)
+                          (sb-sys:vector-sap octets)
+                          (sb-alien:addr count))))
+             (if (not (zerop status))
+                 (funcall on-error (list :mach-error status))
+                 (let ((actual-count count))
+                   (if (= actual-count expected-count)
+                       (funcall on-value octets)
+                       (funcall on-error
+                                (list :mach-count-mismatch
+                                      expected-count
+                                      actual-count)))))))))
+     on-error)))
 
 #+darwin
 (defun mach-timebase-info (on-value on-error)

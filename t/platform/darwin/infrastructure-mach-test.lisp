@@ -95,6 +95,87 @@
                                                            :to-equal
                                                            '(:mach-error 7)))))
                    (cl-weave:it-run-if (member :darwin *features*)
+                                       "passes mocked host VM statistics as 152 octets"
+                                       (let ((port 41)
+                                             (status 0)
+                                             (returned-count 38)
+                                             (statistic-calls 0)
+                                             (call-arguments nil)
+                                             (released nil)
+                                             (value nil)
+                                             (failure nil))
+                                         (cl-weave:with-mocked-functions
+                                          (((symbol-function
+                                             'ntop.platform.darwin::%mach-host-self)
+                                            (lambda () port))
+                                           ((symbol-function
+                                             'ntop.platform.darwin::%mach-port-deallocate)
+                                            (lambda (task name)
+                                              (declare (ignore task))
+                                              (setf released name)
+                                              0))
+                                           ((symbol-function
+                                             'ntop.platform.darwin::%host-statistics64)
+                                            (lambda (host flavor statistics count)
+                                              (incf statistic-calls)
+                                              (setf call-arguments
+                                                    (list host flavor
+                                                          (sb-alien:deref count)))
+                                              (setf (sb-alien:deref count) returned-count)
+                                              (dotimes (offset 152)
+                                                (setf (sb-sys:sap-ref-8 statistics offset)
+                                                      (mod offset 256)))
+                                              status)))
+                                          (flet ((read-statistics ()
+                                                   (ntop.platform.darwin:mach-read-host-vm-statistics64
+                                                    (lambda (octets)
+                                                      (setf value octets))
+                                                    (lambda (reason)
+                                                      (setf failure reason)))))
+                                            (setf port 0)
+                                            (read-statistics)
+                                            (cl-weave:expect failure :to-be :invalid-host-port)
+                                            (cl-weave:expect statistic-calls :to-be 0)
+                                            (cl-weave:expect released :to-be-null)
+                                            (setf port 41
+                                                  status 9
+                                                  returned-count 37
+                                                  failure nil)
+                                            (read-statistics)
+                                            (cl-weave:expect call-arguments
+                                                             :to-equal
+                                                             '(41 4 38))
+                                            (cl-weave:expect failure
+                                                             :to-equal
+                                                             '(:mach-error 9))
+                                            (cl-weave:expect value :to-be-null)
+                                            (cl-weave:expect released :to-be 41)
+                                            (setf status 0
+                                                  failure nil
+                                                  value nil
+                                                  released nil)
+                                            (read-statistics)
+                                            (cl-weave:expect failure
+                                                             :to-equal
+                                                             '(:mach-count-mismatch 38 37))
+                                            (cl-weave:expect value :to-be-null)
+                                            (setf returned-count 38
+                                                  failure nil
+                                                  value nil
+                                                  released nil)
+                                            (read-statistics)
+                                            (cl-weave:expect failure :to-be-null)
+                                            (cl-weave:expect released :to-be 41)
+                                            (cl-weave:expect statistic-calls :to-be 3)
+                                            (cl-weave:expect
+                                             (and (typep value '(vector (unsigned-byte 8)))
+                                                  (= (length value) 152)
+                                                  (loop for octet across value
+                                                        for offset from 0
+                                                        always (= octet (mod offset 256))))
+                                             :to-be
+                                             t)))))
+                   (cl-weave:it-run-if (member :darwin *features*)
                                        "passes VM deallocation results through continuations"
                                        (let ((status 0)
                                              (address-and-size nil)
