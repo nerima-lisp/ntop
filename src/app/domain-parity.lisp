@@ -1,6 +1,6 @@
-;;; The catalog shares read-only records; callers must treat them as immutable.
-;;; Use parity-entry-kind to dispatch and the parity-<kind>-<slot> accessors.
-;;; parity-flag-kebab-case derives the CLI spelling from each snake-case value.
+;;; btm-parity-catalog returns shared records; treat each record and its values as immutable.
+;;; Dispatch with parity-entry-kind, then use the matching type's field accessors.
+;;; parity-flag-kebab-case derives CLI spelling from a flag's snake-case name.
 (in-package #:ntop.app.domain)
 
 (progn
