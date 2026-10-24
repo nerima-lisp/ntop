@@ -351,8 +351,10 @@
                      collect
                      (ntop.shared.domain:history-sample-value sample)))
          :to-equal
-         (list (list (* 2 gib) (* 4 gib))
-               (list (* 3 gib) (* 5 gib)))))))
+         (list (list (float (* 2 gib) 1d0)
+                    (float (* 4 gib) 1d0))
+               (list (float (* 3 gib) 1d0)
+                     (float (* 5 gib) 1d0)))))))
   (cl-weave:it "omits empty GPU histories without requiring or using capacity"
     (let* ((gib (* 1024 1024 1024))
            (empty-series
