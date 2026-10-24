@@ -184,16 +184,15 @@
         (act :expand nil)
         (cl-weave:expect (ntop.app.domain:app-state-expanded-p state) :to-be nil))))
 
-  (cl-weave:it "forwards quit actions from the state transition"
-    (let* ((state (ntop.app.domain:make-app-state))
+  (cl-weave:it "forwards quit actions and preserves selection"
+    (let* ((state (ntop.app.domain:make-app-state :selected-widget :cpu))
            (action (ntop.app.domain:make-app-action :kind :quit)))
       (multiple-value-bind (next-state forwarded-action history-intent)
           (ntop.app.application::transition-application-state state action)
-        (cl-weave:expect (eq next-state state) :to-be nil)
+        (cl-weave:expect (ntop.app.domain:app-state-selected-widget next-state) :to-equal :cpu)
         (cl-weave:expect forwarded-action :to-be action)
         (cl-weave:expect history-intent :to-be nil)
-        (cl-weave:expect (ntop.app.domain:app-state-selected-widget state)
-                         :to-be :process))))
+        (cl-weave:expect (ntop.app.domain:app-state-selected-widget state) :to-be :cpu))))
 
   (cl-weave:it "delivers snapshots, reasons, and prunes histories on the UI thread"
   (let* ((channel (cl-concurrent-kit:make-channel :buffer-size 1))
@@ -328,7 +327,6 @@
        :to-equal :signal)
       (cl-weave:expect input-polls :to-be 0)))
 
-  (progn
   (cl-weave:it "uses 80 by 24 when initial dimensions are not positive integers"
     (dolist (dimensions (list (list nil nil) (list 80 0) (list 0 24)))
       (let ((channel (cl-concurrent-kit:make-channel :buffer-size 1))
@@ -352,7 +350,7 @@
          :signal)
         (cl-weave:expect (nreverse frames) :to-equal (list (list 80 24))))))
 
-  (cl-weave:it "preserves unrelated mode values and cycles widget view states"
+  (cl-weave:it "preserves mode values, cycles widget views, and suppresses expand in basic mode"
     (let* ((state (ntop.app.domain:make-app-state :selected-widget :memory))
            (basic-unchanged-action
              (ntop.app.domain:make-app-action
@@ -379,8 +377,8 @@
           (cl-weave:expect history-intent :to-be nil)
           (setf state next-state))
         (act :expand t)
-          (cl-weave:expect (ntop.app.domain:app-state-expanded-p state) :to-be t)
-          (act :basic t)
+        (cl-weave:expect (ntop.app.domain:app-state-expanded-p state) :to-be t)
+        (act :basic t)
         (multiple-value-bind (next-state forwarded-action history-intent)
             (ntop.app.application::transition-application-state
              state basic-unchanged-action)
@@ -400,7 +398,7 @@
           (ntop.app.domain:app-state-expanded-p state))
          :to-equal '(nil t t)))))
 
-  (cl-weave:it "applies zoom and history actions with the 30-second composition minimum"
+  (cl-weave:it "applies history actions and clamps zoom to the composition minimum of 30 seconds"
     (let* ((config
              (ntop.shared.application:make-application-config
               :rate-ms 1000
@@ -484,5 +482,5 @@
           (cl-weave:expect
            (multiple-value-list
             (ntop.shared.domain:history-current-window history))
-           :to-equal '(100d0 130d0))))))))
+           :to-equal '(100d0 130d0)))))))
 

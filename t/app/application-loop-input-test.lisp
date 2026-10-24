@@ -1,37 +1,22 @@
 (in-package #:ntop.test)
 
 (cl-weave:describe "application event loop input and collection"
-                   (cl-weave:it
-                    "calls the action observer for unknown and quit actions"
-                    (let* ((state (ntop.app.domain::make-app-state))
+                   (cl-weave:it "calls the action observer for forwarded unknown and quit actions"
+                    (let* ((state (ntop.app.domain:make-app-state))
                            (unknown-action
-                            (ntop.app.domain:make-app-action :kind
-                                                             :unknown
-                                                             :value
-                                                             :test))
-                           (quit-action
-                            (ntop.app.domain:make-app-action :kind
-                                                             :quit
-                                                             :value
-                                                             nil))
+                             (ntop.app.domain:make-app-action :kind :unknown :value :test))
+                           (quit-action (ntop.app.domain:make-app-action :kind :quit))
                            (observed nil)
+                           (composition
+                             (ntop.app.application:make-application-composition
+                              (ntop.shared.application:make-application-config)
+                              :on-action
+                              (lambda (current action)
+                                (push (list current action) observed))))
                            (on-action
-                            (lambda (current action)
-                              (push (list current action) observed))))
-                      (cl-weave:expect
-                       (ntop.app.application:apply-application-action state
-                                                                      unknown-action
-                                                                      nil
-                                                                      on-action)
-                       :to-be
-                       state)
-                      (cl-weave:expect
-                       (ntop.app.application:apply-application-action state
-                                                                      quit-action
-                                                                      nil
-                                                                      on-action)
-                       :to-equal
-                       :quit)
+                             (ntop.app.application:application-composition-on-action composition)))
+                      (cl-weave:expect (funcall on-action state unknown-action) :to-be state)
+                      (cl-weave:expect (funcall on-action state quit-action) :to-be state)
                       (cl-weave:expect (nreverse observed)
                                        :to-equal
                                        (list (list state unknown-action)
