@@ -225,13 +225,7 @@
                                     (<= (cdr span) right)))
                              (criterion-label-spans text label)))
                           pair)))
-                    (and (every #'identity spans)
-                         (every
-                          (lambda (span)
-                            (loop for column from (car span) below (cdr span)
-                                  always (cell-bold-p
-                                          (grid-cell-at grid row column))))
-                          spans))))
+                    (every #'identity spans)))
                 (criterion-rule-values :process-header-anchor-pairs))))))
 (defun criterion-border-cell-p (grid row column character frames)
   (and (criterion-character-in-p
@@ -257,34 +251,81 @@
               (:default nil)
               (:indexed value)
               (:rgb (coerce value 'vector))))))
-(defun project-criterion-grid (grid)
-  (let ((entries nil)
-        (frames (criterion-projection-frames grid)))
-    (dotimes (row (grid-height grid))
-      (let* ((text (criterion-row-text grid row))
-             (title-columns (criterion-title-columns text row frames))
-             (header-span
-               (criterion-process-header-span
-                text
-                (criterion-process-header-row-p grid row frames))))
-        (dotimes (column (grid-width grid))
-          (let* ((cell (grid-cell-at grid row column))
-                 (character (cell-character cell))
-                 (category
-                   (cond
-                     ((criterion-border-cell-p grid row column character frames)
-                      "border")
-                     ((and header-span
-                           (<= (car header-span) column)
-                           (< column (cdr header-span)))
-                      "process-header")
-                     ((member column title-columns) "title"))))
-            (when category
-              (push (vector category row column (string character)
-                            (criterion-color-vector (cell-foreground cell))
-                            (criterion-color-vector (cell-background cell))
-                            (if (cell-bold-p cell) 1 0))
-                    entries))))))
-    (vector (grid-width grid)
-            (grid-height grid)
-            (coerce (nreverse entries) 'vector))))
+(progn
+  (defun criterion-cpu-title-border-span (text row frames)
+    (let* ((rule
+             (find :cpu-load-averages
+                   (criterion-rule-values :dynamic-title-exclusions)
+                   :key #'first
+                   :test #'eq))
+           (label (second rule))
+           (value-count (third rule))
+           (label-spans (and label (criterion-label-spans text label)))
+           (value-spans (criterion-title-exclusion-spans text)))
+      (when (and rule (= (length value-spans) value-count))
+        (let ((frame
+                (reduce
+                 (lambda (left right)
+                   (if (or (null left)
+                           (< (- (fourth right) (third right))
+                              (- (fourth left) (third left))))
+                       right
+                       left))
+                 (remove-if-not
+                  (lambda (frame)
+                    (and (= row (first frame))
+                         (some (lambda (span)
+                                 (and (> (car span) (third frame))
+                                      (<= (cdr span) (fourth frame))))
+                               label-spans)
+                         (every (lambda (span)
+                                  (and (> (car span) (third frame))
+                                       (<= (cdr span) (fourth frame))))
+                                value-spans)))
+                  frames)
+                 :initial-value nil)))
+          (when frame
+            (let ((padding-column (cdr (car (last value-spans)))))
+              (cons padding-column (1+ padding-column))))))))
+  (defun project-criterion-grid (grid)
+    (let ((entries nil)
+          (frames (criterion-projection-frames grid)))
+      (dotimes (row (grid-height grid))
+        (let* ((text (criterion-row-text grid row))
+               (title-columns (criterion-title-columns text row frames))
+               (header-span
+                 (criterion-process-header-span
+                  text
+                  (criterion-process-header-row-p grid row frames)))
+               (cpu-border-span
+                 (criterion-cpu-title-border-span text row frames)))
+          (dotimes (column (grid-width grid))
+            (let* ((cell (grid-cell-at grid row column))
+                   (character (cell-character cell))
+                   (cpu-title-border-p
+                     (and cpu-border-span
+                          (<= (car cpu-border-span) column)
+                          (< column (cdr cpu-border-span))))
+                   (category
+                     (cond
+                       ((and (not cpu-title-border-p)
+                             (criterion-border-cell-p
+                              grid row column character frames))
+                        "border")
+                       ((and header-span
+                             (<= (car header-span) column)
+                             (< column (cdr header-span)))
+                        "process-header")
+                       ((member column title-columns) "title"))))
+              (when category
+                (push (vector category
+                              row
+                              column
+                              (string character)
+                              (criterion-color-vector (cell-foreground cell))
+                              (criterion-color-vector (cell-background cell))
+                              (if (cell-bold-p cell) 1 0))
+                      entries))))))
+      (vector (grid-width grid)
+              (grid-height grid)
+              (coerce (nreverse entries) 'vector)))))
