@@ -456,4 +456,8 @@
                    (ntop.app.domain:app-state-widget-v-states next-state)))
          :to-be
          (1+ start-index)))))))
+(load
+ (asdf:system-relative-pathname
+  "ntop/test"
+  "t/app/application-compose-dialogs-extra-test.lisp"))
 
