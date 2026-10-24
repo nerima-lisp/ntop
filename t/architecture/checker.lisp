@@ -32,10 +32,10 @@
     (string (string-upcase designator))))
 
 (defparameter +source-file-layer-rules+
-  (quote (("domain" . "DOMAIN")
-          ("application" . "APPLICATION")
-          ("infrastructure" . "INFRASTRUCTURE")
-          ("presentation" . "PRESENTATION"))))
+  (quote
+   (("domain" . "DOMAIN") ("application" . "APPLICATION")
+    ("infrastructure" . "INFRASTRUCTURE")
+    ("presentation" . "PRESENTATION"))))
 
 (defun package-layer (name)
   (let* ((parts (uiop:split-string name :separator "."))
@@ -92,9 +92,7 @@
   (loop for rule in +source-file-layer-rules+
         for stem = (car rule)
         when (or (string= name stem)
-                 (uiop:string-prefix-p
-                  (concatenate 'string stem "-")
-                  name))
+                 (uiop:string-prefix-p (concatenate 'string stem "-") name))
           return (cdr rule)))
 
 (defun path-layer-package (pathname)
@@ -103,8 +101,7 @@
          (area (and source-position (nth (1+ source-position) directories)))
          (feature (and source-position (nth (+ source-position 2) directories)))
          (name (or (pathname-name pathname) ""))
-         (layer
-          (source-file-layer name)))
+         (layer (source-file-layer name)))
     (cond
       ((null area) nil)
       ((string= area "shared")
@@ -139,97 +136,98 @@
         when (string= (or (form-operator-name form) "") "IN-PACKAGE")
           return (package-designator-name (second form))))
 
-(progn
-  (defun package-declaration-imports (form)
-    (when
-        (member (form-operator-name form)
-                '("DEFPACKAGE" "DEFINE-NTOP-PACKAGE")
-                :test
-                #'string=)
-      (let ((source (package-designator-name (second form))))
-        (loop for clause in (cddr form)
-              when (and (consp clause)
-                        (member (first clause)
-                                '(:use :import-from :shadowing-import-from)))
-                append (let ((targets
-                              (if (eq (first clause) :use)
-                                  (rest clause)
-                                  (list (second clause)))))
-                         (loop for target in targets
-                               for name = (package-designator-name target)
-                               when (and name
-                                         (uiop:string-prefix-p "NTOP." name))
-                                 collect (cons source name)))))))
-  (defun collect-package-references (forms)
-    (let ((references '()))
-      (labels ((visit (object)
-                 (cond
-                   ((symbolp object)
-                    (let ((package (symbol-package object)))
-                      (when
-                          (and package
-                               (uiop:string-prefix-p "NTOP."
-                                                     (package-name package)))
-                        (pushnew (package-name package)
-                                 references
-                                 :test
-                                 #'string=))))
-                   ((consp object)
-                     (visit (car object))
-                     (visit (cdr object)))
-                   ((and (vectorp object) (not (stringp object)))
-                    (map nil #'visit object)))))
-        (map nil #'visit forms))
-      references))
-  (defun source-file-violations (pathname root &optional expected-package)
-    (let* ((relative (enough-namestring pathname root))
-           (expected
-            (or expected-package (path-layer-package (pathname relative))))
-           (forms (read-source-forms pathname))
-           (actual (declared-package-name forms))
-           (references (collect-package-references forms)))
-      (append
-       (unless expected
-         (list (format nil "~A has no package rule." relative)))
-       (unless (equal actual expected)
-         (list
-          (format nil "~A declares ~A; expected ~A." relative actual expected)))
-       (loop for target in references
-             unless (layer-dependency-allowed-p expected target)
-               collect (format nil
-                               "~A imports forbidden package ~A."
-                               relative
-                               target)))))
-  (defun source-files (directory &optional package-definitions-only)
+(defun package-declaration-imports (form)
+  (when
+      (member (form-operator-name form)
+              '("DEFPACKAGE" "DEFINE-NTOP-PACKAGE")
+              :test
+              #'string=)
+    (let ((source (package-designator-name (second form))))
+      (loop for clause in (cddr form)
+            when (and (consp clause)
+                      (member (first clause)
+                              '(:use :import-from :shadowing-import-from)))
+              append (let ((targets
+                            (if (eq (first clause) :use)
+                                (rest clause)
+                                (list (second clause)))))
+                       (loop for target in targets
+                             for name = (package-designator-name target)
+                             when (and name (uiop:string-prefix-p "NTOP." name))
+                               collect (cons source name)))))))
+
+(defun collect-package-references (forms)
+  (let ((references '()))
+    (labels ((visit (object)
+               (cond
+                 ((symbolp object)
+                  (let ((package (symbol-package object)))
+                    (when
+                        (and package
+                             (uiop:string-prefix-p "NTOP."
+                                                   (package-name package)))
+                      (pushnew (package-name package)
+                               references
+                               :test
+                               #'string=))))
+                 ((consp object)
+                   (visit (car object))
+                   (visit (cdr object)))
+                 ((and (vectorp object) (not (stringp object)))
+                  (map nil #'visit object)))))
+      (map nil #'visit forms))
+    references))
+
+(defun source-file-violations (pathname root &optional expected-package)
+  (let* ((relative (enough-namestring pathname root))
+         (expected
+          (or expected-package (path-layer-package (pathname relative))))
+         (forms (read-source-forms pathname))
+         (actual (declared-package-name forms))
+         (references (collect-package-references forms)))
     (append
-     (remove-if-not
-      (lambda (pathname)
-        (and (string= (or (pathname-type pathname) "") "lisp")
-             (if package-definitions-only
-                 (string= (or (pathname-name pathname) "") "package")
-                 (not (string= (or (pathname-name pathname) "") "package")))))
-      (uiop:directory-files directory))
-     (mapcan
-      (lambda (subdirectory)
-        (source-files subdirectory package-definitions-only))
-      (uiop:subdirectories directory))))
-  (defun check-package-imports (package-forms)
-    (loop for form in package-forms
-          append (loop for (source . target) in (package-declaration-imports
-                                                 form)
-                       unless (layer-dependency-allowed-p source target)
-                         collect (format nil
-                                         "~A imports forbidden package ~A."
-                                         source
-                                         target))))
-  (defun check-source-tree ()
-    (let* ((root (asdf:system-source-directory "ntop"))
-           (source-root (merge-pathnames "src/" root))
-           (package-forms
-            (mapcan (function read-source-forms)
-                    (source-files source-root t))))
-      (append (check-package-imports package-forms)
-              (mapcan
-               (lambda (pathname)
-                 (source-file-violations pathname root))
-               (source-files source-root))))))
+     (unless expected
+       (list (format nil "~A has no package rule." relative)))
+     (unless (equal actual expected)
+       (list
+        (format nil "~A declares ~A; expected ~A." relative actual expected)))
+     (loop for target in references
+           unless (layer-dependency-allowed-p expected target)
+             collect (format nil
+                             "~A imports forbidden package ~A."
+                             relative
+                             target)))))
+
+(defun source-files (directory &optional package-definitions-only)
+  (append
+   (remove-if-not
+    (lambda (pathname)
+      (and (string= (or (pathname-type pathname) "") "lisp")
+           (if package-definitions-only
+               (string= (or (pathname-name pathname) "") "package")
+               (not (string= (or (pathname-name pathname) "") "package")))))
+    (uiop:directory-files directory))
+   (mapcan
+    (lambda (subdirectory)
+      (source-files subdirectory package-definitions-only))
+    (uiop:subdirectories directory))))
+
+(defun check-package-imports (package-forms)
+  (loop for form in package-forms
+        append (loop for (source . target) in (package-declaration-imports form)
+                     unless (layer-dependency-allowed-p source target)
+                       collect (format nil
+                                       "~A imports forbidden package ~A."
+                                       source
+                                       target))))
+
+(defun check-source-tree ()
+  (let* ((root (asdf:system-source-directory "ntop"))
+         (source-root (merge-pathnames "src/" root))
+         (package-forms
+          (mapcan (function read-source-forms) (source-files source-root t))))
+    (append (check-package-imports package-forms)
+            (mapcan
+             (lambda (pathname)
+               (source-file-violations pathname root))
+             (source-files source-root)))))

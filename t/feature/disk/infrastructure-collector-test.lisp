@@ -1,18 +1,5 @@
 (in-package #:ntop.test)
 
-(defclass %disk-fixture-clock ()
-  ((time :initarg :time :accessor %disk-fixture-clock-time)
-   (failure :initarg :failure :initform nil :reader %disk-fixture-clock-failure)
-   (reads :initform 0 :accessor %disk-fixture-clock-reads)))
-
-(defmethod ntop.shared.domain:read-monotonic-time ((clock %disk-fixture-clock)
-                                                   on-time
-                                                   on-unavailable)
-  (incf (%disk-fixture-clock-reads clock))
-  (if (%disk-fixture-clock-failure clock)
-      (funcall on-unavailable (%disk-fixture-clock-failure clock))
-      (funcall on-time (%disk-fixture-clock-time clock))))
-
 (defclass %disk-fixture-collector (ntop.disk.infrastructure:disk-collector)
   ((values :initarg :values :reader %disk-fixture-collector-values)
    (failure :initarg
@@ -45,7 +32,7 @@
 (cl-weave:describe "Disk infrastructure collector"
                    (cl-weave:it "constructs a collector with its clock"
                                 (let* ((clock
-                                        (make-instance '%disk-fixture-clock
+                                        (make-instance '%test-fixture-clock
                                                        :time
                                                        21.0))
                                        (collector
@@ -68,7 +55,7 @@
                     "forwards only the shared unavailable reason without reading the clock"
                     (failure reason)
                     (let* ((clock
-                            (make-instance '%disk-fixture-clock :time 21.0))
+                            (make-instance '%test-fixture-clock :time 21.0))
                            (collector
                             (make-instance '%disk-fixture-collector
                                            :clock
@@ -80,13 +67,13 @@
                       (cl-weave:expect (%collect-disk-fixture collector)
                                        :to-equal
                                        (list :unavailable reason))
-                      (cl-weave:expect (%disk-fixture-clock-reads clock)
+                      (cl-weave:expect (%test-fixture-clock-reads clock)
                                        :to-be
                                        0)))
                    (cl-weave:it
                     "creates a timestamped sample with mounts and devices"
                     (let* ((clock
-                            (make-instance '%disk-fixture-clock :time 21.0))
+                            (make-instance '%test-fixture-clock :time 21.0))
                            (mount
                             (ntop.disk.domain:make-disk-mount :device-name
                                                               "/dev/disk1"
@@ -125,12 +112,12 @@
                        (ntop.disk.domain:disk-sample-devices sample)
                        :to-equal
                        (list device))
-                      (cl-weave:expect (%disk-fixture-clock-reads clock)
+                      (cl-weave:expect (%test-fixture-clock-reads clock)
                                        :to-be
                                        1)))
                    (cl-weave:it "normalizes clock failures to the shared reason"
                                 (let* ((clock
-                                        (make-instance '%disk-fixture-clock
+                                        (make-instance '%test-fixture-clock
                                                        :time
                                                        21.0
                                                        :failure
@@ -149,6 +136,6 @@
                                                    :to-equal
                                                    '(:unavailable :read-failed))
                                   (cl-weave:expect
-                                   (%disk-fixture-clock-reads clock)
+                                   (%test-fixture-clock-reads clock)
                                    :to-be
                                    1))))

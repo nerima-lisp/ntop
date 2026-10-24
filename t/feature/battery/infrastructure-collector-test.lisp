@@ -1,17 +1,5 @@
 (in-package #:ntop.test)
 
-(defclass %battery-fixture-clock ()
-  ((time :initarg :time :accessor %battery-fixture-clock-time)
-   (failure :initarg :failure :initform nil :reader %battery-fixture-clock-failure)
-   (reads :initform 0 :accessor %battery-fixture-clock-reads)))
-
-(defmethod ntop.shared.domain:read-monotonic-time
-    ((clock %battery-fixture-clock) on-time on-unavailable)
-  (incf (%battery-fixture-clock-reads clock))
-  (if (%battery-fixture-clock-failure clock)
-      (funcall on-unavailable (%battery-fixture-clock-failure clock))
-      (funcall on-time (%battery-fixture-clock-time clock))))
-
 (defclass %battery-fixture-collector
     (ntop.battery.infrastructure::battery-collector)
   ((devices :initarg :devices :reader %battery-fixture-collector-devices)
@@ -56,7 +44,7 @@
 (cl-weave:describe
  "Battery infrastructure collector"
  (cl-weave:it "constructs a collector with its clock"
-   (let* ((clock (make-instance '%battery-fixture-clock :time 21.0))
+   (let* ((clock (make-instance '%test-fixture-clock :time 21.0))
           (collector
             (ntop.battery.infrastructure:make-battery-collector clock)))
      (cl-weave:expect
@@ -78,7 +66,7 @@
    ("unexpected" :read-failed))
   "normalizes reader reasons to one allowed reason"
   (failure reason)
-  (let* ((clock (make-instance '%battery-fixture-clock :time 21.0))
+  (let* ((clock (make-instance '%test-fixture-clock :time 21.0))
          (collector
            (make-instance '%battery-fixture-collector
                           :clock clock
@@ -86,9 +74,9 @@
                           :failure failure)))
     (%expect-battery-unavailable (%collect-battery-fixture collector)
                                  reason)
-    (cl-weave:expect (%battery-fixture-clock-reads clock) :to-be 0)))
+    (cl-weave:expect (%test-fixture-clock-reads clock) :to-be 0)))
  (cl-weave:it "reports an empty device list as :not-present without reading the clock"
-   (let* ((clock (make-instance '%battery-fixture-clock :time 21.0))
+   (let* ((clock (make-instance '%test-fixture-clock :time 21.0))
           (collector
             (make-instance '%battery-fixture-collector
                            :clock clock
@@ -96,9 +84,9 @@
      (%expect-battery-unavailable
       (%collect-battery-fixture collector)
       :not-present)
-     (cl-weave:expect (%battery-fixture-clock-reads clock) :to-be 0)))
+     (cl-weave:expect (%test-fixture-clock-reads clock) :to-be 0)))
  (cl-weave:it "normalizes a reader callback with extra reasons"
-  (let* ((clock (make-instance '%battery-fixture-clock :time 21.0))
+  (let* ((clock (make-instance '%test-fixture-clock :time 21.0))
          (collector
            (make-instance '%battery-fixture-collector
                           :clock clock
@@ -107,9 +95,9 @@
                           :additional-failure :invalid-data)))
     (%expect-battery-unavailable (%collect-battery-fixture collector)
                                  :read-failed)
-    (cl-weave:expect (%battery-fixture-clock-reads clock) :to-be 0)))
+    (cl-weave:expect (%test-fixture-clock-reads clock) :to-be 0)))
  (cl-weave:it "creates a timestamped sample with the reader devices"
-   (let* ((clock (make-instance '%battery-fixture-clock :time 21.0))
+   (let* ((clock (make-instance '%test-fixture-clock :time 21.0))
           (device (ntop.battery.domain:make-battery-device :name "A"))
           (collector
             (make-instance '%battery-fixture-collector
@@ -124,16 +112,16 @@
      (cl-weave:expect
       (first (ntop.battery.domain:battery-sample-devices sample))
       :to-be device)
-     (cl-weave:expect (%battery-fixture-clock-reads clock) :to-be 1)))
+     (cl-weave:expect (%test-fixture-clock-reads clock) :to-be 1)))
  (cl-weave:it "creates a fresh sample for each collection"
-   (let* ((clock (make-instance '%battery-fixture-clock :time 21.0))
+   (let* ((clock (make-instance '%test-fixture-clock :time 21.0))
           (device (ntop.battery.domain:make-battery-device :name "A"))
           (collector
             (make-instance '%battery-fixture-collector
                            :clock clock
                            :devices (list device)))
           (first-sample (second (%collect-battery-fixture collector))))
-     (setf (%battery-fixture-clock-time clock) 22.0)
+     (setf (%test-fixture-clock-time clock) 22.0)
      (let ((second-sample (second (%collect-battery-fixture collector))))
        (cl-weave:expect (not (eq first-sample second-sample)) :to-be t)
        (cl-weave:expect
@@ -155,7 +143,7 @@
    ("unexpected" :read-failed))
   "normalizes clock reasons to one allowed reason"
   (failure reason)
-  (let* ((clock (make-instance '%battery-fixture-clock
+  (let* ((clock (make-instance '%test-fixture-clock
                                :time 21.0
                                :failure failure))
          (device (ntop.battery.domain:make-battery-device :name "A"))
@@ -165,4 +153,4 @@
                           :devices (list device))))
     (%expect-battery-unavailable (%collect-battery-fixture collector)
                                  reason)
-    (cl-weave:expect (%battery-fixture-clock-reads clock) :to-be 1))))
+    (cl-weave:expect (%test-fixture-clock-reads clock) :to-be 1))))

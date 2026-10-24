@@ -21,9 +21,9 @@
 
 (asdf:load-system "cl-weave")
 
-(progn
-  (asdf:load-system "ntop" :force t)
-  (asdf:load-system "ntop/test" :force t))
+(asdf:load-system "ntop" :force t)
+
+(asdf:load-system "ntop/test" :force t)
 
 (let* ((passed
         (cl-weave:run-all :reporter
