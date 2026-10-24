@@ -85,18 +85,11 @@
            value
            (+ (max before after) tolerance))))
 
-(defstruct darwin-memory-test-clock seconds)
-
-(defmethod ntop.shared.domain:read-monotonic-time
-    ((clock darwin-memory-test-clock) on-time on-unavailable)
-  (declare (ignore on-unavailable))
-  (funcall on-time (darwin-memory-test-clock-seconds clock)))
-
 (defun %collect-live-darwin-memory-sample ()
   (let ((result nil))
     (ntop.shared.application:collect-memory-sample
      (ntop.memory.infrastructure:make-memory-collector
-      :clock (make-darwin-memory-test-clock :seconds 42.25))
+      :clock (make-instance '%test-fixture-clock :time 42.25))
      (lambda (sample) (setf result (list :sample sample)))
      (lambda (reason) (setf result (list :unavailable reason))))
     result))

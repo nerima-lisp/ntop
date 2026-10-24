@@ -1,12 +1,5 @@
 (in-package #:ntop.test)
 
-(defstruct memory-test-clock seconds)
-
-(defmethod ntop.shared.domain:read-monotonic-time
-    ((clock memory-test-clock) on-time on-unavailable)
-  (declare (ignore on-unavailable))
-  (funcall on-time (memory-test-clock-seconds clock)))
-
 (defun %memory-linux-fixture-root (fixture)
   (asdf:system-relative-pathname
    "ntop"
@@ -17,7 +10,7 @@
   (let ((result nil)
         (collector
           (ntop.memory.infrastructure::make-memory-collector
-           :clock (make-memory-test-clock :seconds sampled-at)
+           :clock (make-instance '%test-fixture-clock :time sampled-at)
            :enable-cache-memory-p enable-cache-memory-p)))
     (ntop.platform.linux:with-linux-root
      (%memory-linux-fixture-root fixture)
@@ -61,7 +54,7 @@
  (cl-weave:it "requires and stores a clock and cache setting"
               (let ((collector
                       (ntop.memory.infrastructure::make-memory-collector
-                       :clock (make-memory-test-clock :seconds 3.5)
+                       :clock (make-instance '%test-fixture-clock :time 3.5)
                        :enable-cache-memory-p t)))
                 (cl-weave:expect
                  (ntop.memory.infrastructure::memory-collector-enable-cache-memory-p
@@ -267,7 +260,7 @@
                  (%memory-linux-fixture-root "no-cgroup")
                  (ntop.shared.application:collect-memory-sample
                   (ntop.memory.infrastructure::make-memory-collector
-                   :clock (make-memory-test-clock :seconds 42.25))
+                   :clock (make-instance '%test-fixture-clock :time 42.25))
                   (lambda (sample) (setf result (list :sample sample)))
                   (lambda (reason) (setf result (list :unavailable reason)))))
                 (cl-weave:expect
@@ -280,7 +273,7 @@
                  (%memory-linux-fixture-root "malformed")
                  (ntop.shared.application:collect-memory-sample
                   (ntop.memory.infrastructure::make-memory-collector
-                   :clock (make-memory-test-clock :seconds 42.25))
+                   :clock (make-instance '%test-fixture-clock :time 42.25))
                   (lambda (sample) (setf result (list :sample sample)))
                   (lambda (reason) (setf result (list :unavailable reason)))))
                 (cl-weave:expect result :to-equal '(:unavailable :read-failed)))))
