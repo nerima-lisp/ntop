@@ -2,7 +2,7 @@
 
 ## macOS workflow
 
-Install Python 3, Nix, and SBCL and put them on `PATH`. The flake pins the ASDF
+Install Python 3.9 or later, Nix, and SBCL and put them on `PATH`. The flake pins the ASDF
 library sources; it does not pin these host tools. From the repository root,
 run the command for the task you need:
 
