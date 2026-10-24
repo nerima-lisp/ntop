@@ -3,24 +3,25 @@
 (defparameter *application-runner*
   #'ntop.app.infrastructure:run-application)
 
-(defun %minimal-renderer (state config snapshot columns rows reasons)
-  (declare (ignore state config snapshot columns rows reasons))
-  nil)
-
-(defun %minimal-action-handler (state action)
-  (declare (ignore state action))
-  nil)
-
 #+(or darwin linux)
 (defun %run-application (config)
-  (funcall *application-runner*
-           config
-           nil
-           (ntop.app.infrastructure:make-system-clock)
-           #'%minimal-renderer
-           :on-action
-           #'%minimal-action-handler)
-  0)
+  (let* ((clock (ntop.app.infrastructure:make-system-clock))
+         (collectors
+           (ntop.app.infrastructure:make-platform-collectors config clock))
+         (composition
+           (ntop.app.application:make-application-composition config)))
+    (funcall *application-runner*
+             config
+             collectors
+             clock
+             (ntop.app.application:application-composition-render composition)
+             :on-action
+             (ntop.app.application:application-composition-on-action composition)
+             :on-snapshot
+             (ntop.app.application:application-composition-on-snapshot composition)
+             :history-stores
+             (ntop.app.application:application-composition-history-stores composition))
+    0))
 
 #-(or darwin linux)
 (defun %run-application (config)

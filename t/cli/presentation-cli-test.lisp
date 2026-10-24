@@ -77,11 +77,15 @@
   (let* ((calls 0)
          (captured nil)
          (ntop.cli::*application-runner*
-          (lambda (config collectors clock render &key on-action)
-            (declare (ignore collectors clock render on-action))
+          (lambda (config collectors clock render
+                   &key on-action on-snapshot history-stores)
+            (declare (ignore collectors clock render on-action
+                             on-snapshot history-stores))
             (incf calls)
             (setf captured config))))
-    (values (ntop.cli::%run-cli (cons "ntop" arguments)) calls captured)))
+    (values (ntop.cli::%run-cli (cons "ntop" arguments))
+            calls
+            captured)))
 
 (defun cli-test-accessor (initarg)
   (intern

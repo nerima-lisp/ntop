@@ -184,34 +184,57 @@
                                    status)
                                  :to-equal
                                  2))
-                   (cl-weave:it "uses the minimal renderer and action handler"
-                                (let* ((calls 0)
-                                       (config
-                                        (ntop.shared.application:make-application-config))
-                                       (ntop.cli::*application-runner*
-                                        (lambda
-                                            (passed-config collectors
-                                                           clock
-                                                           renderer
-                                                           &key
-                                                           on-action)
-                                          (cl-weave:expect passed-config :to-be config)
-                                          (cl-weave:expect collectors :to-be nil)
-                                          (cl-weave:expect (not (null clock)) :to-be t)
-                                          (cl-weave:expect (functionp renderer) :to-be t)
-                                          (cl-weave:expect (functionp on-action) :to-be t)
-                                          (cl-weave:expect
-                                           (funcall renderer nil config nil 80 24 nil)
-                                           :to-be
-                                           nil)
-                                          (cl-weave:expect (funcall on-action nil nil)
-                                                           :to-be
-                                                           nil)
-                                          (incf calls))))
-                                  (cl-weave:expect (ntop.cli::%run-application config)
-                                                   :to-equal
-                                                   0)
-                                  (cl-weave:expect calls :to-equal 1)))
+                   (cl-weave:it
+                    "passes platform collectors and composition callbacks"
+                    (let* ((calls 0)
+                           (clock-calls 0)
+                           (clock (list :clock))
+                           (config
+                            (ntop.shared.application:make-application-config))
+                           (ntop.cli::*application-runner*
+                            (lambda (passed-config collectors passed-clock
+                                     renderer
+                                     &key on-action on-snapshot
+                                       history-stores)
+                              (cl-weave:expect passed-config :to-be config)
+                              (cl-weave:expect passed-clock :to-be clock)
+                              (cl-weave:expect
+                               (every
+                                (lambda (key) (getf collectors key))
+                                (quote (:cpu :memory :gpu :network :disk
+                                             :temperature :process)))
+                               :to-be
+                               t)
+                              (cl-weave:expect (getf collectors :battery)
+                                               :to-equal
+                                               nil)
+                              (cl-weave:expect (functionp renderer)
+                                               :to-be
+                                               t)
+                              (cl-weave:expect (functionp on-action)
+                                               :to-be
+                                               t)
+                              (cl-weave:expect (functionp on-snapshot)
+                                               :to-be
+                                               t)
+                              (cl-weave:expect
+                               (and (arrayp history-stores)
+                                    (adjustable-array-p history-stores))
+                               :to-be
+                               t)
+                              (incf calls))))
+                      (cl-weave:with-mocked-functions
+                       (((symbol-function
+                          (quote ntop.app.infrastructure:make-system-clock))
+                         (lambda ()
+                           (incf clock-calls)
+                           clock)))
+                       (cl-weave:expect
+                        (ntop.cli::%run-application config)
+                        :to-equal
+                        0))
+                      (cl-weave:expect calls :to-equal 1)
+                      (cl-weave:expect clock-calls :to-equal 1)))
                    (cl-weave:it
                     "returns the process entry status for explicit and default argv"
                     (let ((captured nil))
