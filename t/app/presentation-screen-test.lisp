@@ -404,33 +404,46 @@
            (ntop.ui:rectangle-width (cdr legend)))
         2))))))
                    (cl-weave:it
-                    "renders the basic selector and screen table roles"
-                    (let ((state (ntop.app.domain:make-app-state :basic-mode-p t))
-                          (*wp12b-screen-widget-calls* nil) (*wp12b-screen-recording-p* t))
+                    "renders the basic selector and honors no-color table roles"
+                    (let* ((state (ntop.app.domain:make-app-state :basic-mode-p t))
+                           (roles '((:normal :text) (:header :table-header)
+                           (:selected :selected-text) (:title :widget-title) (:custom :text)))
+                           (ntop.app.presentation::*screen-table-theme* :gruvbox)
+                           (*wp12b-screen-widget-calls* nil)
+                           (*wp12b-screen-recording-p* t))
                       (multiple-value-bind (areas screen output)
                           (%wp12b-screen-render 80 24 :state state)
                         (declare (ignore areas))
                         (cl-weave:expect
-                         (not
-                          (null
-                           (member :basic-table-arrows
-                                   *wp12b-screen-widget-calls*
-                                   :key #'first
-                                   :test #'eq)))
-                         :to-be t)
-                        (cl-weave:expect
-                         (not (null (search "◄ Process ►" output))) :to-be t)
-                        (let ((ntop.app.presentation::*screen-table-theme* :gruvbox))
-                          (cl-weave:expect
-                           (loop for (role theme-role) in '((:normal :text) (:header :table-header)
-                                                            (:selected :selected-text)
-                                                            (:title :widget-title))
-                                 do (ntop.ui:draw-table-text screen 0 1 "x" role)
-                                 always
-                                   (equal (cl-tty-kit:cell-style
-                                           (cl-tty-kit:screen-cell screen 0 1))
-                                          (ntop.ui:presentation-theme-style :gruvbox theme-role)))
-                           :to-be t)))))
+                         (and
+                          (not (null (member :basic-table-arrows
+                                             *wp12b-screen-widget-calls*
+                                             :key #'first
+                                             :test #'eq)))
+                          (search "◄ Process ►" output)
+                          (loop for (role theme-role) in roles
+                                do (ntop.ui:draw-table-text screen 0 1 "x" role)
+                                always
+                                (and
+                                 (equal (cl-tty-kit:cell-style
+                                         (cl-tty-kit:screen-cell screen 0 1))
+                                        (ntop.app.presentation::%screen-table-style
+                                         :gruvbox role))
+                                 (equal (ntop.app.presentation::%screen-table-style
+                                         :gruvbox role nil)
+                                        (ntop.ui:presentation-theme-style
+                                         :gruvbox theme-role))))
+                          (and (not (ntop.app.presentation::%screen-no-color-p nil))
+                               (not (ntop.app.presentation::%screen-no-color-p ""))
+                               (ntop.app.presentation::%screen-no-color-p "1"))
+                          (null (ntop.app.presentation::%screen-table-style
+                                 :default :header t))
+                          (equal (ntop.app.presentation::%screen-table-style
+                                  :default :header nil)
+                                 (ntop.ui:presentation-theme-style
+                                  :default :table-header)))
+                         :to-be
+                         t))))
                    (cl-weave:it
                     "computes process CPU and I/O rates from the previous sample"
                     (let ((*wp12b-screen-widget-calls* nil) (*wp12b-screen-recording-p* t))
@@ -484,14 +497,4 @@
                              (cl-tty-kit:cell-style
                               (cl-tty-kit:screen-cell screen x y))
                              :to-equal
-                             (second case)))))))
-                   (cl-weave:it
-                    "uses the text theme for unknown table roles"
-                    (let ((screen (cl-tty-kit:make-screen 4 1)))
-                      (let ((ntop.app.presentation::*screen-table-theme* :gruvbox))
-                        (ntop.ui:draw-table-text screen 0 0 "x" :custom)
-                        (cl-weave:expect
-                         (cl-tty-kit:cell-style
-                          (cl-tty-kit:screen-cell screen 0 0))
-                         :to-equal
-                         (ntop.ui:presentation-theme-style :gruvbox :text))))))
+                             (second case))))))))

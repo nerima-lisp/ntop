@@ -144,20 +144,28 @@
                                       style)))))
 
 (defvar *screen-table-theme* :default)
-(defmethod ntop.ui:draw-table-text ((target cl-tty-kit:screen) x y text role)
-  (cl-tty-kit:screen-write-string target
-                                  x
-                                  y
-                                  text
-                                  :style
-                                  (ntop.ui:presentation-theme-style
-                                   *screen-table-theme*
-                                   (case role
-                                     (:normal :text)
-                                     (:header :table-header)
-                                     (:selected :selected-text)
-                                     (:title :widget-title)
-                                     (otherwise :text)))))
+(progn
+  (defun %screen-no-color-p (&optional (value (uiop:getenv "NO_COLOR")))
+    (and value (plusp (length value))))
+  (defun %screen-table-style (theme role &optional (no-color-p (%screen-no-color-p)))
+    (unless no-color-p
+      (ntop.ui:presentation-theme-style
+       theme
+       (case role
+         (:normal :text)
+         (:header :table-header)
+         (:selected :selected-text)
+         (:title :widget-title)
+         (otherwise :text)))))
+  (defmethod ntop.ui:draw-table-text ((target cl-tty-kit:screen) x y text role)
+    (cl-tty-kit:screen-write-string target
+                                    x
+                                    y
+                                    text
+                                    :style
+                                    (%screen-table-style
+                                     *screen-table-theme*
+                                     role))))
 
 (defun %screen-series (series-by-widget widget)
   (cdr (assoc widget series-by-widget :test #'eq)))
