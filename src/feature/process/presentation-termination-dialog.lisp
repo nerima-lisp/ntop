@@ -6,7 +6,8 @@
                    (&key termination-state
                          process-name
                          mode
-                         selection-state)))
+                         selection-state))
+     (:copier %copy-process-termination-dialog-state))
   termination-state
   process-name
   mode
@@ -19,6 +20,13 @@
        #-unix t
        #+unix nil) :simple
     :signals))
+
+(defun copy-process-termination-dialog-state (state)
+  (let ((copy (%copy-process-termination-dialog-state state)))
+    (setf (process-termination-dialog-state-selection-state copy)
+          (copy-structure
+           (process-termination-dialog-state-selection-state state)))
+    copy))
 
 (defun %process-sample-signals (sample)
   (if sample

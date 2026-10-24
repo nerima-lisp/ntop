@@ -405,4 +405,81 @@
         (cl-weave:expect
           calls
           :to-be
-          0)))))
+          0))))
+  (cl-weave:it "copies state before moving its selection"
+    (let* ((sample (%f8b-process-sample
+                     (%f8b-process-signal "SIGINT" 2)
+                     (%f8b-process-signal "SIGTERM" 15)))
+           (config (ntop.shared.application:make-application-config))
+           (dialog (%f8b-opened-termination-dialog
+                    (list 123) "worker" sample config))
+           (states (make-hash-table :test (function eq))))
+      (setf (gethash :process-kill states) dialog)
+      (let* ((source-state
+               (ntop.app.domain:make-app-state
+                :active-dialog :process-kill
+                :widget-v-states states))
+             (selection
+               (ntop.process.presentation::process-termination-dialog-state-selection-state
+                dialog))
+             (initial-index (ntop.ui:table-state-selected-index selection))
+             (copy
+               (ntop.process.presentation:copy-process-termination-dialog-state
+                dialog)))
+        (ntop.process.presentation:move-process-termination-dialog-selection
+         copy sample -1 1)
+        (cl-weave:expect
+         (gethash :process-kill
+                  (ntop.app.domain:app-state-widget-v-states source-state))
+         :to-be
+         dialog)
+        (cl-weave:expect (ntop.ui:table-state-selected-index selection)
+                         :to-be
+                         initial-index)
+        (cl-weave:expect (not (eq copy dialog)) :to-be t)
+        (cl-weave:expect
+         (ntop.ui:table-state-selected-index
+          (ntop.process.presentation::process-termination-dialog-state-selection-state
+           copy))
+         :to-be
+         (1- initial-index)))))
+  (cl-weave:it "copies state before selecting a choice"
+    (let* ((sample (%f8b-process-sample
+                     (%f8b-process-signal "SIGINT" 2)
+                     (%f8b-process-signal "SIGTERM" 15)))
+           (config (ntop.shared.application:make-application-config))
+           (dialog (%f8b-opened-termination-dialog
+                    (list 123) "worker" sample config))
+           (states (make-hash-table :test (function eq))))
+      (setf (gethash :process-kill states) dialog)
+      (let* ((source-state
+               (ntop.app.domain:make-app-state
+                :active-dialog :process-kill
+                :widget-v-states states))
+             (selection
+               (ntop.process.presentation::process-termination-dialog-state-selection-state
+                dialog))
+             (initial-index (ntop.ui:table-state-selected-index selection))
+             (copy
+               (ntop.process.presentation:copy-process-termination-dialog-state
+                dialog)))
+        (multiple-value-bind (selected result)
+            (ntop.process.presentation:select-process-termination-dialog-choice
+             copy sample 0)
+          (cl-weave:expect selected :to-be copy)
+          (cl-weave:expect result :to-be :selected))
+        (cl-weave:expect
+         (gethash :process-kill
+                  (ntop.app.domain:app-state-widget-v-states source-state))
+         :to-be
+         dialog)
+        (cl-weave:expect (ntop.ui:table-state-selected-index selection)
+                         :to-be
+                         initial-index)
+        (cl-weave:expect (not (eq copy dialog)) :to-be t)
+        (cl-weave:expect
+         (ntop.ui:table-state-selected-index
+          (ntop.process.presentation::process-termination-dialog-state-selection-state
+           copy))
+         :to-be
+         0)))))
