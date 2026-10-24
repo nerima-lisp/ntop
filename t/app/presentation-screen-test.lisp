@@ -304,7 +304,7 @@
                         (or (< index 2)
                             (not (char= (char output (- index 2)) #\Return))))))
        :to-be t)))
-  (cl-weave:it "places the CPU title on its top frame and preserves chart cells"
+  (cl-weave:it "places the CPU title on its top frame with default attributes"
     (multiple-value-bind (areas screen)
         (%wp12b-screen-render 80 24)
       (declare (ignore areas))
@@ -315,7 +315,16 @@
         (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 0 5))
         (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 1 1)))
        :to-equal
-       (list #\C #\┌ #\└ #\1)))))
+       (list #\C #\┌ #\└ #\1))
+      (cl-weave:expect
+       (cl-tty-kit:cell-style
+        (cl-tty-kit:screen-cell screen 2 0))
+       :to-be nil)
+      (cl-weave:expect
+       (list (ntop.ui:presentation-theme-style :default :widget-title)
+             (ntop.ui:presentation-theme-style :default :border))
+       :to-equal
+       '(nil nil)))))
 
 
 (defun %wp12b-screen-golden-bytes (name)
