@@ -343,3 +343,154 @@
                                    :to-equal
                                    (ntop.ui:presentation-theme-style :default
                                                                      :border)))))
+
+(cl-weave:describe
+ "application help presentation boundary behavior"
+ (cl-weave:it
+  "handles word deletion, unchanged queries, and search mode transitions"
+  (flet ((transition (state value)
+           (ntop.app.presentation::help-state-transition
+            state (%wp12b-app-action :search value)))
+         (query (state) (ntop.app.presentation::help-state-query state))
+         (offset (state) (ntop.app.presentation::help-state-scroll-offset state))
+         (active-p (state)
+           (ntop.app.presentation::help-state-search-active-p state)))
+    (let* ((query-text (concatenate 'string "gpu  memory" (string #\Tab) " "))
+           (state (ntop.app.presentation::make-help-state
+                   :query query-text :scroll-offset 9))
+           (deleted (transition state :delete-word-backward))
+           (inserted (transition state "x"))
+           (cleared (transition state :clear))
+           (empty-delete
+             (transition (ntop.app.presentation::make-help-state
+                          :scroll-offset 7)
+                         :delete-backward))
+           (unchanged (transition state :unknown))
+           (opened (transition
+                    (ntop.app.presentation::make-help-state :scroll-offset 6)
+                    :help))
+           (submitted (transition
+                       (ntop.app.presentation::make-help-state
+                        :query "cpu" :search-active-p t)
+                       :submit)))
+      (cl-weave:expect (query deleted) :to-equal "gpu  ")
+      (cl-weave:expect (offset deleted) :to-equal 0)
+      (cl-weave:expect (query inserted) :to-equal (concatenate 'string query-text "x"))
+      (cl-weave:expect (offset inserted) :to-equal 0)
+      (cl-weave:expect (query cleared) :to-equal "")
+      (cl-weave:expect (query empty-delete) :to-equal "")
+      (cl-weave:expect (offset empty-delete) :to-equal 7)
+      (cl-weave:expect (query unchanged) :to-equal query-text)
+      (cl-weave:expect (offset unchanged) :to-equal 9)
+      (cl-weave:expect (offset opened) :to-equal 0)
+      (cl-weave:expect (active-p opened) :to-be t)
+      (cl-weave:expect (query submitted) :to-equal "cpu")
+      (cl-weave:expect (active-p submitted) :to-be nil))))
+ (cl-weave:it
+  "applies navigation actions at their scroll boundaries"
+  (flet ((move (state kind value page-size)
+           (ntop.app.presentation::help-state-transition
+            state (%wp12b-app-action kind value) :page-size page-size))
+         (offset (state) (ntop.app.presentation::help-state-scroll-offset state)))
+    (let* ((state (ntop.app.presentation::make-help-state
+                   :selected-widget :process))
+           (last-offset
+             (max 0 (- (length (ntop.app.presentation::%help-visible-lines state)) 2)))
+           (cases
+             (list (list :navigation :first-row 4 2 0)
+                   (list :navigation :last-row 0 2 :end)
+                   (list :navigation :up 2 2 1)
+                   (list :navigation :scroll-up 0 2 0)
+                   (list :navigation :previous-row :end 2
+                         (max 0 (1- last-offset)))
+                   (list :navigation :down 2 2 (min last-offset 3))
+                   (list :navigation :scroll-down last-offset 2 last-offset)
+                   (list :navigation :next-row -1 2 (min last-offset 1))
+                   (list :navigation :page-up 1 4 0)
+                   (list :navigation :page-down 1 4 (min last-offset 5))
+                   (list :navigation :half-page-up 1 4 0)
+                   (list :navigation :half-page-down 1 4 (min last-offset 3))
+                   (list :navigation :half-page-down 0 1 (min last-offset 1))
+                   (list :navigation :unknown 5 2 5)
+                   (list :pause nil 4 2 4))))
+      (dolist (test-case cases)
+        (destructuring-bind (kind value start page-size expected) test-case
+          (let ((input (ntop.app.presentation::make-help-state
+                        :selected-widget :process :scroll-offset start)))
+            (cl-weave:expect
+             (offset (move input kind value page-size))
+             :to-equal expected)))))))
+ (cl-weave:it
+  "maps widget aliases and ignores non-string catalog fields"
+  (dolist (case
+           '((:process ("tables" "process table" "normal process table"))
+             (:process-table ("tables" "process table" "normal process table"))
+             (:process-tree ("tables" "process table" "process tree"))
+             (:disk ("tables" "disk table" "Disks"))
+             (:disks ("tables" "disk table" "Disks"))
+             (:temperature ("tables" "temperature table" "Temperatures"))
+             (:battery ("battery tabs" "battery widget"))
+             (:cpu ("graphs" "CPU legend")) (:memory ("graphs" "Memory"))
+             (:network ("graphs")) (:gpu ("graphs"))
+             (:temperature-graph ("graphs")) (:disk-io-graph ("graphs"))
+             (:unknown nil)))
+    (cl-weave:expect
+     (ntop.app.presentation::%help-widget-contexts (first case))
+     :to-equal (second case)))
+  (let ((entry (ntop.app.domain::make-parity-key
+                :keys '(17) :action nil :contexts nil :behavior nil)))
+    (cl-weave:expect
+     (ntop.app.presentation::%help-entry-matches-query-p entry "cpu")
+     :to-be nil)))
+ (cl-weave:it
+  "renders help without a query, short panels, and the final scrolled line"
+  (let* ((config (ntop.shared.application:make-application-config :theme :default))
+         (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 50 :height 4))
+         (empty-screen (cl-tty-kit:make-screen 50 4))
+         (empty-state (ntop.app.presentation::make-help-state
+                       :selected-widget :unknown))
+         (no-match-screen (cl-tty-kit:make-screen 50 4))
+         (no-match-state (ntop.app.presentation::make-help-state
+                          :selected-widget :unknown :query "cpu")))
+    (ntop.ui:draw-widget :help empty-screen rectangle empty-state config nil)
+    (ntop.ui:draw-widget :help no-match-screen rectangle no-match-state config nil)
+    (cl-weave:expect
+     (not (null (search "Quit" (cl-tty-kit:screen-row-string empty-screen 1))))
+     :to-be t)
+    (cl-weave:expect (search "No matching key bindings."
+                             (cl-tty-kit:screen-row-string no-match-screen 1))
+                     :to-be 1)
+    (dolist (height '(1 2))
+      (let* ((screen (cl-tty-kit:make-screen 20 height))
+             (short-rectangle
+               (ntop.ui:make-rectangle :x 0 :y 0 :width 20 :height height)))
+        (ntop.ui:draw-widget :help screen short-rectangle empty-state config nil)
+        (cl-weave:expect (search "Help:" (cl-tty-kit:screen-row-string screen 0))
+                         :to-be 3)))
+    (let* ((state (ntop.app.presentation::make-help-state
+                   :selected-widget :process :scroll-offset :end))
+           (lines (ntop.app.presentation::%help-visible-lines state))
+           (screen (cl-tty-kit:make-screen 100 4))
+           (wide-rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 100 :height 4)))
+      (ntop.ui:draw-widget :help screen wide-rectangle state config nil)
+      (let* ((visible
+              (ntop.ui:truncate-table-text (car (last lines)) 98))
+             (row (cl-tty-kit:screen-row-string screen 2))
+             (body (subseq row 1 (1- (length row))))
+             (padding
+              (make-string (- 98 (ntop.ui:measure-table-text visible))
+                           :initial-element #\Space)))
+        (cl-weave:expect body
+                         :to-equal
+                         (concatenate (quote string) visible padding))))
+    (cl-weave:expect (ntop.app.presentation::%help-border-line 0 #\┌ #\┐)
+                     :to-equal "")
+    (cl-weave:expect (ntop.app.presentation::%help-border-line 1 #\│ #\│)
+                     :to-equal "│")
+    (let ((before (cl-tty-kit:screen-row-string empty-screen 0)))
+      (ntop.app.presentation::%help-write empty-screen 0 0 "" nil)
+      (ntop.app.presentation::%help-write-line
+       empty-screen 0 0 0 "ignored" nil "" nil)
+      (cl-weave:expect (cl-tty-kit:screen-row-string empty-screen 0)
+                       :to-equal before))))
+)
