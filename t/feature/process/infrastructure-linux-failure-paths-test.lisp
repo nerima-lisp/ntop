@@ -85,7 +85,7 @@
                                                           (setf reason value)))
         (cl-weave:expect reason :to-be :read-failed))
       (cl-weave:expect
-       (mapcar #'ntop.process.infrastructure::%process-unavailability-reason
+       (mapcar #'ntop.shared.application:normalize-collector-unavailability-reason
                '(:not-present :disabled
                               :permission-denied
                               :unsupported-platform

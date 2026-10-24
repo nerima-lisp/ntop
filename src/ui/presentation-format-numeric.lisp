@@ -27,13 +27,7 @@
             (format-fixed five-minutes precision)
             (format-fixed fifteen-minutes precision))))
 
-(defun format-process-cpu-percent (usage)
-  (concatenate 'string
-               (format-fixed usage
-                             (format-rule-value :process-percent :precision))
-               "%"))
-
-(defun format-process-memory-percent (usage)
+(defun format-percent-value (usage)
   (concatenate 'string
                (format-fixed usage
                              (format-rule-value :process-percent :precision))

@@ -53,7 +53,7 @@
 (defun read-linux-disk-values (on-value on-unavailable)
   (flet ((read-failure-reason (reason)
            (let ((normalized-reason
-                  (ntop.disk.infrastructure::%disk-unavailable-reason reason)))
+                  (ntop.shared.application:normalize-collector-unavailability-reason reason)))
              (if (eq normalized-reason :not-present)
                  :read-failed
                  normalized-reason))))

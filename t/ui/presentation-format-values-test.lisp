@@ -17,7 +17,7 @@
                     ((0 "0.0%") (2.56 "2.6%") (100 "100.0%") (0.04 "0.0%"))
                     "formats process CPU usage ~A"
                     (usage expected)
-                    (cl-weave:expect (ntop.ui::format-process-cpu-percent usage)
+                    (cl-weave:expect (ntop.ui:format-percent-value usage)
                                      :to-equal
                                      expected))
                    (cl-weave:it-each
@@ -25,7 +25,7 @@
                     "formats process memory percentage ~A"
                     (usage expected)
                     (cl-weave:expect
-                     (ntop.ui::format-process-memory-percent usage)
+                     (ntop.ui:format-percent-value usage)
                      :to-equal
                      expected))
                    (cl-weave:it-each

@@ -159,37 +159,37 @@
       (cl-weave:expect data :to-be :unset)
       (cl-weave:expect reason :to-be :read-failed))
     (cl-weave:expect
-     (ntop.process.infrastructure::%linux-process-unavailability-reason
+     (ntop.shared.application:normalize-collector-unavailability-reason
       :not-present)
      :to-be
      :not-present)
     (cl-weave:expect
-     (ntop.process.infrastructure::%linux-process-unavailability-reason
+     (ntop.shared.application:normalize-collector-unavailability-reason
       :permission-denied)
      :to-be
      :permission-denied)
     (cl-weave:expect
-     (ntop.process.infrastructure::%linux-process-unavailability-reason
+     (ntop.shared.application:normalize-collector-unavailability-reason
       :read-failed)
      :to-be
      :read-failed)
     (cl-weave:expect
-     (ntop.process.infrastructure::%linux-process-unavailability-reason
+     (ntop.shared.application:normalize-collector-unavailability-reason
       :disabled)
      :to-be
      :disabled)
     (cl-weave:expect
-     (ntop.process.infrastructure::%linux-process-unavailability-reason
+     (ntop.shared.application:normalize-collector-unavailability-reason
       :unsupported-platform)
      :to-be
      :unsupported-platform)
     (cl-weave:expect
-     (ntop.process.infrastructure::%linux-process-unavailability-reason
+     (ntop.shared.application:normalize-collector-unavailability-reason
       :private-api-unavailable)
      :to-be
      :private-api-unavailable)
     (cl-weave:expect
-     (ntop.process.infrastructure::%linux-process-unavailability-reason
+     (ntop.shared.application:normalize-collector-unavailability-reason
       :invalid-data)
      :to-be
      :read-failed)) (cl-weave:it

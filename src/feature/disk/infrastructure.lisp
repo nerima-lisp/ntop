@@ -8,18 +8,6 @@
 
 (defgeneric read-disk-values (collector on-value on-unavailable))
 
-(defun %disk-unavailable-reason (reason)
-  (if (member reason
-              '(:not-present :disabled
-                             :permission-denied
-                             :unsupported-platform
-                             :private-api-unavailable
-                             :read-failed)
-              :test
-              #'eq)
-      reason
-      :read-failed))
-
 #-(or darwin linux)
 (defmethod read-disk-values ((collector disk-collector) on-value on-unavailable)
   (declare (ignore collector on-value))
@@ -45,7 +33,9 @@
                                                         on-sample
                                                         on-unavailable)
   (flet ((report-unavailable (reason)
-           (funcall on-unavailable (%disk-unavailable-reason reason))))
+           (funcall on-unavailable
+                    (ntop.shared.application:normalize-collector-unavailability-reason
+                     reason))))
     (read-disk-values collector
                       (lambda (values)
                         (%collect-disk-sample-from-values collector

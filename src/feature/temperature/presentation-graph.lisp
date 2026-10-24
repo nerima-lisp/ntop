@@ -54,23 +54,12 @@
                                              :samples
                                              samples))))
 
-(defun %temperature-graph-maximum (series)
-  (loop for item in series
-        append (coerce (ntop.ui:chart-series-samples item) 'list) into samples
-        finally (return
-                 (loop for sample in samples
-                       for value = (ntop.shared.domain:history-sample-value
-                                    sample)
-                       when value
-                         maximize value into maximum
-                       finally (return (or maximum 0d0))))))
-
 (defun %temperature-graph-config (theme config series)
   (let ((unit
          (ntop.shared.application:application-config-temperature-unit config)))
     (multiple-value-bind (y-maximum y-labels)
         (ntop.ui:format-temperature-axis-labels
-         (%temperature-graph-maximum series)
+         (ntop.ui:chart-series-maximum-value series)
          unit)
       (ntop.ui:make-chart-config :y-min
                                  0d0

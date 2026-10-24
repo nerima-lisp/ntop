@@ -167,3 +167,14 @@
       (concatenate 'string
                    (chart-clip-text text (max 0 (1- width)))
                    (if (plusp width) "…" ""))))
+
+(defun chart-series-maximum-value (series)
+  (loop for item in series
+        append (coerce (ntop.ui:chart-series-samples item) 'list) into samples
+        finally (return
+                 (loop for sample in samples
+                       for value = (ntop.shared.domain:history-sample-value
+                                    sample)
+                       when value
+                         maximize value into maximum
+                       finally (return (or maximum 0d0))))))

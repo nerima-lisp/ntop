@@ -22,3 +22,8 @@
 (define-collector collect-battery-sample)
 
 (define-collector collect-process-sample)
+
+(defun normalize-collector-unavailability-reason (reason)
+  (if (typep reason (quote collector-unavailability-reason))
+      reason
+      :read-failed))

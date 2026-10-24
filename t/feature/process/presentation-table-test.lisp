@@ -154,7 +154,7 @@
                                             (formatter
                                              (if (eq memory-mode :bytes)
                                                  #'ntop.ui:format-process-binary-bytes
-                                                 #'ntop.ui:format-process-memory-percent)))
+                                                 #'ntop.ui:format-percent-value)))
                                        (cl-weave:expect
                                         (mapcar #'ntop.ui:table-column-header columns)
                                         :to-equal
@@ -179,7 +179,7 @@
                                         (ntop.ui::table-column-cell-text (third columns)
                                                                          display-row)
                                         :to-equal
-                                        (ntop.ui:format-process-cpu-percent 3.0d0))))
+                                        (ntop.ui:format-percent-value 3.0d0))))
                    (cl-weave:it "omits GPU columns when GPU data is unavailable"
                                 (let ((columns
                                        (%f8b-process-table-column

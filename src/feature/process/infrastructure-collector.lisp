@@ -12,14 +12,6 @@
     (declare (ignore collector on-value))
     (funcall on-unavailable :unsupported-platform))
 
-  (defun %process-unavailability-reason (reason)
-    (if (member reason
-                '(:not-present :disabled :permission-denied
-                  :unsupported-platform :private-api-unavailable :read-failed)
-                :test #'eq)
-        reason
-        :read-failed))
-
   (defmethod ntop.shared.application:collect-process-sample
       ((collector process-collector) on-sample on-unavailable)
     (read-process-data
@@ -33,9 +25,14 @@
                     :sampled-at sampled-at
                     :processes processes
                     :signals signals)))
-        (lambda (reason) (funcall on-unavailable (%process-unavailability-reason reason)))))
+        (lambda (reason)
+          (funcall on-unavailable
+                   (ntop.shared.application:normalize-collector-unavailability-reason
+                    reason)))))
      (lambda (reason)
-       (funcall on-unavailable (%process-unavailability-reason reason)))))
+       (funcall on-unavailable
+                (ntop.shared.application:normalize-collector-unavailability-reason
+                 reason)))))
 
   (defun send-process-signal (target-pids signal-number)
     (unless (and (listp target-pids)

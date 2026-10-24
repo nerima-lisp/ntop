@@ -177,12 +177,6 @@
      (lambda (reason)
        (declare (ignore reason))
        (funcall on-value nil))))
-  (defun %linux-process-unavailability-reason (reason)
-    (case reason
-      ((:not-present :permission-denied :disabled :unsupported-platform
-        :private-api-unavailable :read-failed)
-       reason)
-      (otherwise :read-failed)))
   (defun %read-linux-process-data
     (collector on-value on-unavailable
      &optional (clock-ticks (%linux-process-clock-ticks-per-second)))
@@ -213,10 +207,11 @@
                                   (%linux-process-signal-list))))))
                   (lambda (reason)
                     (funcall on-unavailable
-                             (%linux-process-unavailability-reason reason)))))))
+                             (ntop.shared.application:normalize-collector-unavailability-reason
+                              reason)))))))
          (lambda (reason)
            (funcall on-unavailable
-                    (%linux-process-unavailability-reason reason)))))))
+                    (ntop.shared.application:normalize-collector-unavailability-reason reason)))))))
   #+linux
 (defmethod read-process-data
     ((collector process-collector) on-value on-unavailable)

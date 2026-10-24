@@ -12,7 +12,7 @@
 (defun %disk-row-percent (row key)
   (let ((value (getf row key)))
     (if value
-        (ntop.ui:format-process-cpu-percent value)
+        (ntop.ui:format-percent-value value)
         "N/A")))
 
 (defun %disk-row-rate (row key)

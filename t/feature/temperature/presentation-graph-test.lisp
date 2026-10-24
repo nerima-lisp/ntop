@@ -172,11 +172,11 @@
            "default"
            :celsius)))
     (cl-weave:expect
-     (ntop.temperature.presentation::%temperature-graph-maximum empty)
+     (ntop.ui:chart-series-maximum-value empty)
      :to-be
      0)
     (cl-weave:expect
-     (ntop.temperature.presentation::%temperature-graph-maximum missing)
+     (ntop.ui:chart-series-maximum-value missing)
      :to-be
      0)))
  (cl-weave:it "leaves series unstyled when the theme has no temperature colors"

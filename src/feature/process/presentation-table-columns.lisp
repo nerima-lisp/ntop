@@ -45,7 +45,7 @@
   (let ((config (%process-table-display-row-config display-row)))
     (if (eq (process-table-config-memory-mode config) :bytes)
         (%process-table-value display-row bytes-reader #'ntop.ui:format-process-binary-bytes)
-        (%process-table-value display-row percent-reader #'ntop.ui:format-process-memory-percent))))
+        (%process-table-value display-row percent-reader #'ntop.ui:format-percent-value))))
 
 (defun %process-table-column-value (display-row column-id)
   (case column-id

@@ -77,20 +77,9 @@
                                        name-width
                                        theme))))
 
-(defun %disk-io-chart-maximum (series)
-  (loop for item in series
-        append (coerce (ntop.ui:chart-series-samples item) 'list) into samples
-        finally (return
-                 (loop for sample in samples
-                       for value = (ntop.shared.domain:history-sample-value
-                                    sample)
-                       when value
-                         maximize value into maximum
-                       finally (return (or maximum 0d0))))))
-
 (defun %disk-io-chart-config (theme config series)
   (multiple-value-bind (y-max y-labels)
-      (ntop.ui:format-disk-io-axis-labels (%disk-io-chart-maximum series))
+      (ntop.ui:format-disk-io-axis-labels (ntop.ui:chart-series-maximum-value series))
     (ntop.ui:make-chart-config :y-min
                                0d0
                                :y-max

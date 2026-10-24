@@ -101,11 +101,11 @@
                      (if
                       (eq reason :no-block-storage-statistics)
                       :not-present
-                      (ntop.disk.infrastructure::%disk-unavailable-reason
+                      (ntop.shared.application:normalize-collector-unavailability-reason
                        reason)))))))))
              (lambda (reason)
                (funcall on-unavailable
-                        (ntop.disk.infrastructure::%disk-unavailable-reason
+                        (ntop.shared.application:normalize-collector-unavailability-reason
                          reason))))))
 
 #+darwin

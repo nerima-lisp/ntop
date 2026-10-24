@@ -43,7 +43,7 @@
     (:nice :nice "Nice")))
 
 (defparameter +process-table-static-value-specs+
-  '((:cpu-percent ntop.process.domain:process-row-cpu-percent ntop.ui:format-process-cpu-percent)
+  '((:cpu-percent ntop.process.domain:process-row-cpu-percent ntop.ui:format-percent-value)
     (:virtual-memory-bytes ntop.process.domain:process-row-virtual-memory-bytes
                            ntop.ui:format-process-binary-bytes)
     (:read-bytes-per-second ntop.process.domain:process-row-read-bytes-per-second
@@ -59,7 +59,7 @@
     (:priority ntop.process.domain:process-row-priority)
     (:nice ntop.process.domain:process-row-nice)
     (:gpu-usage-percent ntop.process.domain:process-row-gpu-usage-percent
-                        ntop.ui:format-process-cpu-percent)))
+                        ntop.ui:format-percent-value)))
 
 (defstruct
     (process-table-config

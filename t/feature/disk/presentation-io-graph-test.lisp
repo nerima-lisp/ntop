@@ -207,7 +207,7 @@
                        (search "N/A" (ntop.ui:chart-series-name (first series)))
                        :to-be-truthy)
                       (cl-weave:expect
-                       (ntop.disk.presentation::%disk-io-chart-maximum series)
+                       (ntop.ui:chart-series-maximum-value series)
                        :to-be
                        0)
                       (cl-weave:expect
