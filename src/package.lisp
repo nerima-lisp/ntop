@@ -470,6 +470,11 @@
    #:run-fixed-rate-sampler
    #:apply-application-action #:run-application-loop
    ;; WP12b: application composition.
+   #:make-application-composition
+   #:application-composition-history-stores
+   #:application-composition-on-action
+   #:application-composition-on-snapshot
+   #:application-composition-render
    #:next-widget-view))
 
 (define-ntop-package #:ntop.app.infrastructure (:documentation "Terminal and sampler lifecycle.")
