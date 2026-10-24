@@ -303,7 +303,20 @@
                         (char= (char output (1- index)) #\Return)
                         (or (< index 2)
                             (not (char= (char output (- index 2)) #\Return))))))
-       :to-be t))))
+       :to-be t)))
+  (cl-weave:it "places the CPU title on its top frame and preserves chart cells"
+    (multiple-value-bind (areas screen)
+        (%wp12b-screen-render 80 24)
+      (declare (ignore areas))
+      (cl-weave:expect
+       (list
+        (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 2 0))
+        (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 0 0))
+        (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 0 5))
+        (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 1 1)))
+       :to-equal
+       (list #\C #\┌ #\└ #\1)))))
+
 
 (defun %wp12b-screen-golden-bytes (name)
   (with-open-file

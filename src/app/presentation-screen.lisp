@@ -100,11 +100,11 @@
   (ntop.ui:make-rectangle :x
                           (1+ (ntop.ui:rectangle-x rectangle))
                           :y
-                          (1+ (ntop.ui:rectangle-y rectangle))
+                          (ntop.ui:rectangle-y rectangle)
                           :width
                           (max 0 (- (ntop.ui:rectangle-width rectangle) 2))
                           :height
-                          (max 0 (- (ntop.ui:rectangle-height rectangle) 2))))
+                          (max 0 (1- (ntop.ui:rectangle-height rectangle)))))
 
 (defvar *screen-selection-active-p* nil)
 
@@ -218,6 +218,9 @@
                                state
                                config
                                unavailability-reasons)
+      (unless basic-p
+        (%screen-draw-frame target rectangle config
+                            (and selected-p *screen-selection-active-p*)))
       (when (and (plusp (ntop.ui:rectangle-width widget-rectangle))
                  (plusp (ntop.ui:rectangle-height widget-rectangle)))
         (setf clickable-areas
@@ -227,9 +230,6 @@
                                    widget-state
                                    widget-config
                                    widget-series)))
-      (unless basic-p
-        (%screen-draw-frame target rectangle config
-                            (and selected-p *screen-selection-active-p*)))
       clickable-areas)))
 
 (defun draw-application-screen (target state
