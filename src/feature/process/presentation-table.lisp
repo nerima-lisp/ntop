@@ -108,7 +108,6 @@
 
 (ntop.ui:define-widget :process-table
                        (target rectangle state config rows)
-                       (check-type config process-table-config)
                        (let* ((columns (process-table-visible-columns config))
                               (display-rows (%process-table-display-rows config rows))
                               (layout
