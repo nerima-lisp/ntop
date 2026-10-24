@@ -129,6 +129,8 @@
    (:file "src/feature/process/presentation-sort-menu")
    (:file "src/feature/process/presentation-termination-dialog")
    (:file "src/app/infrastructure-clock")
+   ;; WP13: platform collector assembly.
+   (:file "src/app/infrastructure-collectors")
    (:file "src/app/application-sampler")
    (:file "src/app/infrastructure-collection")
    (:file "src/app/application-loop")
@@ -302,6 +304,8 @@
    (:file "t/feature/process/presentation-termination-dialog-render-test")
    (:file "t/app/application-sampler-test")
    (:file "t/app/infrastructure-collection-test")
+   ;; WP13: platform collector assembly.
+   (:file "t/app/infrastructure-collectors-test")
    (:file "t/app/application-loop-test")
    (:file "t/app/application-loop-input-test")
    (:file "t/app/infrastructure-terminal-test")

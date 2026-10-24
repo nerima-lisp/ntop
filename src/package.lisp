@@ -416,7 +416,8 @@
    #:open-process-termination-dialog
    #:move-process-termination-dialog-selection
    #:select-process-termination-dialog-choice
-   #:confirm-process-termination-dialog))
+   #:confirm-process-termination-dialog
+   #:copy-process-termination-dialog-state))
 
 (define-ntop-package #:ntop.app.domain (:documentation "Application state and parity data.")
   (:export
@@ -484,6 +485,8 @@
    #:start-collection-worker #:collection-worker-channel
    #:stop-collection-worker #:call-with-terminal-session
    #:run-application
+   ;; WP13: application startup wiring.
+   #:make-platform-collectors
    ))
 
 (define-ntop-package #:ntop.app.presentation (:documentation "Screen layout and widgets.")
