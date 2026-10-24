@@ -342,8 +342,7 @@
             (cl-weave:expect indicator :to-be role)
             (cl-weave:expect
              (ntop.ui::presentation-theme-style theme-name role)
-             :to-equal expected)))))
-
+             :to-equal expected))))))
   (cl-weave:it-each ((:default :border ((:fg 7)) "38;5;7m")
                      (:default :widget-title ((:fg 7)) "38;5;7m")
                      (:default :text ((:fg 7)) "38;5;7m")
@@ -359,5 +358,5 @@
       (cl-weave:expect style :to-equal expected-style)
       (cl-weave:expect
        (apply #'cl-tty-kit:style-ansi style)
-       :to-equal (format nil "~c[~a" #\Escape sgr)))))
+       :to-equal (format nil "~c[~a" #\Escape sgr))))
 )
