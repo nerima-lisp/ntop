@@ -1,7 +1,9 @@
 # Architecture
 
-Production packages live in `src/package.lisp`. `define-ntop-package` gives
-each one a use list containing only `COMMON-LISP`.
+Production packages are declared in `package.lisp` files under `src/shared/`,
+`src/platform/`, `src/ui/`, each `src/feature/<name>/`, `src/app/`, and
+`src/cli/`. `src/package.lisp` defines `define-ntop-package`, which gives each
+production package a use list containing only `COMMON-LISP`.
 
 Layer stems are `domain`, `application`, `infrastructure`, and `presentation`;
 each may be followed by a hyphen and a descriptive suffix. In `src/shared/`,

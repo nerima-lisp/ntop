@@ -200,15 +200,19 @@
                                "~A imports forbidden package ~A."
                                relative
                                target)))))
-  (defun source-files (directory)
+  (defun source-files (directory &optional package-definitions-only)
     (append
      (remove-if-not
       (lambda (pathname)
         (and (string= (or (pathname-type pathname) "") "lisp")
-             (not (string= (or (pathname-name pathname) "") "package"))))
+             (if package-definitions-only
+                 (string= (or (pathname-name pathname) "") "package")
+                 (not (string= (or (pathname-name pathname) "") "package")))))
       (uiop:directory-files directory))
-     (mapcan (function source-files)
-             (uiop:subdirectories directory))))
+     (mapcan
+      (lambda (subdirectory)
+        (source-files subdirectory package-definitions-only))
+      (uiop:subdirectories directory))))
   (defun check-package-imports (package-forms)
     (loop for form in package-forms
           append (loop for (source . target) in (package-declaration-imports
@@ -222,7 +226,8 @@
     (let* ((root (asdf:system-source-directory "ntop"))
            (source-root (merge-pathnames "src/" root))
            (package-forms
-            (read-source-forms (merge-pathnames "src/package.lisp" root))))
+            (mapcan (function read-source-forms)
+                    (source-files source-root t))))
       (append (check-package-imports package-forms)
               (mapcan
                (lambda (pathname)

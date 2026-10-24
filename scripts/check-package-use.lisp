@@ -1,17 +1,23 @@
 (require "asdf")
 
-(let* ((source (merge-pathnames "src/package.lisp"
-                                (uiop:ensure-directory-pathname
-                                 (uiop:getcwd))))
-       (common-lisp-package (find-package '#:cl)))
-  (load source)
+(let* ((root (uiop:ensure-directory-pathname (uiop:getcwd)))
+       (system-definition (merge-pathnames "ntop.asd" root))
+       (common-lisp-package (find-package "COMMON-LISP")))
+  (asdf:load-asd system-definition)
+  (dolist (component
+           (asdf:component-children (asdf:find-system "ntop")))
+    (when (string=
+           (or (pathname-name (asdf:component-pathname component)) "")
+           "package")
+      (load (asdf:component-pathname component))))
+  (load (merge-pathnames "t/package.lisp" root))
   (let ((packages
-          (sort (remove-if-not
-                 (lambda (package)
-                   (uiop:string-prefix-p "NTOP." (package-name package)))
-                 (list-all-packages))
-                #'string<
-                :key #'package-name)))
+         (sort (remove-if-not
+                (lambda (package)
+                  (uiop:string-prefix-p "NTOP." (package-name package)))
+                (list-all-packages))
+               (function string<)
+               :key (function package-name))))
     (unless packages
       (error "No ntop packages were declared."))
     (dolist (package packages)

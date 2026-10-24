@@ -54,10 +54,34 @@
                       (format nil "~A.DOMAIN" target-owner))
                      :to-be
                      (string= source-owner target-owner)))
-                   (cl-weave:it "accepts the current source tree"
-                                (cl-weave:expect (check-source-tree)
-                                                 :to-equal
-                                                 nil))
+                   (cl-weave:it "inspects package definitions throughout src/"
+                                (let* ((root (asdf:system-source-directory "ntop"))
+                                       (source-root (merge-pathnames "src/" root))
+                                       (package-files
+                                        (sort
+                                         (mapcar
+                                          (lambda (pathname)
+                                            (enough-namestring pathname root))
+                                          (source-files source-root t))
+                                         (function string<))))
+                                  (cl-weave:expect package-files
+                                                   :to-equal
+                                                   (quote
+                                                    ("src/app/package.lisp"
+                                                     "src/cli/package.lisp"
+                                                     "src/feature/battery/package.lisp"
+                                                     "src/feature/cpu/package.lisp"
+                                                     "src/feature/disk/package.lisp"
+                                                     "src/feature/gpu/package.lisp"
+                                                     "src/feature/memory/package.lisp"
+                                                     "src/feature/network/package.lisp"
+                                                     "src/feature/process/package.lisp"
+                                                     "src/feature/temperature/package.lisp"
+                                                     "src/package.lisp"
+                                                     "src/platform/package.lisp"
+                                                     "src/shared/package.lisp"
+                                                     "src/ui/package.lisp")))
+                                  (cl-weave:expect (check-source-tree) :to-equal nil)))
                    (cl-weave:it "rejects the cross-feature fixture"
                                 (let* ((root
                                         (asdf:system-source-directory "ntop"))
