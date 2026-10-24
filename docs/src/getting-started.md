@@ -1,36 +1,54 @@
 # Getting started
 
-## macOS workflow
+## Install on Linux with Nix
 
-Install Python 3.9 or later, Nix, and SBCL and put them on `PATH`. The flake pins the ASDF
-library sources; it does not pin these host tools. From the repository root,
-run the command for the task you need:
+The flake builds for x86_64 Linux. Install [Nix](https://nix.dev/install-nix.html) if needed. Enable `nix-command` and `flakes` in Nix's active configuration. By default, Nix reads the system configuration at `/etc/nix/nix.conf` and the per-user configuration at `$HOME/.config/nix/nix.conf`; environment variables can change these locations. See the [Nix configuration reference](https://nix.dev/manual/nix/latest/command-ref/conf-file.html) for details. Add this setting to the configuration used by your installation:
 
-```sh
-python3 scripts/darwin-workflow.py dependencies
-python3 scripts/darwin-workflow.py resolve
-python3 scripts/darwin-workflow.py test
-python3 scripts/darwin-workflow.py build
-python3 scripts/darwin-workflow.py coverage
+```text
+experimental-features = nix-command flakes
 ```
 
-The local workflow was verified on macOS 26.6.2 with Python 3.9.6, Nix 2.34.9,
-and SBCL 2.6.0. The project does not declare minimum compatible OS or host-tool
-versions; other versions are unverified.
+Check that both features are enabled:
 
-Use `resolve` alone to verify that Nix can materialize the pinned source trees
-and to print their count. The other commands also resolve and archive these
-sources before doing their work. An uncached GitHub input is fetched into the
-Nix store. `dependencies` prints the ASDF dependency graph. `test` runs
-`ntop/test`. `build` creates the `ntop` executable and prints its output path.
-`coverage` writes an HTML report under `coverage/mac/` and enforces at least 90
-percent expression and branch coverage.
+```sh
+nix show-config experimental-features
+```
 
-The workflow applies a 30 minute limit to Nix and SBCL processes. It terminates
-the whole child process group if a command exceeds its limit.
+The output should include `nix-command` and `flakes`. Install the package with Nix:
 
-## Running the executable
+```sh
+nix profile install github:nerima-lisp/ntop
+```
 
-Run the executable at the path printed by the build command. The output lives
-in the local ASDF cache and is not committed.
+Then start `ntop` from a terminal:
 
+```sh
+ntop
+```
+
+## Build from source on macOS
+
+Install Git, Python 3.9 or later, Nix, and SBCL. Use the [Python macOS installer](https://www.python.org/downloads/macos/), the [Nix installer](https://nix.dev/install-nix.html), and the [SBCL downloads page](https://sbcl.org/platform-table.html) if you need them. Enable `nix-command` and `flakes` in Nix's active configuration and check them with `nix show-config experimental-features` as described above. Check that the required programs are on `PATH` and check the Python version:
+
+```sh
+command -v git python3 nix sbcl
+python3 --version
+```
+
+The first command prints a path for each program. Python must be version 3.9 or later.
+
+Clone the repository and build the executable:
+
+```sh
+git clone https://github.com/nerima-lisp/ntop.git
+cd ntop
+python3 scripts/darwin-workflow.py build
+```
+
+The build command archives the pinned Lisp dependency sources with Nix and builds the executable with SBCL. Nix fetches those sources if they are not already available locally. It prints the executable path when the build completes. Run the executable at that path.
+
+## Read the first screen
+
+The default screen presents system metrics and a process table. The process table groups rows by process name. The sampling interval is 700 milliseconds by default.
+
+Press `?` to open the key help. Press `q` to quit. See [Usage](usage.md) for widget controls, mouse actions, search syntax, and command-line options.
