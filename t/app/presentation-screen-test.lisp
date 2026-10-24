@@ -451,8 +451,11 @@
                                         :test (function eq))))
                            (x (ntop.ui:rectangle-x process-rectangle))
                            (y (ntop.ui:rectangle-y process-rectangle)))
-                      (dolist (case (list (list nil :border)
-                                          (list t :highlighted-border)))
+                      (dolist (case (list (list nil nil)
+                                          (list t
+                                                (ntop.ui:presentation-theme-style
+                                                 :default
+                                                 :highlighted-border))))
                         (let ((ntop.app.presentation::*screen-selection-active-p*
                                 (first case)))
                           (multiple-value-bind (areas screen)
@@ -462,8 +465,7 @@
                              (cl-tty-kit:cell-style
                               (cl-tty-kit:screen-cell screen x y))
                              :to-equal
-                             (ntop.ui:presentation-theme-style
-                              :default (second case))))))))
+                             (second case)))))))
                    (cl-weave:it
                     "uses the text theme for unknown table roles"
                     (let ((screen (cl-tty-kit:make-screen 4 1)))

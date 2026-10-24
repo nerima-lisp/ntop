@@ -109,23 +109,25 @@
 (defvar *screen-selection-active-p* nil)
 
 (defun %screen-draw-frame (target rectangle config selected-p)
-  (when
-      (and (plusp (ntop.ui:rectangle-width rectangle))
-           (plusp (ntop.ui:rectangle-height rectangle)))
-    (cl-tty-kit:screen-draw-box target
-                                (ntop.ui:rectangle-x rectangle)
-                                (ntop.ui:rectangle-y rectangle)
-                                (ntop.ui:rectangle-width rectangle)
-                                (ntop.ui:rectangle-height rectangle)
-                                :border
-                                :single
-                                :style
-                                (ntop.ui:presentation-theme-style
-                                 (ntop.shared.application:application-config-theme
-                                  config)
-                                 (if selected-p
-                                     :highlighted-border
-                                     :border)))))
+  (when (and (plusp (ntop.ui:rectangle-width rectangle))
+             (plusp (ntop.ui:rectangle-height rectangle)))
+    (let ((theme (ntop.shared.application:application-config-theme config)))
+      (cl-tty-kit:screen-draw-box target
+                                  (ntop.ui:rectangle-x rectangle)
+                                  (ntop.ui:rectangle-y rectangle)
+                                  (ntop.ui:rectangle-width rectangle)
+                                  (ntop.ui:rectangle-height rectangle)
+                                  :border
+                                  :single
+                                  :style
+                                  (if (and (not selected-p)
+                                           (eq theme :default))
+                                      nil
+                                      (ntop.ui:presentation-theme-style
+                                       theme
+                                       (if selected-p
+                                           :highlighted-border
+                                           :border)))))))
 (defvar *screen-table-theme* :default)
 (defmethod ntop.ui:draw-table-text ((target cl-tty-kit:screen) x y text role)
   (cl-tty-kit:screen-write-string target
