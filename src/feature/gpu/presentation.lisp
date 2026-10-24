@@ -31,10 +31,7 @@
 (defun %draw-gpu-title (target rectangle y title theme)
   (let* ((width (ntop.ui:rectangle-width rectangle))
          (visible (subseq title 0 (min width (length title)))))
-    (when (and (plusp width)
-               (plusp (length visible))
-               (< y (+ (ntop.ui:rectangle-y rectangle)
-                       (ntop.ui:rectangle-height rectangle))))
+    (when (plusp width)
       (cl-tty-kit:screen-write-string
        target
        (ntop.ui:rectangle-x rectangle)

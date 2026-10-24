@@ -67,19 +67,15 @@
                               ((string= name "sdb")
                                "8 16 sdb 1 2 6 4 5 6 10 8 9 10")
                               (t "259 0 nvme0n1 0 0 0 0 0 0 0 0 0 0")))))
-                      (cl-weave:expect (getf entry :name) :to-equal name)
-                      (cl-weave:expect (getf entry :read-sectors)
-                                       :to-be
-                                       read-sectors)
-                      (cl-weave:expect (getf entry :written-sectors)
-                                       :to-be
-                                       written-sectors)
-                      (cl-weave:expect (getf entry :read-bytes)
-                                       :to-be
-                                       read-bytes)
-                      (cl-weave:expect (getf entry :written-bytes)
-                                       :to-be
-                                       written-bytes)))
+                      (cl-weave:expect
+                       (list (getf entry :name)
+                             (getf entry :read-sectors)
+                             (getf entry :written-sectors)
+                             (getf entry :read-bytes)
+                             (getf entry :written-bytes))
+                       :to-equal
+                       (list name read-sectors written-sectors read-bytes
+                             written-bytes))))
                    (cl-weave:it
                     "keeps zero disk counters distinct from missing data"
                     (let ((entry
@@ -111,32 +107,21 @@
                         (capture-linux-result
                          #'ntop.platform.linux::parse-linux-statvfs
                          '(:block-size 4096
-                                       :fragment-size
-                                       1024
-                                       :blocks
-                                       100
-                                       :free-blocks
-                                       40
-                                       :available-blocks
-                                       30
-                                       :files
-                                       200
-                                       :free-files
-                                       80
-                                       :available-files
-                                       60
-                                       :name-max
-                                       255))
-                      (cl-weave:expect reason :to-be nil)
-                      (cl-weave:expect (getf statistics :total-bytes)
-                                       :to-be
-                                       102400)
-                      (cl-weave:expect (getf statistics :free-bytes)
-                                       :to-be
-                                       40960)
-                      (cl-weave:expect (getf statistics :available-bytes)
-                                       :to-be
-                                       30720)))
+                                       :fragment-size 1024
+                                       :blocks 100
+                                       :free-blocks 40
+                                       :available-blocks 30
+                                       :files 200
+                                       :free-files 80
+                                       :available-files 60
+                                       :name-max 255))
+                      (cl-weave:expect
+                       (list reason
+                             (getf statistics :total-bytes)
+                             (getf statistics :free-bytes)
+                             (getf statistics :available-bytes))
+                       :to-equal
+                       '(nil 102400 40960 30720))))
                    (cl-weave:it "preserves zero free blocks"
                                 (multiple-value-bind (statistics reason)
                                     (capture-linux-result
@@ -244,7 +229,14 @@
                           #'ntop.platform.linux:read-linux-statvfs
                           "/../tmp")
                        (cl-weave:expect value :to-be nil)
-                       (cl-weave:expect reason :to-be :invalid-path))))
+                       (cl-weave:expect reason :to-be :invalid-path))
+                     (cl-weave:expect
+                      (ntop.platform.linux::linux-mount-point-pathname
+                       (make-pathname :directory '(:absolute :back "tmp")
+                                      :name nil
+                                      :type nil))
+                      :to-be
+                      nil)))
                    (cl-weave:it "reports unsupported statvfs on non-Linux hosts"
                                 (let ((ntop.platform.linux::*linux-statvfs-function*
                                        nil))
@@ -270,34 +262,25 @@
                       (multiple-value-bind (statistics reason)
                           (capture-linux-result
                            #'ntop.platform.linux::parse-linux-statvfs
-                           (list :block-size
-                                 fragment
-                                 :fragment-size
-                                 fragment
-                                 :blocks
-                                 blocks
-                                 :free-blocks
-                                 free
-                                 :available-blocks
-                                 available
-                                 :files
-                                 1
-                                 :free-files
-                                 1
-                                 :available-files
-                                 1
-                                 :name-max
-                                 255))
-                        (cl-weave:expect reason :to-be nil)
-                        (cl-weave:expect (getf statistics :total-bytes)
-                                         :to-be
-                                         (* fragment blocks))
-                        (cl-weave:expect (getf statistics :free-bytes)
-                                         :to-be
-                                         (* fragment free))
-                        (cl-weave:expect (getf statistics :available-bytes)
-                                         :to-be
-                                         (* fragment available))))))
+                           (list :block-size fragment
+                                 :fragment-size fragment
+                                 :blocks blocks
+                                 :free-blocks free
+                                 :available-blocks available
+                                 :files 1
+                                 :free-files 1
+                                 :available-files 1
+                                 :name-max 255))
+                        (cl-weave:expect
+                         (list reason
+                               (getf statistics :total-bytes)
+                               (getf statistics :free-bytes)
+                               (getf statistics :available-bytes))
+                         :to-equal
+                         (list nil
+                               (* fragment blocks)
+                               (* fragment free)
+                               (* fragment available)))))))
 
 (cl-weave:describe "Linux disk edge cases"
                    (cl-weave:it "ignores incomplete mount rows"
@@ -359,3 +342,49 @@
                            "/mnt/data")
                         (cl-weave:expect value :to-be nil)
                         (cl-weave:expect reason :to-be :root-unavailable)))))
+(cl-weave:describe "Linux statvfs foreign interface"
+                   (cl-weave:it-run-if
+                    (member :linux *features*)
+                    "maps statvfs fields and reports a failed foreign call"
+                    (let ((expected
+                           '(:block-size 4096
+                             :fragment-size 2048
+                             :blocks 12
+                             :free-blocks 5
+                             :available-blocks 4
+                             :files 10
+                             :free-files 8
+                             :available-files 7
+                             :name-max 255)))
+                      (cl-weave:with-mocked-functions
+                        (((symbol-function
+                           'ntop.platform.linux::%linux-statvfs)
+                          (lambda (path buffer)
+                            (cl-weave:expect path :to-equal "/mnt/data")
+                            (let ((stats (sb-alien:deref buffer)))
+                              (setf (sb-alien:slot stats 'ntop.platform.linux::f-bsize) 4096
+                                    (sb-alien:slot stats 'ntop.platform.linux::f-frsize) 2048
+                                    (sb-alien:slot stats 'ntop.platform.linux::f-blocks) 12
+                                    (sb-alien:slot stats 'ntop.platform.linux::f-bfree) 5
+                                    (sb-alien:slot stats 'ntop.platform.linux::f-bavail) 4
+                                    (sb-alien:slot stats 'ntop.platform.linux::f-files) 10
+                                    (sb-alien:slot stats 'ntop.platform.linux::f-ffree) 8
+                                    (sb-alien:slot stats 'ntop.platform.linux::f-favail) 7
+                                    (sb-alien:slot stats 'ntop.platform.linux::f-namemax) 255))
+                            0)))
+                        (cl-weave:expect
+                         (ntop.platform.linux::call-linux-statvfs
+                          #p"/mnt/data")
+                         :to-equal
+                         expected))
+                      (cl-weave:with-mocked-functions
+                        (((symbol-function
+                           'ntop.platform.linux::%linux-statvfs)
+                          (lambda (path buffer)
+                            (declare (ignore path buffer))
+                            -1)))
+                        (cl-weave:expect
+                         (ntop.platform.linux::call-linux-statvfs
+                          #p"/missing")
+                         :to-be
+                         nil)))))

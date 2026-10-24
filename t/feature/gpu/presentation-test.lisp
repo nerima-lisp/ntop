@@ -1,36 +1,11 @@
 (in-package #:ntop.test)
-
-(defun %f3-gpu-presentation-series (name value)
-  (let ((history
-          (ntop.shared.domain:make-history-store
-           1
-           :retention-seconds 4d0
-           :sample-interval-seconds 1d0
-           :initial-window-seconds 4d0
-           :minimum-window-seconds 1d0)))
-    (ntop.shared.domain:history-append
-     history
-     0
-     (ntop.shared.domain:make-sample-record :sampled-at 1d0)
-     value)
-    (ntop.ui:make-chart-series
-     :name name
-     :samples (ntop.shared.domain:history-slice history 0))))
-
-(defun %f3-gpu-screen-rows (screen)
-  (loop for row below (cl-tty-kit:screen-height screen)
-        collect (string-right-trim
-                 '(#\Space)
-                 (cl-tty-kit:screen-row-string screen row))))
-
-(defun %f3-gpu-screen-golden-lines ()
-  (with-open-file (stream
-                   (asdf:system-relative-pathname
-                    "ntop/test"
-                    "t/feature/gpu/goldens/presentation-40x16.txt"))
-    (loop for line = (read-line stream nil)
-          while line
-          collect line)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (load (merge-pathnames
+         "helpers-presentation.lisp"
+         (uiop:pathname-directory-pathname
+          (asdf:component-pathname
+           (asdf:find-component "ntop/test"
+                                "t/feature/gpu/presentation-test"))))))
 
 (cl-weave:describe "GPU presentation"
   (cl-weave:it "declares the GPU widget through define-widget"
@@ -73,10 +48,66 @@
                            (list :usage usage :memory memory))
       (setf rows (%f3-gpu-screen-rows screen)
             golden-lines (%f3-gpu-screen-golden-lines))
-      (cl-weave:expect (length golden-lines) :to-be 16)
       (cl-weave:expect
-       (not (null (some (lambda (line) (plusp (length line))) golden-lines)))
-       :to-be t)
-      (cl-weave:expect (every (lambda (line) (<= (length line) 40)) golden-lines)
+       (list (length golden-lines)
+             (not (null (some (lambda (line) (plusp (length line))) golden-lines)))
+             (every (lambda (line) (<= (length line) 40)) golden-lines)
+             rows)
+       :to-equal
+       (list 16 t t golden-lines)))))
+(cl-weave:describe "GPU presentation edge layouts"
+  (cl-weave:it "skips No GPU drawing for zero-width and zero-height rectangles"
+    (let* ((screen (cl-tty-kit:make-screen 30 8))
+           (config (ntop.shared.application:make-application-config))
+           (fill-count 0)
+           (write-count 0))
+      (cl-weave:with-mocked-functions
+        (((symbol-function 'cl-tty-kit:screen-fill-rect)
+          (lambda (&rest arguments)
+            (declare (ignore arguments))
+            (incf fill-count)))
+         ((symbol-function 'cl-tty-kit:screen-write-string)
+          (lambda (&rest arguments)
+            (declare (ignore arguments))
+            (incf write-count))))
+        (ntop.ui:draw-widget
+         :gpu screen
+         (ntop.ui:make-rectangle :x 0 :y 0 :width 0 :height 8)
+         nil config
+         '(:usage nil :memory nil))
+        (ntop.ui:draw-widget
+         :gpu screen
+         (ntop.ui:make-rectangle :x 0 :y 0 :width 30 :height 0)
+         nil config
+         '(:usage nil :memory nil)))
+      (cl-weave:expect fill-count :to-be 0)
+      (cl-weave:expect write-count :to-be 0)))
+
+  (cl-weave:it "skips a GPU title when the rectangle has no width"
+    (let* ((screen (cl-tty-kit:make-screen 30 4))
+           (rectangle
+             (ntop.ui:make-rectangle :x 0 :y 0 :width 0 :height 4))
+           (write-count 0))
+      (cl-weave:with-mocked-functions
+        (((symbol-function 'cl-tty-kit:screen-write-string)
+          (lambda (&rest arguments)
+            (declare (ignore arguments))
+            (incf write-count))))
+        (ntop.gpu.presentation::%draw-gpu-title
+         screen rectangle 0 "GPU utilization (%)" "default"))
+      (cl-weave:expect write-count :to-be 0)))
+
+  (cl-weave:it "omits the memory chart when only one row is available"
+    (let* ((screen (cl-tty-kit:make-screen 40 1))
+           (rectangle
+             (ntop.ui:make-rectangle :x 0 :y 0 :width 40 :height 1))
+           (config (ntop.shared.application:make-application-config))
+           (series (list (%f3-gpu-presentation-series "AMD Radeon" 50d0)))
+           (rendered nil))
+      (ntop.ui:draw-widget :gpu screen rectangle nil config
+                           (list :usage series :memory series))
+      (setf rendered (cl-tty-kit:screen-to-string screen))
+      (cl-weave:expect (not (null (search "GPU utilization (%)" rendered)))
                        :to-be t)
-      (cl-weave:expect rows :to-equal golden-lines))))
+      (cl-weave:expect (not (null (search "GPU memory (%)" rendered)))
+                       :to-be nil))))

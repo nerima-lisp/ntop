@@ -1,20 +1,14 @@
 (in-package #:ntop.test)
 
-(defun %temperature-test-collect (collector)
-  (let ((result nil))
-    (ntop.shared.application:collect-temperature-sample collector
-                                                        (lambda (sample)
-                                                          (setf result (list
-                                                                        :value
-                                                                        sample)))
-                                                        (lambda (reason)
-                                                          (setf result (list
-                                                                        :unavailable
-                                                                        reason))))
-    result))
-
-(defun %temperature-test-sensors (result)
-  (ntop.temperature.domain:temperature-sample-sensors (second result)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (load
+   (merge-pathnames
+    "helpers-infrastructure.lisp"
+    (uiop:pathname-directory-pathname
+     (asdf:component-pathname
+      (asdf:find-component
+       "ntop/test"
+       "t/feature/temperature/infrastructure-collector-test"))))))
 
 (cl-weave:describe
  "temperature infrastructure collector"
@@ -67,34 +61,23 @@
     (setf now 60)
     (let* ((at-expiry (%temperature-test-collect collector))
            (at-expiry-sample (second at-expiry)))
-     (cl-weave:expect enumeration-count :to-be 2)
      (cl-weave:expect
-      (mapcar #'ntop.temperature.domain:temperature-sensor-name
-              (%temperature-test-sensors first-result))
+      (list enumeration-count
+            (mapcar (lambda (sensor)
+                      (ntop.temperature.domain:temperature-sensor-name sensor))
+                    (%temperature-test-sensors first-result))
+            (mapcar (lambda (sensor)
+                      (ntop.temperature.domain:temperature-sensor-name sensor))
+                    (%temperature-test-sensors before-expiry))
+            (mapcar (lambda (sensor)
+                      (ntop.temperature.domain:temperature-sensor-name sensor))
+                    (%temperature-test-sensors at-expiry))
+            (ntop.shared.domain:sample-record-sampled-at first-sample)
+            (ntop.shared.domain:sample-record-sampled-at before-expiry-sample)
+            (ntop.shared.domain:sample-record-sampled-at at-expiry-sample)
+            (not (eq first-sample before-expiry-sample)))
       :to-equal
-      '("CPU"))
-     (cl-weave:expect
-      (mapcar #'ntop.temperature.domain:temperature-sensor-name
-              (%temperature-test-sensors before-expiry))
-      :to-equal
-      '("CPU"))
-     (cl-weave:expect
-      (mapcar #'ntop.temperature.domain:temperature-sensor-name
-              (%temperature-test-sensors at-expiry))
-      :to-equal
-      '("GPU"))
-     (cl-weave:expect (ntop.shared.domain:sample-record-sampled-at first-sample)
-                      :to-be
-                      0)
-     (cl-weave:expect
-      (ntop.shared.domain:sample-record-sampled-at before-expiry-sample)
-      :to-be
-      59)
-     (cl-weave:expect
-      (ntop.shared.domain:sample-record-sampled-at at-expiry-sample)
-      :to-be
-      60)
-     (cl-weave:expect (not (eq first-sample before-expiry-sample)) :to-be t)))))
+      (list 2 (list "CPU") (list "CPU") (list "GPU") 0 59 60 t))))))
  (cl-weave:it
   "matches identities with equal and keeps missing readings as N/A rows"
   (let* ((sources
@@ -134,25 +117,24 @@
          (result (%temperature-test-collect collector))
          (sample (second result))
          (sensors (%temperature-test-sensors result)))
-   (cl-weave:expect (first result) :to-be :value)
-   (cl-weave:expect (length sensors) :to-be 3)
    (cl-weave:expect
-    (mapcar #'ntop.temperature.domain:temperature-sensor-temperature-celsius
-            sensors)
+    (list (first result)
+          (length sensors)
+          (mapcar (lambda (sensor)
+                    (ntop.temperature.domain:temperature-sensor-temperature-celsius
+                     sensor))
+                  sensors)
+          (handler-case
+              (progn
+                (funcall
+                 (fdefinition
+                  (quote (setf ntop.temperature.domain:temperature-sample-sensors)))
+                 nil
+                 sample)
+                nil)
+            (undefined-function () t)))
     :to-equal
-    '(42.5 nil nil))
-   (cl-weave:expect
-    (handler-case (progn
-                   (funcall
-                    (fdefinition
-                     '(setf ntop.temperature.domain:temperature-sample-sensors))
-                    nil
-                    sample)
-                   nil)
-     (undefined-function ()
-      t))
-    :to-be
-    t)))
+    (list :value 3 (list 42.5 nil nil) t))))
  (cl-weave:it
   "forwards enumeration failures without reading or emitting a sample"
   (let* ((reader-called nil)
@@ -228,5 +210,46 @@
                      (result (%temperature-test-collect collector)))
                (cl-weave:expect result
                                 :to-equal
-                                '(:unavailable :permission-denied)))))
+                                '(:unavailable :permission-denied))))
+ (cl-weave:it
+ "requires source identity and handle and validates display names"
+ (cl-weave:signals simple-error
+   (apply (symbol-function
+           'ntop.temperature.infrastructure:make-temperature-source)
+          (list :name "CPU" :handle :cpu0)))
+ (cl-weave:signals simple-error
+   (apply (symbol-function
+           'ntop.temperature.infrastructure:make-temperature-source)
+          (list :identity "cpu0" :name "CPU")))
+ (cl-weave:signals type-error
+   (apply
+    (symbol-function
+     'ntop.temperature.infrastructure:make-temperature-source)
+    (list :identity "cpu0" :name 7 :handle :cpu0)))
+ (cl-weave:expect
+  (ntop.temperature.infrastructure:temperature-source-name
+   (ntop.temperature.infrastructure:make-temperature-source
+    :identity "cpu0" :name nil :handle :cpu0))
+  :to-be nil))
+ (cl-weave:it "uses deterministic monotonic clock readings"
+             (let* ((clock-id nil)
+                   (sampled-at nil)
+                   (ntop.temperature.infrastructure::*temperature-clock-gettime*
+                    (lambda (clock)
+                      (setf clock-id clock)
+                      (values 123 456789000)))
+                   (collector
+                    (ntop.temperature.infrastructure:make-temperature-collector
+                     :enumerate-sensors
+                     (lambda (on-sources on-unavailable)
+                       (declare (ignore on-sources on-unavailable)))
+                     :read-sensors
+                     (lambda (sources on-values on-unavailable)
+                       (declare (ignore sources on-values on-unavailable))))))
+               (setf sampled-at (funcall
+                                 (ntop.temperature.infrastructure::%temperature-now
+                                  collector)))
+               (cl-weave:expect (list clock-id sampled-at)
+                                :to-equal
+                                (list sb-unix:clock-monotonic 123.456789d0)))))
 

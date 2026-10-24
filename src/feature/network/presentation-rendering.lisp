@@ -98,9 +98,7 @@
          (values (%network-legend-values latest previous baseline config show-packets-p))
          (theme (ntop.shared.application:application-config-theme config))
          (column-width
-          (if (plusp (length headers))
-              (floor (max 0 (- (ntop.ui:rectangle-width rectangle) 2)) (length headers))
-              0)))
+          (floor (max 0 (- (ntop.ui:rectangle-width rectangle) 2)) (length headers))))
     (when
         (and (plusp (ntop.ui:rectangle-width rectangle))
              (plusp (ntop.ui:rectangle-height rectangle)))
@@ -366,5 +364,5 @@
                (cl-tty-kit:screen-height target)))
          (visible-width (max 0 (min width (- right x))))
          (visible (ntop.ui::chart-clip-text text visible-width)))
-    (when (and (plusp (length visible)) (<= left x) (< x right) (<= top y) (< y bottom))
+    (when (and (plusp (length visible)) (< y bottom))
       (cl-tty-kit:screen-write-string target x y visible :style style))))

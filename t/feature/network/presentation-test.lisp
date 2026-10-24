@@ -1,56 +1,13 @@
 (in-package #:ntop.test)
 
-(defun %f4-sample (sampled-at rx-bytes tx-bytes rx-packets tx-packets)
-  (let ((interface
-         (ntop.network.domain:make-network-interface :name
-                                                     "en0"
-                                                     :rx-bytes
-                                                     rx-bytes
-                                                     :tx-bytes
-                                                     tx-bytes
-                                                     :rx-packets
-                                                     rx-packets
-                                                     :tx-packets
-                                                     tx-packets)))
-    (ntop.network.domain:make-network-sample :sampled-at sampled-at :interfaces (list interface))))
-
-(defun %f4-network-presentation-samples ()
-  (vector (%f4-sample 1d0 1000 2000 10 20) (%f4-sample 3d0 2100 6000 30 40)))
-
-(defun %f4-state (&rest arguments)
-  (apply (function ntop.network.presentation:make-network-presentation-state) arguments))
-
-(defun %f4-snapshot (screen)
-  (cl-tty-kit:screen-to-string screen))
-
-(defun %f4-basic-config (&key packets-p start-zeroed-p)
-  (ntop.shared.application:make-application-config :basic-p
-                                                   t
-                                                   :network-show-packets-p
-                                                   packets-p
-                                                   :network-start-zeroed-p
-                                                   start-zeroed-p))
-
-(defun %f4-baseline (state)
-  (ntop.network.presentation:network-presentation-state-baseline-sample state))
-
-(defun %f4-packet-visible-p (show-packets-p width)
-  (ntop.network.presentation::%network-packet-legend-visible-p show-packets-p width))
-
-(defun %f4-network-screen-lines (screen)
-  (with-input-from-string (stream (cl-tty-kit:screen-to-string screen))
-    (loop for line = (read-line stream nil)
-          while line
-          collect (string-right-trim '(#\Space #\Return) line))))
-
-(defun %f4-network-golden-lines ()
-  (with-open-file
-      (stream
-       (asdf:system-relative-pathname "ntop/test"
-                                      "t/feature/network/goldens/presentation-50x16.txt"))
-    (loop for line = (read-line stream nil)
-          while line
-          collect line)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (load
+   (merge-pathnames
+    "helpers-presentation.lisp"
+    (uiop:pathname-directory-pathname
+     (asdf:component-pathname
+      (asdf:find-component "ntop/test"
+                           "t/feature/network/presentation-test"))))))
 
 (cl-weave:describe "network presentation"
                    (cl-weave:it-each ((93 nil) (94 nil) (95 t))
@@ -114,23 +71,22 @@
                                         :to-be
                                         t)))
                    (cl-weave:it
-                    "uses the shared linear axis formatter and network legend constraints"
-                    (let* ((rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height 20))
-                           (latest (aref (%f4-network-presentation-samples) 1))
-                           (config (ntop.shared.application:make-application-config))
-                           (chart-config
-                            (ntop.network.presentation::%network-chart-config rectangle
-                                                                              latest
-                                                                              2000d0
-                                                                              config)))
-                      (cl-weave:expect (ntop.ui:chart-config-y-scale chart-config) :to-be :linear)
-                      (cl-weave:expect (ntop.ui:chart-config-y-max chart-config) :to-be 3000d0)
-                      (cl-weave:expect (ntop.ui:chart-config-legend-width-ratio chart-config)
-                                       :to-be
-                                       9/10)
-                      (cl-weave:expect (ntop.ui:chart-config-legend-height-ratio chart-config)
-                                       :to-be
-                                       3/4)))
+  "uses the shared linear axis formatter and network legend constraints"
+  (let* ((rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height 20))
+         (latest (aref (%f4-network-presentation-samples) 1))
+         (config (ntop.shared.application:make-application-config))
+         (chart-config
+           (ntop.network.presentation::%network-chart-config rectangle
+                                                             latest
+                                                             2000d0
+                                                             config)))
+    (cl-weave:expect
+     (list (ntop.ui:chart-config-y-scale chart-config)
+           (ntop.ui:chart-config-y-max chart-config)
+           (ntop.ui:chart-config-legend-width-ratio chart-config)
+           (ntop.ui:chart-config-legend-height-ratio chart-config))
+     :to-equal
+     (quote (:linear 3000d0 9/10 3/4)))))
                    (cl-weave:it-each
                     ((:decimal-below 999999d0 nil 6d0 :log10)
                      (:decimal-edge 1000000d0 nil 9d0 :log10)
@@ -157,24 +113,24 @@
                                        :to-be
                                        expected-maximum)))
                    (cl-weave:it
-                    "renders byte and packet rates with average packet sizes in basic mode"
-                    (let* ((screen (cl-tty-kit:make-screen 80 8))
-                           (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height 8))
-                           (config (%f4-basic-config :packets-p t))
-                           (samples (%f4-network-presentation-samples)))
-                      (ntop.ui:draw-widget :network screen rectangle nil config samples)
-                      (let ((snapshot (cl-tty-kit:screen-to-string screen)))
-                        (cl-weave:expect (not (null (search "4.4Kb/s" snapshot))) :to-be t)
-                        (cl-weave:expect (not (null (search "16.0Kb/s" snapshot))) :to-be t)
-                        (cl-weave:expect (not (null (search "2.1KB" snapshot))) :to-be t)
-                        (cl-weave:expect (not (null (search "6.0KB" snapshot))) :to-be t)
-                        (cl-weave:expect (not (null (search "10pkt/s" snapshot))) :to-be t)
-                        (cl-weave:expect (not (null (search "55.0B" snapshot))) :to-be t)
-                        (cl-weave:expect (not (null (search "200.0B" snapshot))) :to-be t)
-                        (cl-weave:expect (not (null (search "Network" snapshot))) :to-be t))
-                      (cl-weave:expect (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
-                                       :to-equal
-                                       (ntop.ui:presentation-theme-style :default :widget-title))))
+  "renders byte and packet rates with average packet sizes in basic mode"
+  (let* ((screen (cl-tty-kit:make-screen 80 8))
+         (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height 8))
+         (config (%f4-basic-config :packets-p t))
+         (samples (%f4-network-presentation-samples)))
+    (ntop.ui:draw-widget :network screen rectangle nil config samples)
+    (let ((snapshot (cl-tty-kit:screen-to-string screen)))
+      (cl-weave:expect
+       (mapcar
+        (lambda (text) (not (null (search text snapshot))))
+        (quote ("4.4Kb/s" "16.0Kb/s" "2.1KB" "6.0KB"
+                "10pkt/s" "55.0B" "200.0B" "Network")))
+       :to-equal
+       (quote (t t t t t t t t))))
+    (cl-weave:expect
+     (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
+     :to-equal
+     (ntop.ui:presentation-theme-style :default :widget-title))))
                    (cl-weave:it "keeps basic text inside a small widget rectangle"
                                 (let* ((screen (cl-tty-kit:make-screen 20 8))
                                        (rectangle
@@ -210,99 +166,78 @@
                                    :to-be
                                    t)))
                    (cl-weave:it-each ((2 nil nil) (3 t nil) (4 t t))
-                     "lays out old packet legend at height ~A and skips empty bounds"
-                     (height headers-p values-p)
-                     (let* ((screen (cl-tty-kit:make-screen 80 height))
-                            (rectangle
-                             (ntop.ui:make-rectangle :x
-                                                     0
-                                                     :y
-                                                     0
-                                                     :width
-                                                     80
-                                                     :height
-                                                     height))
-                            (config
-                             (ntop.shared.application:make-application-config
-                              :network-use-old-legend-p t
-                              :network-show-packets-p t))
-                            (samples (%f4-network-presentation-samples)))
-                       (ntop.ui:draw-widget :network screen rectangle nil config samples)
-                       (let* ((snapshot (cl-tty-kit:screen-to-string screen))
-                              (chart-config
-                               (ntop.network.presentation::%network-chart-config
-                                (ntop.network.presentation::%network-chart-rectangle
-                                 rectangle config)
-                                (aref samples 1) 16000d0 config)))
-                         (cl-weave:expect
-                          (not (null (search "RX Pkts" snapshot)))
-                          :to-be headers-p)
-                         (cl-weave:expect
-                          (not (null (search "10pkt/s" snapshot)))
-                          :to-be values-p)
-                         (cl-weave:expect
-                          (not (null (search "55.0B" snapshot)))
-                          :to-be values-p)
-                         (cl-weave:expect
-                          (not (null (search "200.0B" snapshot)))
-                          :to-be values-p)
-                         (cl-weave:expect
-                          (ntop.ui:chart-config-legend-position chart-config)
-                          :to-be nil)
-                         (cl-weave:expect
-                          (ntop.ui:chart-config-legend-width-ratio chart-config)
-                          :to-be 0))
-                       (dolist (extents (quote ((0 3) (3 0))))
-                         (let* ((empty-width (first extents))
-                                (empty-height (second extents))
-                                (empty-screen (cl-tty-kit:make-screen 8 4))
-                                (empty-rectangle
-                                 (ntop.ui:make-rectangle
-                                  :x 0 :y 0 :width empty-width :height empty-height)))
-                           (ntop.network.presentation::%draw-network-old-legend
-                            empty-screen empty-rectangle
-                            (aref samples 1) (aref samples 0) nil config)
-                           (cl-weave:expect
-                            (loop for line in (%f4-network-screen-lines empty-screen)
-                                  always (string= line ""))
-                            :to-be
-                            t)))))
+  "lays out old packet legend at height ~A and skips empty bounds"
+  (height headers-p values-p)
+  (let* ((screen (cl-tty-kit:make-screen 80 height))
+         (rectangle
+           (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height height))
+         (config
+           (ntop.shared.application:make-application-config
+            :network-use-old-legend-p t
+            :network-show-packets-p t))
+         (samples (%f4-network-presentation-samples)))
+    (ntop.ui:draw-widget :network screen rectangle nil config samples)
+    (let* ((snapshot (cl-tty-kit:screen-to-string screen))
+           (chart-config
+             (ntop.network.presentation::%network-chart-config
+              (ntop.network.presentation::%network-chart-rectangle rectangle config)
+              (aref samples 1) 16000d0 config)))
+      (cl-weave:expect
+       (list (not (null (search "RX Pkts" snapshot)))
+             (list (not (null (search "10pkt/s" snapshot)))
+                   (not (null (search "55.0B" snapshot)))
+                   (not (null (search "200.0B" snapshot)))
+                   (ntop.ui:chart-config-legend-position chart-config)
+                   (ntop.ui:chart-config-legend-width-ratio chart-config)))
+       :to-equal
+       (list headers-p
+             (list values-p values-p values-p nil 0))))
+    (dolist (extents (quote ((0 3) (3 0))))
+      (let* ((empty-width (first extents))
+             (empty-height (second extents))
+             (empty-screen (cl-tty-kit:make-screen 8 4))
+             (empty-rectangle
+               (ntop.ui:make-rectangle :x 0 :y 0 :width empty-width :height empty-height)))
+        (ntop.network.presentation::%draw-network-old-legend
+         empty-screen empty-rectangle
+         (aref samples 1) (aref samples 0) nil config)
+        (cl-weave:expect
+         (loop for line in (%f4-network-screen-lines empty-screen)
+               always (string= line ""))
+         :to-be
+         t)))))
                    (cl-weave:it
-                    "renders the shared chart, legend, and formatter to the screen golden"
-                    (let* ((screen (cl-tty-kit:make-screen 50 16))
-                           (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 50 :height 16))
-                           (config (ntop.shared.application:make-application-config))
-                           (samples (vector (%f4-sample 2d0 1000 2000 10 20)))
-                           (chart-config
-                            (ntop.network.presentation::%network-chart-config rectangle
-                                                                              (aref samples 0)
-                                                                              0d0
-                                                                              config)))
-                      (ntop.ui:draw-widget :network screen rectangle nil config samples)
-                      (let ((rows (%f4-network-screen-lines screen))
-                            (golden-lines (%f4-network-golden-lines)))
-                        (cl-weave:expect (length golden-lines) :to-be 16)
-                        (cl-weave:expect
-                         (every
-                          (lambda (line)
-                            (<= (length line) 50))
-                          golden-lines)
-                         :to-be
-                         t)
-                        (cl-weave:expect rows :to-equal golden-lines))
-                      (cl-weave:expect (ntop.ui:chart-config-y-max chart-config) :to-be 1d0)
-                      (cl-weave:expect (ntop.ui:chart-config-legend-width-ratio chart-config)
-                                       :to-be
-                                       9/10)
-                      (cl-weave:expect (ntop.ui:chart-config-legend-height-ratio chart-config)
-                                       :to-be
-                                       3/4)
-                      (cl-weave:expect (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 1 0))
-                                       :to-equal
-                                       (ntop.ui:presentation-theme-style :default :widget-title))
-                      (cl-weave:expect (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 21 2))
-                                       :to-equal
-                                       (ntop.ui:presentation-theme-style :default :rx))))
+  "renders the shared chart, legend, and formatter to the screen golden"
+  (let* ((screen (cl-tty-kit:make-screen 50 16))
+         (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 50 :height 16))
+         (config (ntop.shared.application:make-application-config))
+         (samples (vector (%f4-sample 2d0 1000 2000 10 20)))
+         (chart-config
+           (ntop.network.presentation::%network-chart-config rectangle
+                                                             (aref samples 0)
+                                                             0d0
+                                                             config)))
+    (ntop.ui:draw-widget :network screen rectangle nil config samples)
+    (let ((rows (%f4-network-screen-lines screen))
+          (golden-lines (%f4-network-golden-lines)))
+      (cl-weave:expect
+       (list (length golden-lines)
+             (every (lambda (line) (<= (length line) 50)) golden-lines)
+             rows)
+       :to-equal
+       (list 16 t golden-lines)))
+    (cl-weave:expect
+     (list (ntop.ui:chart-config-y-max chart-config)
+           (ntop.ui:chart-config-legend-width-ratio chart-config)
+           (ntop.ui:chart-config-legend-height-ratio chart-config))
+     :to-equal
+     (quote (1d0 9/10 3/4)))
+    (cl-weave:expect
+     (list (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 1 0))
+           (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 21 2)))
+     :to-equal
+     (list (ntop.ui:presentation-theme-style :default :widget-title)
+           (ntop.ui:presentation-theme-style :default :rx)))))
                    (cl-weave:it "rejects invalid network presentation states"
                                 (cl-weave:signals simple-error
                                                   (%f4-state :baseline-sample :invalid))
@@ -343,43 +278,27 @@
                                    :to-be
                                    t)))
                    (cl-weave:it "preserves explicit baselines and leaves ordinary totals unzeroed"
-                                (let* ((samples (%f4-network-presentation-samples))
-                                       (baseline (%f4-sample 0d0 500 1000 0 0))
-                                       (zeroed-screen (cl-tty-kit:make-screen 80 8))
-                                       (rectangle
-                                        (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height 8))
-                                       (zeroed-config (%f4-basic-config :start-zeroed-p t))
-                                       (state (%f4-state :baseline-sample baseline)))
-                                  (ntop.ui:draw-widget :network
-                                                       zeroed-screen
-                                                       rectangle
-                                                       state
-                                                       zeroed-config
-                                                       samples)
-                                  (cl-weave:expect (%f4-baseline state) :to-be baseline)
-                                  (cl-weave:expect
-                                   (not
-                                    (null
-                                     (search "1.6KB" (cl-tty-kit:screen-to-string zeroed-screen))))
-                                   :to-be
-                                   t)
-                                  (let* ((ordinary-screen (cl-tty-kit:make-screen 80 8))
-                                         (ordinary-state (%f4-state))
-                                         (ordinary-config (%f4-basic-config)))
-                                    (ntop.ui:draw-widget :network
-                                                         ordinary-screen
-                                                         rectangle
-                                                         ordinary-state
-                                                         ordinary-config
-                                                         samples)
-                                    (cl-weave:expect (%f4-baseline ordinary-state) :to-be nil)
-                                    (cl-weave:expect
-                                     (not
-                                      (null
-                                       (search "2.1KB"
-                                               (cl-tty-kit:screen-to-string ordinary-screen))))
-                                     :to-be
-                                     t))))
+  (let* ((samples (%f4-network-presentation-samples))
+         (baseline (%f4-sample 0d0 500 1000 0 0))
+         (zeroed-screen (cl-tty-kit:make-screen 80 8))
+         (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height 8))
+         (zeroed-config (%f4-basic-config :start-zeroed-p t))
+         (state (%f4-state :baseline-sample baseline)))
+    (ntop.ui:draw-widget :network zeroed-screen rectangle state zeroed-config samples)
+    (cl-weave:expect (%f4-baseline state) :to-be baseline)
+    (cl-weave:expect
+     (not (null (search "1.6KB" (cl-tty-kit:screen-to-string zeroed-screen))))
+     :to-be
+     t)
+    (let* ((ordinary-screen (cl-tty-kit:make-screen 80 8))
+           (ordinary-state (%f4-state))
+           (ordinary-config (%f4-basic-config)))
+      (ntop.ui:draw-widget :network ordinary-screen rectangle ordinary-state ordinary-config samples)
+      (cl-weave:expect
+       (list (%f4-baseline ordinary-state)
+             (not (null (search "2.1KB" (cl-tty-kit:screen-to-string ordinary-screen)))))
+       :to-equal
+       (quote (nil t))))))
                    (cl-weave:it-each ((6 t nil nil) (7 t nil t) (7 nil nil t) (7 nil t nil))
                                      "honors time-label visibility at widget height ~A"
                                      (height auto-hide-p hide-time-p visible-p)
@@ -412,25 +331,52 @@
                                         (not (null (search "-60s" (%f4-snapshot screen))))
                                         :to-be
                                         visible-p)))
-                   (cl-weave:it "renders packet details beside rates in narrow basic widgets"
-                                (let* ((screen (cl-tty-kit:make-screen 50 8))
-                                       (rectangle
-                                        (ntop.ui:make-rectangle :x 0 :y 0 :width 50 :height 8))
-                                       (config (%f4-basic-config :packets-p t))
-                                       (samples (%f4-network-presentation-samples)))
-                                  (ntop.ui:draw-widget :network screen rectangle nil config samples)
-                                  (let ((snapshot (cl-tty-kit:screen-to-string screen)))
-                                    (cl-weave:expect (not (null (search "RX: 4.4Kb/s" snapshot)))
-                                                     :to-be
-                                                     t)
-                                    (cl-weave:expect
-                                     (not (null (search "RX Pkt: 10pkt/s" snapshot)))
-                                     :to-be
-                                     t)
-                                    (cl-weave:expect
-                                     (not (null (search "Total RX: 2.1KB" snapshot)))
-                                     :to-be
-                                     t)
-                                    (cl-weave:expect (not (null (search "Avg RX: 55.0B" snapshot)))
-                                                     :to-be
-                                                     t)))))
+                   (cl-weave:it
+ "renders packet details beside rates in narrow basic widgets"
+ (let* ((screen (cl-tty-kit:make-screen 50 8))
+        (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 50 :height 8))
+        (config (%f4-basic-config :packets-p t))
+        (samples (%f4-network-presentation-samples)))
+   (ntop.ui:draw-widget :network screen rectangle nil config samples)
+   (let ((snapshot (cl-tty-kit:screen-to-string screen)))
+     (cl-weave:expect
+      (mapcar
+       (lambda (text) (not (null (search text snapshot))))
+       '("RX: 4.4Kb/s" "RX Pkt: 10pkt/s" "Total RX: 2.1KB" "Avg RX: 55.0B"))
+      :to-equal
+      '(t t t t))))
+)
+                   (cl-weave:it
+                    "caps logarithmic axis labels at the last declared prefix"
+                    (multiple-value-bind (maximum labels)
+                        (ntop.network.presentation::%network-log-axis-data 1d100 :decimal :byte)
+                      (cl-weave:expect maximum :to-be 15d0)
+                      (cl-weave:expect labels
+                                       :to-equal
+                                       (quote (" 0B" "1KB" "1MB" "1GB" "1TB")))))
+                   (cl-weave:it
+                    "omits packet columns from the old legend when packet collection is disabled"
+                    (let* ((screen (cl-tty-kit:make-screen 80 4))
+                           (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height 4))
+                           (config (ntop.shared.application:make-application-config
+                                    :network-use-old-legend-p t))
+                           (samples (%f4-network-presentation-samples)))
+                      (ntop.network.presentation::%draw-network-old-legend
+                       screen rectangle (aref samples 1) (aref samples 0) nil config)
+                      (let ((snapshot (cl-tty-kit:screen-to-string screen)))
+                        (cl-weave:expect (not (null (search "Total RX" snapshot))) :to-be t)
+                        (cl-weave:expect (search "RX Pkts" snapshot) :to-be nil))))
+                   (cl-weave:it-each ((0 4) (10 0))
+                     "leaves an empty basic widget rectangle blank (~Ax~A)"
+                     (width height)
+                     (let* ((screen (cl-tty-kit:make-screen 20 8))
+                            (rectangle
+                             (ntop.ui:make-rectangle :x 2 :y 1 :width width :height height))
+                            (config (%f4-basic-config)))
+                       (ntop.network.presentation::%draw-network-basic
+                        screen rectangle nil nil nil config)
+                       (cl-weave:expect
+                        (every (lambda (line) (string= line ""))
+                               (%f4-network-screen-lines screen))
+                        :to-be
+                        t))))

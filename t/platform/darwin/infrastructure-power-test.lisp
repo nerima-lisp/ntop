@@ -1,52 +1,12 @@
 (in-package #:ntop.test)
-
-(defconstant +battery-boundary-command-timeout-seconds+
-  5)
-(defvar *battery-boundary-delta-class* nil)
-
-(defconstant +battery-boundary-output-limit+
-  8192)
-
-(defun %percent-values-from-output (output)
-  (let ((cursor 0)
-        (values nil))
-    (loop for end = (position #\% output :start cursor)
-          while end
-          do (let ((start end))
-               (loop while (and (plusp start)
-                                (digit-char-p (char output (1- start))))
-                     do (decf start))
-               (when (and (< start end)
-                          (or (zerop start)
-                              (not (char= (char output (1- start)) #\.))))
-                 (let ((value (parse-integer output :start start :end end)))
-                   (when (<= 0 value 100)
-                     (push value values))))
-               (setf cursor (1+ end)))) (nreverse values))) (defun %pmset-battery-reading ()
-  (let* ((result
-           (host-kit:run-program
-            "pmset" '("-g" "batt")
-            :timeout +battery-boundary-command-timeout-seconds+
-            :max-output-characters +battery-boundary-output-limit+))
-         (output (host-kit:process-result-stdout result)))
-    (unless (zerop (host-kit:process-result-exit-code result))
-      (error "pmset failed while reading battery status."))
-    (when (or (host-kit:process-result-stdout-truncated-p result)
-              (host-kit:process-result-stderr-truncated-p result))
-      (error "pmset output exceeded its capture limit."))
-    (let ((charge
-            (or (first (%percent-values-from-output output))
-                (error "pmset reported no battery charge percentage.")))
-          (status
-            (cond
-              ((search "not charging" output :test #'char-equal) :unknown)
-              ((search "discharging" output :test #'char-equal) :discharging)
-              ((search "charging" output :test #'char-equal) :charging)
-              ((search "charged" output :test #'char-equal) :full)
-              (t nil))))
-      (unless status
-        (error "pmset reported no supported battery status."))
-      (values charge status)))) (cl-weave:describe
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (load (merge-pathnames
+         "helpers-power.lisp"
+         (uiop:pathname-directory-pathname
+          (asdf:component-pathname
+           (asdf:find-component "ntop/test"
+                                "t/platform/darwin/infrastructure-power-test"))))))
+(cl-weave:describe
  "Darwin battery boundary"
  (cl-weave:it "routes null CoreFoundation references to missing only"
    (let ((value-calls 0)
@@ -80,51 +40,44 @@
      (cl-weave:expect release-calls :to-be 1)
      (cl-weave:expect missing-calls :to-be 0)))
  (cl-weave:it-run-if
-  (member :darwin *features*)
-  "brackets the native charge and status read with pmset"
-  (let ((devices nil)
-        (unavailable nil))
-    (multiple-value-bind (before before-state) (%pmset-battery-reading)
-      (ntop.battery.infrastructure::read-darwin-battery-devices
-       (lambda (value)
-         (setf devices value))
-       (lambda (reason)
-         (setf unavailable reason)))
-      (multiple-value-bind (after after-state) (%pmset-battery-reading)
-        (let* ((device (first devices))
-               (charge
-                 (and device
-                      (ntop.battery.domain:battery-device-charge-percent device)))
-               (state
-                 (and device
-                      (ntop.battery.domain:battery-device-state device))))
-          (setf *battery-boundary-delta-class*
-                (if (and (= before after) (eq before-state after-state))
-                    :stable
-                    :changed))
-          (cl-weave:expect unavailable :to-be-null)
-          (cl-weave:expect (numberp charge) :to-be t)
-          (cl-weave:expect
+ (member :darwin *features*)
+ "brackets the native charge and status read with pmset"
+ (let ((devices nil)
+       (unavailable nil))
+   (multiple-value-bind (before before-state) (%pmset-battery-reading)
+     (ntop.battery.infrastructure::read-darwin-battery-devices
+      (lambda (value) (setf devices value))
+      (lambda (reason) (setf unavailable reason)))
+     (multiple-value-bind (after after-state) (%pmset-battery-reading)
+       (let* ((device (first devices))
+              (charge
+                (and device
+                     (ntop.battery.domain:battery-device-charge-percent device)))
+              (state
+                (and device
+                     (ntop.battery.domain:battery-device-state device))))
+         (cl-weave:expect
+          (list
+           unavailable
+           (numberp charge)
            (<= (min before after) (round charge) (max before after))
-           :to-be
-           t)
-          (cl-weave:expect
-           (not (null (member state (list before-state after-state) :test #'eq)))
-           :to-be
-           t))))))) (cl-weave:describe
+           (not (null (member state (list before-state after-state) :test #'eq))))
+          :to-equal
+          '(nil t t t))))))
+)) (cl-weave:describe
  "Mocked Darwin battery power reads"
  (cl-weave:it-run-if
-  (member :darwin *features*)
-  "routes null and present IOKit property references once"
-  (let ((key-reference (sb-sys:int-sap 0))
-        (property-reference (sb-sys:int-sap 0))
-        (property-reads 0)
-        (conversions 0)
-        (releases 0)
-        (value nil)
-        (value-calls 0)
-        (missing-calls 0))
-    (cl-weave:with-mocked-functions
+ (member :darwin *features*)
+ "routes null and present IOKit property references once"
+ (let ((key-reference (sb-sys:int-sap 0))
+       (property-reference (sb-sys:int-sap 0))
+       (property-reads 0)
+       (conversions 0)
+       (releases 0)
+       (value nil)
+       (value-calls 0)
+       (missing-calls 0))
+   (cl-weave:with-mocked-functions
      (((symbol-function
         'ntop.platform.darwin::%cf-string-create-with-c-string)
        (lambda (allocator name encoding)
@@ -150,30 +103,25 @@
       (lambda (property)
         (incf value-calls)
         (setf value property))
-      (lambda ()
-        (incf missing-calls)))
+      (lambda () (incf missing-calls)))
      (setf key-reference (sb-sys:int-sap 1))
      (ntop.platform.darwin::iokit-registry-property
       (sb-sys:int-sap 9) "FixtureProperty"
       (lambda (property)
         (incf value-calls)
         (setf value property))
-      (lambda ()
-        (incf missing-calls)))
+      (lambda () (incf missing-calls)))
      (setf property-reference (sb-sys:int-sap 2))
      (ntop.platform.darwin::iokit-registry-property
       (sb-sys:int-sap 9) "FixtureProperty"
       (lambda (property)
         (incf value-calls)
         (setf value property))
-      (lambda ()
-        (incf missing-calls)))
-     (cl-weave:expect value :to-be :fixture-value)
-     (cl-weave:expect value-calls :to-be 1)
-     (cl-weave:expect missing-calls :to-be 2)
-     (cl-weave:expect property-reads :to-be 2)
-     (cl-weave:expect conversions :to-be 1)
-     (cl-weave:expect releases :to-be 3))))
+      (lambda () (incf missing-calls)))
+     (cl-weave:expect
+      (list value value-calls missing-calls property-reads conversions releases)
+      :to-equal
+      '(:fixture-value 1 2 2 1 3)))))
  (cl-weave:it-run-if
   (member :darwin *features*)
   "reads selected IOPS fields and rejects invalid source descriptions"
@@ -226,20 +174,20 @@
         (ntop.platform.darwin::%read-iops-power-source-fields
          (sb-sys:int-sap 10) (sb-sys:int-sap 12)))
       :to-throw
-      'error)))
- (cl-weave:it-run-if
-  (member :darwin *features*)
-  "handles AppleSmartBattery service success, absence, and errors"
-  (let ((mode :success)
-        (service-class nil)
-        (property-values
-          '(("ExternalConnected" . :true)
-            ("Amperage" . -1200)))
-        (value nil)
-        (unavailable nil)
-        (value-calls 0)
-        (unavailable-calls 0))
-    (cl-weave:with-mocked-functions
+      'error)))) (cl-weave:it-run-if
+ (member :darwin *features*)
+ "handles AppleSmartBattery service success, absence, and errors"
+ (let ((mode :success)
+       (service-class nil)
+       (property-values
+         '(("ExternalConnected" . :true)
+           ("Amperage" . -1200)))
+       (value nil)
+       (unavailable nil)
+       (value-calls 0)
+       (unavailable-calls 0)
+       (observations nil))
+   (cl-weave:with-mocked-functions
      (((symbol-function 'ntop.platform.darwin::call-with-iokit-services)
        (lambda (class on-service on-complete on-error)
          (setf service-class class)
@@ -265,13 +213,8 @@
       (lambda (reason)
         (incf unavailable-calls)
         (setf unavailable reason)))
-     (cl-weave:expect service-class :to-be "AppleSmartBattery")
-     (cl-weave:expect
-      value
-      :to-equal
-      '((:external-connected-p :true) (:amperage -1200)))
-     (cl-weave:expect value-calls :to-be 1)
-     (cl-weave:expect unavailable-calls :to-be 0)
+     (push (list service-class value value-calls unavailable-calls)
+           observations)
      (setf mode :no-match
            value :unset
            unavailable nil
@@ -284,9 +227,7 @@
       (lambda (reason)
         (incf unavailable-calls)
         (setf unavailable reason)))
-     (cl-weave:expect value :to-be-null)
-     (cl-weave:expect value-calls :to-be 1)
-     (cl-weave:expect unavailable-calls :to-be 0)
+     (push (list value value-calls unavailable-calls) observations)
      (setf mode :error
            value nil
            unavailable nil
@@ -299,44 +240,59 @@
       (lambda (reason)
         (incf unavailable-calls)
         (setf unavailable reason)))
-     (cl-weave:expect value-calls :to-be 0)
-     (cl-weave:expect unavailable :to-be :mocked-iokit-error)
-     (cl-weave:expect unavailable-calls :to-be 1))))
- (cl-weave:it-run-if
-  (member :darwin *features*)
-  "routes IOPS failures and merges battery properties"
-  (let ((source-info (sb-sys:int-sap 0))
-        (sources (sb-sys:int-sap 0))
-        (array-count 0)
-        (source-properties
-          '(:source-type "InternalBattery"
-            :source-state "Battery Power"
-            :current-capacity 75
-            :maximum-capacity 100))
-        (battery-properties
-          '((:amperage -1200 :voltage 12000)))
-        (battery-error nil)
-        (apple-calls 0)
-        (release-calls 0))
-    (labels
-        ((read-source ()
-           (let ((value nil)
-                 (unavailable nil)
-                 (value-calls 0)
-                 (unavailable-calls 0))
-             (ntop.platform.darwin::call-with-power-source-properties
-              (lambda (properties)
-                (incf value-calls)
-                (setf value properties))
-              (lambda (reason)
-                (incf unavailable-calls)
-                (setf unavailable reason)))
-             (values value unavailable value-calls unavailable-calls))))
-      (cl-weave:with-mocked-functions
+     (push (list value unavailable value-calls unavailable-calls)
+           observations))
+   (cl-weave:expect
+    (nreverse observations)
+    :to-equal
+    '(("AppleSmartBattery" ((:external-connected-p :true :amperage -1200)) 1 0)
+      (nil 1 0)
+      (nil :mocked-iokit-error 0 1))))) (cl-weave:it-run-if
+ (member :darwin *features*)
+ "routes IOPS failures and merges battery properties"
+ (let ((source-info (sb-sys:int-sap 0))
+       (sources (sb-sys:int-sap 0))
+       (array-count 0)
+       (source-properties
+         '(:source-type "InternalBattery"
+           :source-state "Battery Power"
+           :current-capacity 75
+           :maximum-capacity 100))
+       (battery-properties '((:amperage -1200 :voltage 12000)))
+       (battery-error nil)
+       (apple-calls 0)
+       (release-calls 0)
+       (observations nil))
+   (labels
+       ((read-source ()
+          "Capture the callback result and owned-reference count."
+          (let ((value nil)
+                (unavailable nil)
+                (value-calls 0)
+                (unavailable-calls 0))
+            (ntop.platform.darwin::call-with-power-source-properties
+             (lambda (properties)
+               (incf value-calls)
+               (setf value properties))
+             (lambda (reason)
+               (incf unavailable-calls)
+               (setf unavailable reason)))
+            (list
+             (when value
+               (mapcar
+                (lambda (properties)
+                  (list (getf properties :source-type)
+                        (getf properties :source-state)
+                        (getf properties :current-capacity)
+                        (getf properties :maximum-capacity)
+                        (getf properties :amperage)
+                        (getf properties :voltage)))
+                value))
+             unavailable value-calls unavailable-calls apple-calls release-calls))))
+     (cl-weave:with-mocked-functions
        (((symbol-function
           'ntop.platform.darwin::%iops-copy-power-sources-info)
-         (lambda ()
-           source-info))
+         (lambda () source-info))
         ((symbol-function
           'ntop.platform.darwin::%iops-copy-power-sources-list)
          (lambda (info)
@@ -372,60 +328,73 @@
            (if battery-error
                (funcall on-error battery-error)
                (funcall on-value battery-properties)))))
-       (multiple-value-bind
-           (value unavailable value-calls unavailable-calls)
-           (read-source)
-         (cl-weave:expect value :to-be-null)
-         (cl-weave:expect unavailable :to-be :no-power-source-info)
-         (cl-weave:expect value-calls :to-be 0)
-         (cl-weave:expect unavailable-calls :to-be 1)
-         (cl-weave:expect release-calls :to-be 0))
+       (push (read-source) observations)
        (setf source-info (sb-sys:int-sap 1)
              sources (sb-sys:int-sap 0))
-       (multiple-value-bind
-           (value unavailable value-calls unavailable-calls)
-           (read-source)
-         (cl-weave:expect value :to-be-null)
-         (cl-weave:expect unavailable :to-be :no-power-source-list)
-         (cl-weave:expect value-calls :to-be 0)
-         (cl-weave:expect unavailable-calls :to-be 1)
-         (cl-weave:expect release-calls :to-be 1))
+       (push (read-source) observations)
        (setf sources (sb-sys:int-sap 2)
              array-count 0)
-       (multiple-value-bind
-           (value unavailable value-calls unavailable-calls)
-           (read-source)
-         (cl-weave:expect value :to-be-null)
-         (cl-weave:expect unavailable :to-be-null)
-         (cl-weave:expect value-calls :to-be 1)
-         (cl-weave:expect unavailable-calls :to-be 0)
-         (cl-weave:expect apple-calls :to-be 0)
-         (cl-weave:expect release-calls :to-be 3))
+       (push (read-source) observations)
        (setf array-count 1)
-       (multiple-value-bind
-           (value unavailable value-calls unavailable-calls)
-           (read-source)
-         (cl-weave:expect unavailable :to-be-null)
-         (cl-weave:expect
-          value
-          :to-equal
-          '((:source-type "InternalBattery"
-             :source-state "Battery Power"
-             :current-capacity 75
-             :maximum-capacity 100
-             :amperage -1200
-             :voltage 12000)))
-         (cl-weave:expect value-calls :to-be 1)
-         (cl-weave:expect unavailable-calls :to-be 0)
-         (cl-weave:expect apple-calls :to-be 1)
-         (cl-weave:expect release-calls :to-be 5))
+       (push (read-source) observations)
        (setf battery-error :mocked-iokit-error)
-       (multiple-value-bind
-           (value unavailable value-calls unavailable-calls)
-           (read-source)
-         (cl-weave:expect value :to-be-null)
-         (cl-weave:expect unavailable :to-be :mocked-iokit-error)
-         (cl-weave:expect value-calls :to-be 0)
-         (cl-weave:expect unavailable-calls :to-be 1)
-         (cl-weave:expect apple-calls :to-be 2)
-         (cl-weave:expect release-calls :to-be 7))))))))
+       (push (read-source) observations)))
+   (cl-weave:expect
+    (nreverse observations)
+    :to-equal
+    '((nil :no-power-source-info 0 1 0 0)
+      (nil :no-power-source-list 0 1 0 1)
+      (nil nil 1 0 0 3)
+      ((("InternalBattery" "Battery Power" 75 100 -1200 12000)) nil 1 0 1 5)
+      (nil :mocked-iokit-error 0 1 2 7))))))
+
+(cl-weave:describe
+ "Darwin selected IOKit properties and battery merging"
+ (cl-weave:it-run-if
+  (member :darwin *features*)
+  "omits missing selected IOKit fields"
+  (cl-weave:with-mocked-functions
+   (((symbol-function 'ntop.platform.darwin::iokit-registry-property)
+     (lambda (entry name on-value on-missing)
+       (declare (ignore entry))
+       (if (string= name "Present")
+           (funcall on-value :present-value)
+         (funcall on-missing)))))
+   (cl-weave:expect
+    (ntop.platform.darwin::%read-selected-iokit-fields
+     (sb-sys:int-sap 1)
+     '(("Present" . :present)
+       ("Missing" . :missing)))
+    :to-equal
+    '(:present :present-value))))
+ (cl-weave:it-run-if
+ (member :darwin *features*)
+ "merges Apple battery fields into the first matching source only"
+ (let* ((source-types
+          (mapcar
+           (lambda (source) (not (null (ntop.platform.darwin::%apple-smart-battery-source-p source))))
+           '((:source-type 7)
+             (:source-type "UPS")
+             (:source-type "InternalBattery")
+             (:source-type "Battery"))))
+        (merged
+          (ntop.platform.darwin::%merge-apple-smart-battery-fields
+           '((:source-type "UPS" :name "ups")
+             (:source-type "InternalBattery" :name "internal")
+             (:source-type "Battery" :name "external"))
+           '((:amperage -1200))))
+        (fields
+          (mapcar
+           (lambda (source)
+             (list (getf source :source-type)
+                   (getf source :name)
+                   (getf source :amperage)))
+           merged)))
+   (cl-weave:expect source-types :to-equal '(nil nil t t))
+   (cl-weave:expect
+    fields
+    :to-equal
+    '(("UPS" "ups" nil)
+      ("InternalBattery" "internal" -1200)
+      ("Battery" "external" nil)))))
+ )

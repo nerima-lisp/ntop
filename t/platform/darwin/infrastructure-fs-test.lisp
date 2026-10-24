@@ -73,15 +73,13 @@
                         (ntop.platform.darwin:decode-darwin-statfs-buffer octets
                                                                           2))
                        :to-equal
-                       '("/" "/data")))
-                    (cl-weave:it "returns no rows for a zero count"
+                       '("/" "/data")))) (cl-weave:it "returns no rows for a zero count"
                                  (cl-weave:expect
                                   (ntop.platform.darwin:decode-darwin-statfs-buffer
                                    (%make-disk-test-octets nil)
                                    0)
                                   :to-equal
-                                  nil))
-                    (cl-weave:it-each ((nil 1) ((1 2 3) 1))
+                                  nil)) (cl-weave:it-each ((nil 1) ((1 2 3) 1))
                                       "rejects short statfs input ~S with count ~D"
                                       (octet-values count)
                                       (cl-weave:expect
@@ -90,16 +88,14 @@
                                           (%make-disk-test-octets octet-values)
                                           count))
                                        :to-throw
-                                       'error))
-                    (cl-weave:it "rejects a negative statfs count"
+                                       'error)) (cl-weave:it "rejects a negative statfs count"
                                  (cl-weave:expect
                                   (lambda ()
                                     (ntop.platform.darwin:decode-darwin-statfs-buffer
                                      (%make-disk-test-octets nil)
                                      -1))
                                   :to-throw
-                                  'error))
-                    (cl-weave:it "rejects a zero statfs block size"
+                                  'error)) (cl-weave:it "rejects a zero statfs block size"
                                  (let ((entry
                                         (%make-statfs-entry "/dev/disk1"
                                                             "/"
@@ -114,7 +110,7 @@
                                        entry
                                        1))
                                     :to-throw
-                                    'error))))
+                                    'error)))
                    (cl-weave:describe "Darwin volume-space-used decoder"
                                       (cl-weave:it-each
                                        ((0 0) (1 1) (1234567890 1234567890))
@@ -163,3 +159,16 @@
                                         :to-throw
                                         'error))))
 
+(cl-weave:describe "Darwin volume attrlist"
+                   (cl-weave:it "encodes the requested volume attributes"
+  (let ((octets (ntop.platform.darwin::%make-darwin-volume-attrlist)))
+    (cl-weave:expect
+     (list
+      (length octets)
+      (ntop.platform.darwin::decode-little-endian-unsigned
+       octets :start 0 :end 2)
+      (ntop.platform.darwin::decode-little-endian-unsigned
+       octets :start 8 :end 12)
+      (every #'zerop (subseq octets 12)))
+     :to-equal
+     (list 24 5 #x80800000 t)))))

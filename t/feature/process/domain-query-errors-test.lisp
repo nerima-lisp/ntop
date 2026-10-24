@@ -75,6 +75,17 @@
                        :to-equal
                        (list start-offset end-offset))))
                    (cl-weave:it
+ "rejects empty duration text after parsing no segments"
+ (let ((state (ntop.process.domain::%process-search-parser-state ""))
+       (token (cl-parser-kit:make-token
+               :type :word
+               :text ""
+               :value ""
+               :start 0
+               :end 0)))
+   (cl-weave:signals ntop.process.domain::process-search-query-error
+     (ntop.process.domain::%parse-process-search-duration state token))))
+                   (cl-weave:it
                     "reports the regex kit position for an invalid expression"
                     (let ((syntax-error
                            (process-query-test-syntax-error "[Alpha" t)))
@@ -154,4 +165,49 @@
                               (ntop.process.domain::process-search-syntax-error-end-offset
                                syntax-error))
                              :to-equal
-                             (list start-offset end-offset))))))))
+                             (list start-offset end-offset)))))))
+                   (cl-weave:it
+ "rejects values that overflow the supported double-float range"
+ (let* ((query
+         (concatenate 'string
+                      "cpu = "
+                      (make-string 64 :initial-element (char "9" 0))
+                      "e308"))
+        (syntax-error (process-query-test-syntax-error query)))
+   (cl-weave:expect
+    (typep syntax-error 'ntop.process.domain::process-search-syntax-error)
+    :to-be t)
+   (cl-weave:expect
+    (list
+     (ntop.process.domain::process-search-syntax-error-start-offset syntax-error)
+     (ntop.process.domain::process-search-syntax-error-end-offset syntax-error))
+    :to-equal
+    (list 6 (length query)))))
+                   (cl-weave:it-each
+ ((nil 0 0 5) (nil 1 5 5) (t 0 0 5))
+ "uses parser failure details when no query error was recorded"
+ (failure-p parser-position expected-start expected-end)
+ (let ((syntax-error nil))
+   (cl-weave:with-mocked-functions
+     (((symbol-function 'cl-parser-kit:parse-all)
+       (lambda (parser tokens)
+         (declare (ignore parser tokens))
+         (values
+          nil
+          nil
+          parser-position
+          (when failure-p
+            (cl-parser-kit:make-parse-failure
+             :position parser-position
+             :expected :process-search-expression
+             :actual nil))))))
+     (setf syntax-error (process-query-test-syntax-error "Alpha")))
+   (cl-weave:expect
+    (typep syntax-error 'ntop.process.domain::process-search-syntax-error)
+    :to-be t)
+   (cl-weave:expect
+    (list
+     (ntop.process.domain::process-search-syntax-error-start-offset syntax-error)
+     (ntop.process.domain::process-search-syntax-error-end-offset syntax-error))
+    :to-equal
+    (list expected-start expected-end)))))
