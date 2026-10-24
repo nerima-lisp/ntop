@@ -31,12 +31,12 @@
                               ((:fg 12)) ((:fg 6)) ((:fg 2)) ((:fg 4)))
         :disk-io-write-colors (((:fg 10)) ((:fg 12)) ((:fg 9)) ((:fg 6))
                                ((:fg 2)) ((:fg 4)) ((:fg 1)))
-        :border ((:fg 7))
+        :border nil
         :highlighted-border ((:fg 12))
         :text ((:fg 7))
         :selected-text ((:fg 0) (:bg 12))
         :table-header (:bold (:fg 12))
-        :widget-title ((:fg 7))
+        :widget-title nil
         :general-widget nil
         :graph ((:fg 7))
         :graph-legend ((:fg 7))
@@ -343,15 +343,14 @@
             (cl-weave:expect
              (ntop.ui::presentation-theme-style theme-name role)
              :to-equal expected))))))
-  (cl-weave:it-each ((:default :border ((:fg 7)) "38;5;7m")
-                     (:default :widget-title ((:fg 7)) "38;5;7m")
-                     (:default :text ((:fg 7)) "38;5;7m")
+ (cl-weave:it-each ((:default :text ((:fg 7)) "38;5;7m")
                      (:default :table-header (:bold (:fg 12)) "1;38;5;12m")
                      (:default :selected-text ((:fg 0) (:bg 12)) "38;5;0;48;5;12m")
                      (:gruvbox :text ((:fg 235 219 178)) "38;2;235;219;178m")
                      (:gruvbox :selected-text
                       ((:fg 29 32 33) (:bg 235 219 178))
                       "38;2;29;32;33;48;2;235;219;178m"))
+
       "encodes ~A ~A attributes through cl-tty-kit"
       (theme-name role expected-style sgr)
     (let ((style (ntop.ui::presentation-theme-style theme-name role)))
