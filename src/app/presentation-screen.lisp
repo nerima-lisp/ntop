@@ -113,6 +113,8 @@
                           :height
                           (max 0 (- (ntop.ui:rectangle-height rectangle) 2))))
 
+(defvar *screen-selection-active-p* nil)
+
 (defun %screen-draw-frame (target rectangle config selected-p)
   (when
       (and (plusp (ntop.ui:rectangle-width rectangle))
@@ -231,7 +233,7 @@
                                                    widget-config
                                                    widget-series)))
       (unless basic-p
-        (%screen-draw-frame target rectangle config selected-p))
+        (%screen-draw-frame target rectangle config (and selected-p *screen-selection-active-p*)))
       clickable-areas)))
 
 (defun draw-application-screen (target state

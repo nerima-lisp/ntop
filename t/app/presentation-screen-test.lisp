@@ -414,29 +414,29 @@
                          :to-equal
                          '(5.0d0 2000.0d0 500.0d0)))))
                    (cl-weave:it
-                    "uses normal and highlighted frame attributes for selection"
-                    (multiple-value-bind (areas screen)
-                        (%wp12b-screen-render 80 24)
-                      (declare (ignore areas))
-                      (let* ((placements (ntop.ui:layout-widgets 80 24))
-                             (cpu (cdr (assoc :cpu placements :test #'eq)))
-                             (process
-                              (cdr (assoc :process placements :test #'eq))))
-                        (cl-weave:expect
-                         (cl-tty-kit:cell-style
-                          (cl-tty-kit:screen-cell screen
-                                                  (ntop.ui:rectangle-x cpu)
-                                                  (ntop.ui:rectangle-y cpu)))
-                         :to-equal
-                         (ntop.ui:presentation-theme-style :default :border))
-                        (cl-weave:expect
-                         (cl-tty-kit:cell-style
-                          (cl-tty-kit:screen-cell screen
-                                                  (ntop.ui:rectangle-x process)
-                                                  (ntop.ui:rectangle-y process)))
-                         :to-equal
-                         (ntop.ui:presentation-theme-style :default
-                                                           :highlighted-border)))))
+                    "highlights a selected frame only after interaction"
+                    (let* ((state (ntop.app.domain:make-app-state))
+                           (process-rectangle
+                            (cdr
+                             (assoc :process
+                                    (ntop.app.presentation::%screen-layout-placements
+                                     80 24 state :default)
+                                    :test (function eq))))
+                           (x (ntop.ui:rectangle-x process-rectangle))
+                           (y (ntop.ui:rectangle-y process-rectangle)))
+                      (dolist (case (list (list nil :border)
+                                          (list t :highlighted-border)))
+                        (let ((ntop.app.presentation::*screen-selection-active-p*
+                                (first case)))
+                          (multiple-value-bind (areas screen)
+                              (%wp12b-screen-render 80 24 :state state)
+                            (declare (ignore areas))
+                            (cl-weave:expect
+                             (cl-tty-kit:cell-style
+                              (cl-tty-kit:screen-cell screen x y))
+                             :to-equal
+                             (ntop.ui:presentation-theme-style
+                              :default (second case))))))))
                    (cl-weave:it
                     "selects alternate GPU, temperature, battery and disk graph views"
                     (dolist
