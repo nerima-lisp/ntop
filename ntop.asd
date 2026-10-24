@@ -169,7 +169,6 @@
              (sb-ext:save-lisp-and-die
               (asdf:output-file operation system)
               :executable t
-              :compression t
               :save-runtime-options t
               :toplevel (uiop:ensure-function
                          (asdf/system:component-entry-point system))))
