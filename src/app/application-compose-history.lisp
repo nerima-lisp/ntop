@@ -16,6 +16,7 @@
   latest-process-sample
   disk-rows
   paused-p
+  selection-active-p
   screen
   previous-screen
   screen-columns

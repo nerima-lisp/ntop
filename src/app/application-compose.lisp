@@ -263,6 +263,8 @@
   (check-type columns (integer 1 *))
   (check-type rows (integer 1 *))
   (let* ((screen (%new-composition-screen composition columns rows))
+         (ntop.app.presentation::*screen-selection-active-p*
+           (application-composition-selection-active-p composition))
          (widget-areas
            (funcall (application-composition-draw-screen composition)
                     screen
@@ -296,16 +298,28 @@
     (let ((help-handled-p (%update-help-state composition state action))
           (kind (ntop.app.domain:app-action-kind action))
           (value (ntop.app.domain:app-action-value action)))
+      (when (and (eq kind :select) (null forwarded-action))
+        (setf (application-composition-selection-active-p composition) t))
       (let ((process-handled-p
               (%update-process-dialog-state composition state action)))
-        (%apply-layout-navigation state
-                                  action
-                                  (application-composition-config composition)
-                                  (or (application-composition-screen-columns
-                                       composition)
-                                      80)
-                                  (or (application-composition-screen-rows composition)
-                                      24))
+        (let ((selected-widget-before
+                (ntop.app.domain:app-state-selected-widget state)))
+          (%apply-layout-navigation state
+                                    action
+                                    (application-composition-config composition)
+                                    (or (application-composition-screen-columns
+                                         composition)
+                                        80)
+                                    (or (application-composition-screen-rows composition)
+                                        24))
+          (when (and (eq kind :navigation)
+                     (member value
+                             (quote (:left :right :up :down))
+                             :test
+                             (function eq))
+                     (not (eq selected-widget-before
+                              (ntop.app.domain:app-state-selected-widget state))))
+            (setf (application-composition-selection-active-p composition) t)))
         (%apply-history-intent composition state history-intent)
         (when (and (eq kind :navigation)
                    (eq value :reset-collection))

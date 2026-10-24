@@ -222,6 +222,9 @@
              (ntop.app.domain:make-app-action :kind :reverse-process-sort))
            (navigation-action
              (ntop.app.domain:make-app-action :kind :navigation :value :right)))
+      (cl-weave:expect
+       (ntop.app.application::application-composition-selection-active-p composition)
+       :to-be nil)
       (funcall on-action state feature-action)
       (cl-weave:expect (first (first forwarded)) :to-be state)
       (cl-weave:expect (second (first forwarded)) :to-be feature-action)
@@ -230,13 +233,28 @@
       (funcall on-action state navigation-action)
       (cl-weave:expect
        (ntop.app.domain:app-state-selected-widget state) :to-be :memory)
+      (cl-weave:expect
+       (ntop.app.application::application-composition-selection-active-p composition)
+       :to-be t)
       (cl-weave:expect (second (first forwarded)) :to-be navigation-action)
       (let ((forward-count (length forwarded)))
         (funcall on-action state
                  (ntop.app.domain:make-app-action :kind :select :value :network))
         (cl-weave:expect
          (ntop.app.domain:app-state-selected-widget state) :to-be :network)
-        (cl-weave:expect (length forwarded) :to-be forward-count))))
+        (cl-weave:expect (length forwarded) :to-be forward-count)))
+    (let* ((selection-composition (%make-composition-test-instance))
+           (selection-state (ntop.app.domain:make-app-state :selected-widget :cpu))
+           (selection-on-action
+             (ntop.app.application:application-composition-on-action
+              selection-composition)))
+      (funcall selection-on-action
+               selection-state
+               (ntop.app.domain:make-app-action :kind :select :value :network))
+      (cl-weave:expect
+       (ntop.app.application::application-composition-selection-active-p
+        selection-composition)
+       :to-be t)))
 
   (cl-weave:it "clears owned history in place and forwards reset collection"
     (let* ((forwarded nil)
