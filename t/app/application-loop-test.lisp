@@ -5,6 +5,13 @@
        #'ntop.shared.domain:history-sample-sampled-at
        (ntop.shared.domain:history-slice
         store 0 :start 0d0 :end 20d0)))
+(defun %application-loop-test-cpu-snapshot (sampled-at usage)
+  (ntop.app.domain:make-collection-snapshot
+   :sampled-at sampled-at
+   :cpu-sample
+   (ntop.cpu.domain:make-cpu-sample
+    :sampled-at sampled-at
+    :average-usage-percent usage)))
 
 (defun %run-application-loop-with-fakes
     (collection-channel poll-size render
@@ -66,19 +73,40 @@
       (ntop.app.domain:app-state-selected-widget state)
       :to-equal
       :network)))
-  (cl-weave:it "pauses and resumes the selected histories"
-               (let ((state (ntop.app.domain::make-app-state))
-                     (history (ntop.shared.domain:make-history-store 1)))
-                 (ntop.app.application:apply-application-action
-                  state (ntop.app.domain:make-app-action :kind :pause :value nil)
-                  (list history) nil)
-                 (cl-weave:expect (ntop.app.domain::app-state-paused-p state) :to-be t)
-                 (cl-weave:expect (ntop.shared.domain:history-paused-p history) :to-be t)
-                 (ntop.app.application:apply-application-action
-                  state (ntop.app.domain:make-app-action :kind :pause :value nil)
-                  (list history) nil)
-                 (cl-weave:expect (ntop.app.domain::app-state-paused-p state) :to-be nil)
-                 (cl-weave:expect (ntop.shared.domain:history-paused-p history) :to-be nil)))
+  (cl-weave:it "pauses and resumes composition history"
+    (let* ((config
+             (ntop.shared.application:make-application-config
+              :rate-ms 1000
+              :retention-seconds 600
+              :time-window-seconds 60
+              :zoom-window-seconds 15))
+           (composition
+             (ntop.app.application:make-application-composition config))
+           (state (ntop.app.domain:make-app-state :selected-widget :cpu))
+           (on-snapshot
+             (ntop.app.application:application-composition-on-snapshot
+              composition))
+           (on-action
+             (ntop.app.application:application-composition-on-action composition)))
+      (funcall on-snapshot (%application-loop-test-cpu-snapshot 1d0 50d0))
+      (let ((stores
+              (ntop.app.application:application-composition-history-stores
+               composition)))
+        (cl-weave:expect (not (zerop (length stores))) :to-be t)
+        (funcall on-action state
+                 (ntop.app.domain:make-app-action :kind :pause))
+        (cl-weave:expect (ntop.app.domain:app-state-paused-p state) :to-be t)
+        (cl-weave:expect
+         (every (function ntop.shared.domain:history-paused-p) stores)
+         :to-be t)
+        (funcall on-action state
+                 (ntop.app.domain:make-app-action :kind :pause))
+        (cl-weave:expect (ntop.app.domain:app-state-paused-p state) :to-be nil)
+        (cl-weave:expect
+         (every (lambda (store)
+                  (not (ntop.shared.domain:history-paused-p store)))
+                stores)
+         :to-be t))))
   (cl-weave:it "dispatches battery tab navigation as selection actions"
     (defmethod ntop.ui:translate-input
         ((raw-event (eql :battery-left-event))
@@ -137,40 +165,35 @@
                   :to-be action)))
 
   (cl-weave:it "toggles and explicitly sets basic and expanded modes"
-    (let ((state (ntop.app.domain::make-app-state)))
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :basic :value nil)
-       nil nil)
-      (cl-weave:expect (ntop.app.domain::app-state-basic-mode-p state)
-                       :to-be t)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :basic :value t)
-       nil nil)
-      (cl-weave:expect (ntop.app.domain::app-state-basic-mode-p state)
-                       :to-be t)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :basic :value nil)
-       nil nil)
-      (cl-weave:expect (ntop.app.domain::app-state-basic-mode-p state)
-                       :to-be nil)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :expand :value t)
-       nil nil)
-      (cl-weave:expect (ntop.app.domain::app-state-expanded-p state)
-                       :to-be t)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :expand :value nil)
-       nil nil)
-      (cl-weave:expect (ntop.app.domain::app-state-expanded-p state)
-                       :to-be nil)))
+    (let ((state (ntop.app.domain:make-app-state)))
+      (flet ((act (kind value)
+               (setf state
+                     (nth-value
+                      0
+                      (ntop.app.application::transition-application-state
+                       state
+                       (ntop.app.domain:make-app-action :kind kind :value value))))))
+        (act :basic nil)
+        (cl-weave:expect (ntop.app.domain:app-state-basic-mode-p state) :to-be t)
+        (act :basic t)
+        (cl-weave:expect (ntop.app.domain:app-state-basic-mode-p state) :to-be t)
+        (act :basic nil)
+        (cl-weave:expect (ntop.app.domain:app-state-basic-mode-p state) :to-be nil)
+        (act :expand t)
+        (cl-weave:expect (ntop.app.domain:app-state-expanded-p state) :to-be t)
+        (act :expand nil)
+        (cl-weave:expect (ntop.app.domain:app-state-expanded-p state) :to-be nil))))
 
-  (cl-weave:it "returns the quit result for a quit action"
-    (let ((state (ntop.app.domain::make-app-state)))
-      (cl-weave:expect
-       (ntop.app.application:apply-application-action
-        state (ntop.app.domain:make-app-action :kind :quit :value nil)
-        nil nil)
-       :to-equal :quit)))
+  (cl-weave:it "forwards quit actions from the state transition"
+    (let* ((state (ntop.app.domain:make-app-state))
+           (action (ntop.app.domain:make-app-action :kind :quit)))
+      (multiple-value-bind (next-state forwarded-action history-intent)
+          (ntop.app.application::transition-application-state state action)
+        (cl-weave:expect (eq next-state state) :to-be nil)
+        (cl-weave:expect forwarded-action :to-be action)
+        (cl-weave:expect history-intent :to-be nil)
+        (cl-weave:expect (ntop.app.domain:app-state-selected-widget state)
+                         :to-be :process))))
 
   (cl-weave:it "delivers snapshots, reasons, and prunes histories on the UI thread"
   (let* ((channel (cl-concurrent-kit:make-channel :buffer-size 1))
@@ -329,135 +352,137 @@
          :signal)
         (cl-weave:expect (nreverse frames) :to-equal (list (list 80 24))))))
 
-  (cl-weave:it "preserves unrelated mode values and toggles widget view states"
-    (let ((state (ntop.app.domain::make-app-state)))
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :toggle-widget-v :value nil)
-       nil nil)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :toggle-widget-v :value :network)
-       nil nil)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :toggle-widget-v :value :network)
-       nil nil)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :basic :value :unchanged)
-       nil nil)
-      (cl-weave:expect
-       (ntop.app.domain::app-state-basic-mode-p state)
-       :to-be nil)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :basic :value t)
-       nil nil)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :basic :value :unchanged)
-       nil nil)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :expand :value :unchanged)
-       nil nil)
-      (cl-weave:expect
-       (ntop.app.domain::app-state-expanded-p state)
-       :to-be nil)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :expand :value nil)
-       nil nil)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :expand :value :unchanged)
-       nil nil)
-      (cl-weave:expect
-       (list
-        (gethash :process (ntop.app.domain::app-state-widget-v-states state))
-        (gethash :network (ntop.app.domain::app-state-widget-v-states state))
-        (ntop.app.domain::app-state-basic-mode-p state)
-        (ntop.app.domain::app-state-expanded-p state))
-       :to-equal (list t nil t t))))
+  (cl-weave:it "preserves unrelated mode values and cycles widget view states"
+    (let* ((state (ntop.app.domain:make-app-state :selected-widget :memory))
+           (basic-unchanged-action
+             (ntop.app.domain:make-app-action
+              :kind :basic :value :unchanged)))
+      (flet ((act (kind value)
+               (setf state
+                     (nth-value
+                      0
+                      (ntop.app.application::transition-application-state
+                       state
+                       (ntop.app.domain:make-app-action :kind kind :value value))))))
+        (act :toggle-widget-v nil)
+        (cl-weave:expect
+         (gethash :memory (ntop.app.domain:app-state-widget-v-states state))
+         :to-be :gpu)
+        (act :toggle-widget-v nil)
+        (multiple-value-bind (next-state forwarded-action history-intent)
+            (ntop.app.application::transition-application-state
+             state basic-unchanged-action)
+          (cl-weave:expect
+           (ntop.app.domain:app-state-basic-mode-p next-state)
+           :to-be nil)
+          (cl-weave:expect forwarded-action :to-be basic-unchanged-action)
+          (cl-weave:expect history-intent :to-be nil)
+          (setf state next-state))
+        (act :expand t)
+          (cl-weave:expect (ntop.app.domain:app-state-expanded-p state) :to-be t)
+          (act :basic t)
+        (multiple-value-bind (next-state forwarded-action history-intent)
+            (ntop.app.application::transition-application-state
+             state basic-unchanged-action)
+          (cl-weave:expect
+           (ntop.app.domain:app-state-basic-mode-p next-state)
+           :to-be t)
+          (cl-weave:expect forwarded-action :to-be basic-unchanged-action)
+          (cl-weave:expect history-intent :to-be nil)
+          (setf state next-state))
+        (act :expand :unchanged)
+        (act :expand nil)
+        (act :expand :unchanged)
+        (cl-weave:expect
+         (list
+          (gethash :memory (ntop.app.domain:app-state-widget-v-states state))
+          (ntop.app.domain:app-state-basic-mode-p state)
+          (ntop.app.domain:app-state-expanded-p state))
+         :to-equal '(nil t t)))))
 
-  (cl-weave:it "applies zoom, history scrolling, and return-to-now actions"
-    (let* ((history
-             (ntop.shared.domain:make-history-store
-              1 :retention-seconds 20d0 :sample-interval-seconds 1d0
-              :initial-window-seconds 4d0 :zoom-step-seconds 1d0
-              :minimum-window-seconds 1d0))
-           (state (ntop.app.domain::make-app-state)))
-      (loop for second from 0 to 10
+  (cl-weave:it "applies zoom and history actions with the 30-second composition minimum"
+    (let* ((config
+             (ntop.shared.application:make-application-config
+              :rate-ms 1000
+              :retention-seconds 600
+              :time-window-seconds 60
+              :zoom-window-seconds 15))
+           (composition
+             (ntop.app.application:make-application-composition config))
+           (state (ntop.app.domain:make-app-state :selected-widget :cpu))
+           (on-snapshot
+             (ntop.app.application:application-composition-on-snapshot
+              composition))
+           (on-action
+             (ntop.app.application:application-composition-on-action composition)))
+      (loop for second from 0 to 120
             for sampled-at = (float second 1d0)
-            do (ntop.shared.domain:history-append
-                history 0
-                (ntop.shared.domain:make-sample-record :sampled-at sampled-at)
-                sampled-at))
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :zoom :value :in)
-       (list history) nil)
-      (cl-weave:expect
-       (ntop.shared.domain:history-store-window-width-seconds history)
-       :to-be 3d0)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :zoom :value :out)
-       (list history) nil)
-      (cl-weave:expect
-       (ntop.shared.domain:history-store-window-width-seconds history)
-       :to-be 4d0)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :zoom :value :reset)
-       (list history) nil)
-      (cl-weave:expect
-       (ntop.shared.domain:history-store-window-width-seconds history)
-       :to-be 4d0)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :zoom :value 2d0)
-       (list history) nil)
-      (cl-weave:expect
-       (list
-        (ntop.shared.domain:history-store-window-width-seconds history)
-        (ntop.app.domain::app-state-zoom-seconds state))
-       :to-equal (list 2d0 2d0))
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :zoom :value :unchanged)
-       (list history) nil)
-      (cl-weave:expect
-       (list
-        (ntop.shared.domain:history-store-window-width-seconds history)
-        (ntop.app.domain::app-state-zoom-seconds state))
-       :to-equal (list 2d0 2d0))
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action
-             :kind :history-scroll :value :backward)
-       (list history) nil)
-      (cl-weave:expect
-       (multiple-value-list
-        (ntop.shared.domain:history-current-window history))
-       :to-equal (list 6d0 8d0))
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action
-             :kind :history-scroll :value :unchanged)
-       (list history) nil)
-      (cl-weave:expect
-       (multiple-value-list
-        (ntop.shared.domain:history-current-window history))
-       :to-equal (list 6d0 8d0))
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action
-             :kind :history-scroll :value :forward)
-       (list history) nil)
-      (cl-weave:expect
-       (multiple-value-list
-        (ntop.shared.domain:history-current-window history))
-       :to-equal (list 8d0 10d0))
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :return-to-now :value nil)
-       (list history) nil)
-      (ntop.shared.domain:history-append
-       history 0
-       (ntop.shared.domain:make-sample-record :sampled-at 11d0)
-       11d0)
-      (cl-weave:expect
-       (multiple-value-list
-        (ntop.shared.domain:history-current-window history))
-       :to-equal (list 9d0 11d0))))))
+            do (funcall on-snapshot
+                        (%application-loop-test-cpu-snapshot sampled-at 50d0)))
+      (let ((history
+              (aref
+               (ntop.app.application:application-composition-history-stores
+                composition)
+               0)))
+        (flet ((act (kind value)
+                 (funcall on-action state
+                          (ntop.app.domain:make-app-action
+                           :kind kind :value value))))
+          (act :zoom :in)
+          (cl-weave:expect
+           (ntop.shared.domain:history-store-window-width-seconds history)
+           :to-be 45d0)
+          (act :zoom :out)
+          (cl-weave:expect
+           (ntop.shared.domain:history-store-window-width-seconds history)
+           :to-be 60d0)
+          (act :zoom :reset)
+          (cl-weave:expect
+           (ntop.shared.domain:history-store-window-width-seconds history)
+           :to-be 60d0)
+          (act :zoom 40d0)
+          (cl-weave:expect
+           (ntop.shared.domain:history-store-window-width-seconds history)
+           :to-be 40d0)
+          (act :zoom 2d0)
+          (cl-weave:expect
+           (list
+            (ntop.shared.domain:history-store-window-width-seconds history)
+            (ntop.app.domain:app-state-zoom-seconds state))
+           :to-equal '(30d0 30d0))
+          (act :zoom :unchanged)
+          (cl-weave:expect
+           (ntop.shared.domain:history-store-window-width-seconds history)
+           :to-be 30d0)
+          (act :history-scroll :backward)
+          (cl-weave:expect
+           (multiple-value-list
+            (ntop.shared.domain:history-current-window history))
+           :to-equal '(60d0 90d0))
+          (act :history-scroll :unchanged)
+          (cl-weave:expect
+           (multiple-value-list
+            (ntop.shared.domain:history-current-window history))
+           :to-equal '(60d0 90d0))
+          (act :history-scroll :forward)
+          (cl-weave:expect
+           (multiple-value-list
+            (ntop.shared.domain:history-current-window history))
+           :to-equal '(90d0 120d0))
+          (act :history-scroll :backward)
+          (cl-weave:expect
+           (multiple-value-list
+            (ntop.shared.domain:history-current-window history))
+           :to-equal '(60d0 90d0))
+          (act :return-to-now nil)
+          (cl-weave:expect
+           (multiple-value-list
+            (ntop.shared.domain:history-current-window history))
+           :to-equal '(90d0 120d0))
+          (funcall on-snapshot
+                   (%application-loop-test-cpu-snapshot 130d0 50d0))
+          (cl-weave:expect
+           (multiple-value-list
+            (ntop.shared.domain:history-current-window history))
+           :to-equal '(100d0 130d0))))))))
 
-(load (merge-pathnames
-       "application-loop-input-test.lisp"
-       (uiop:pathname-directory-pathname
-        (asdf:component-pathname
-         (asdf:find-component "ntop/test"
-                              "t/app/application-loop-test")))))
