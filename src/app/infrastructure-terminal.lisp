@@ -52,7 +52,9 @@
   (defun %restore-terminal-settings (fd termios)
     (unless (zerop (%darwin-terminal-tcsetattr fd sb-posix:tcsadrain termios))
       (error "Unable to restore terminal settings for file descriptor ~D."
-             fd)))
+             fd))
+    ;; A zero-time input check processes Darwin PENDIN without consuming queued bytes.
+    (cl-tty-kit:fd-wait fd :input 0))
   #-darwin
   (defun %restore-terminal-settings (fd termios)
     (sb-posix:tcsetattr fd sb-posix:tcsadrain termios))
