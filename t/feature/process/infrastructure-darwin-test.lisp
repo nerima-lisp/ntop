@@ -100,7 +100,7 @@
              (error "ps did not return one user/lstart row for PID ~D." pid))
            (list (first fields)
                  (%f8a-darwin-ps-start-time (rest fields))))))
-     (%f8a-darwin-sample (&optional threads)
+     (%f8a-darwin-sample (&optional threads &key pause-pid)
        (let* ((config
                 (ntop.shared.application:make-application-config
                  :process-get-threads-p threads))
@@ -110,11 +110,33 @@
                  config))
               (sample :unset)
               (reason :unset))
-         (ntop.shared.application:collect-process-sample
-          collector
-          (lambda (value) (setf sample value))
-          (lambda (value) (setf reason value)))
-         (values sample reason)))
+         (flet ((writer-stopped-p ()
+                  (let ((record
+                          (and (eq reason :unset)
+                               (%f8a-darwin-record sample pause-pid))))
+                    (and record
+                         (equal "Stopped"
+                                (ntop.process.domain:process-record-state
+                                 record))))))
+           (when pause-pid
+             (sb-posix:kill pause-pid sb-posix:sigstop))
+           (loop repeat (if pause-pid 5 1)
+                 do (setf sample :unset
+                          reason :unset)
+                    (ntop.shared.application:collect-process-sample
+                     collector
+                     (lambda (value) (setf sample value))
+                     (lambda (value) (setf reason value)))
+                    (when (or (null pause-pid)
+                              (not (eq reason :unset))
+                              (writer-stopped-p))
+                      (return))
+                    (sleep 0.01))
+           (when (and pause-pid
+                      (eq reason :unset)
+                      (not (writer-stopped-p)))
+             (error "The child writer did not stop for sampling."))
+           (values sample reason))))
      (%f8a-darwin-record (sample pid)
        (find pid (ntop.process.domain:process-sample-processes sample)
              :key #'ntop.process.domain:process-record-pid
@@ -288,58 +310,87 @@
            :to-be-null)))))
    #+darwin
    (cl-weave:it
-    "computes a positive write rate from increasing child byte counts"
+    "matches sampled write deltas to file growth and elapsed time"
     (host-kit:call-with-temporary-directory
      (lambda (directory)
-      (let* ((pathname (merge-pathnames "process-writer.bin" directory))
-             (child (%f8a-darwin-start-writer pathname)))
-        (unwind-protect
-         (progn
-          (sleep 0.5)
-          (multiple-value-bind (before before-reason)
-              (%f8a-darwin-sample)
-           (let* ((before-record
-                    (%f8a-darwin-record before (sb-ext:process-pid child)))
-                  (before-file-bytes
-                    (with-open-file (stream pathname
-                                            :direction :input
-                                            :element-type '(unsigned-byte 8))
-                      (file-length stream)))
-                  (before-write-bytes
-                    (and before-record
-                         (ntop.process.domain:process-record-write-bytes
-                          before-record))))
-            (cl-weave:expect before-reason :to-be :unset)
-            (cl-weave:expect before-record :to-be-truthy)
-            (cl-weave:expect before-write-bytes :to-be-truthy)
-            (sleep 4)
-            (multiple-value-bind (after after-reason)
-                (%f8a-darwin-sample)
-             (let* ((after-record
-                      (%f8a-darwin-record after (sb-ext:process-pid child)))
-                    (after-file-bytes
-                      (with-open-file (stream pathname
-                                              :direction :input
-                                              :element-type '(unsigned-byte 8))
-                        (file-length stream)))
-                    (after-write-bytes
-                      (and after-record
-                           (ntop.process.domain:process-record-write-bytes
-                            after-record)))
-                    (write-rate
-                      (ntop.process.domain:process-write-bytes-per-second
-                       before after (sb-ext:process-pid child))))
-              (cl-weave:expect after-reason :to-be :unset)
-              (cl-weave:expect after-record :to-be-truthy)
-              (cl-weave:expect (> after-file-bytes before-file-bytes) :to-be t)
-              (cl-weave:expect
-               (and before-write-bytes after-write-bytes
-                    (> after-write-bytes before-write-bytes))
-               :to-be t)
-              (cl-weave:expect (and write-rate (plusp write-rate))
-                               :to-be t))))))
-         (%f8a-darwin-stop-child child))))
-     :prefix "ntop-f8a-process-")))))
+       (let* ((pathname (merge-pathnames "process-writer.bin" directory))
+              (child (%f8a-darwin-start-writer pathname))
+              (pid (sb-ext:process-pid child)))
+         (unwind-protect
+             (progn
+               (sleep 0.5)
+               (multiple-value-bind (before before-reason)
+                   (%f8a-darwin-sample nil :pause-pid pid)
+                 (let* ((before-record (%f8a-darwin-record before pid))
+                        (before-file-bytes
+                          (with-open-file (stream pathname
+                                                  :direction :input
+                                                  :element-type '(unsigned-byte 8))
+                            (file-length stream)))
+                        (before-write-bytes
+                          (and before-record
+                               (ntop.process.domain:process-record-write-bytes
+                                before-record))))
+                   (cl-weave:expect before-reason :to-be :unset)
+                   (cl-weave:expect before-record :to-be-truthy)
+                   (cl-weave:expect
+                    (equal "Stopped"
+                           (ntop.process.domain:process-record-state before-record))
+                    :to-be t)
+                   (cl-weave:expect before-write-bytes :to-be-truthy)
+                   (sb-posix:kill pid sb-posix:sigcont)
+                   (sleep 4)
+                   (multiple-value-bind (after after-reason)
+                       (%f8a-darwin-sample nil :pause-pid pid)
+                     (let* ((after-record (%f8a-darwin-record after pid))
+                            (after-file-bytes
+                              (with-open-file (stream pathname
+                                                      :direction :input
+                                                      :element-type '(unsigned-byte 8))
+                                (file-length stream)))
+                            (after-write-bytes
+                              (and after-record
+                                   (ntop.process.domain:process-record-write-bytes
+                                    after-record)))
+                            (file-byte-delta
+                              (- after-file-bytes before-file-bytes))
+                            (write-byte-delta
+                              (and before-write-bytes after-write-bytes
+                                   (- after-write-bytes before-write-bytes)))
+                            (sample-elapsed-seconds
+                              (- (ntop.shared.domain:sample-record-sampled-at after)
+                                 (ntop.shared.domain:sample-record-sampled-at before)))
+                            (expected-write-rate
+                              (and write-byte-delta
+                                   (plusp sample-elapsed-seconds)
+                                   (/ write-byte-delta sample-elapsed-seconds)))
+                            (write-rate
+                              (ntop.process.domain:process-write-bytes-per-second
+                               before after pid))
+                            ;; Allow one page per cumulative sample for page/block rounding.
+                            ;; On 16 KiB pages, the two-page overcount allowance is 32 KiB.
+                            (rounding-allowance (* 2 (sb-posix:getpagesize))))
+                       (cl-weave:expect after-reason :to-be :unset)
+                       (cl-weave:expect after-record :to-be-truthy)
+                       (cl-weave:expect
+                        (equal "Stopped"
+                               (ntop.process.domain:process-record-state after-record))
+                        :to-be t)
+                       (cl-weave:expect (plusp file-byte-delta) :to-be t)
+                       (cl-weave:expect
+                        (and write-byte-delta
+                             (<= file-byte-delta
+                                 write-byte-delta
+                                 (+ file-byte-delta rounding-allowance)))
+                        :to-be t)
+                       (cl-weave:expect
+                        (and expected-write-rate write-rate
+                             (= write-rate expected-write-rate))
+                        :to-be t))))))
+           (%f8a-darwin-stop-child child))))
+     :prefix "ntop-f8a-process-"))
+
+)))
 
 (cl-weave:describe
  "Darwin process fallback error paths"
