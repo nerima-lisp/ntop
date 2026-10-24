@@ -29,6 +29,13 @@
            :returned)
        (error () :signaled))
      :to-be :signaled))
+  (cl-weave:it "preserves a double-float zero for equal counters"
+    (cl-weave:expect
+     (eql
+      (ntop.shared.domain:counter-rate-per-second 20 20 1.0d0)
+      0.0d0)
+     :to-be
+     t))
 
   (cl-weave:it "rejects a negative elapsed interval"
     (cl-weave:expect

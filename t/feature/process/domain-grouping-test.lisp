@@ -128,7 +128,7 @@
                        :to-be
                        t)))
                    (cl-weave:it
-                    "uses maximum runtime and minimum-PID representative values"
+                    "uses maximum runtime and keeps the first minimum-PID representative on ties"
                     (let* ((rows
                             (list
                              (%wp4-grouping-row 9
@@ -148,7 +148,16 @@
                                                 :cpu-percent
                                                 3
                                                 :elapsed-seconds
-                                                45)))
+                                                45)
+                             (%wp4-grouping-row 2
+                                                :name
+                                                "worker"
+                                                :command
+                                                "worker --two-later"
+                                                :cpu-percent
+                                                5
+                                                :elapsed-seconds
+                                                40)))
                            (group
                             (first
                              (ntop.process.domain::group-process-domain-rows
@@ -157,13 +166,12 @@
                       (cl-weave:expect
                        (list (ntop.process.domain:process-row-count group)
                              (ntop.process.domain:process-row-cpu-percent group)
-                             (ntop.process.domain:process-row-elapsed-seconds
-                              group)
+                             (ntop.process.domain:process-row-elapsed-seconds group)
                              (ntop.process.domain:process-row-pid group)
                              (ntop.process.domain:process-row-command group)
                              (ntop.process.domain:process-row-user-name group))
                        :to-equal
-                       '(2 4 45 2 "worker --two" "user-2"))))
+                       '(3 9 45 2 "worker --two" "user-2"))))
                    (cl-weave:it-each
                     ((:same-name :name "worker" "worker" "one" "two" 1)
                      (:different-name :name "worker" "worker2" "same" "same" 2)

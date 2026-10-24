@@ -47,9 +47,16 @@
                                  :to-be
                                  :signaled))
                    (cl-weave:it-each
-                    ((:decimal :kilo 2500 5/2 "kB") (:decimal :mega 2000000 2 "MB")
+                    ((:decimal :kilo 2500 5/2 "kB")
+                     (:decimal :mega 2000000 2 "MB")
+                     (:decimal :none 12345 12345 "B")
+                     (:decimal :giga 2000000000 2 "GB")
+                     (:decimal :tera 3000000000000 3 "TB")
                      (:binary :kibi 2048 2 "KiB")
-                     (:binary :mebi 2097152 2 "MiB"))
+                     (:binary :mebi 2097152 2 "MiB")
+                     (:binary :none 2048 2048 "B")
+                     (:binary :gibi 2147483648 2 "GiB")
+                     (:binary :tebi 3298534883328 3 "TiB"))
                     "scales a quantity using ~A prefixes"
                     (family prefix value expected symbol)
                     (let ((scaled
