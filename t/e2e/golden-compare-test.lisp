@@ -115,3 +115,21 @@
                                      #("default" nil)
                                      0)))
                      nil)))
+
+(cl-weave:describe "FR-001 condition A golden reader"
+                   (cl-weave:it
+                    "reads the checked-in JSON golden with empty default colors"
+                    (let* ((pathname
+                            (asdf:system-relative-pathname "ntop/e2e"
+                                                           "t/e2e/goldens/40-12.json"))
+                           (projection
+                            (ntop.e2e::%read-criterion-golden pathname 40 12))
+                           (cells (aref projection 2)))
+                      (cl-weave:expect
+                       (list (aref projection 0) (aref projection 1))
+                       :to-equal
+                       (quote (40 12)))
+                      (cl-weave:expect
+                       (and (vectorp cells) (plusp (length cells)))
+                       :to-be
+                       t))))

@@ -29,7 +29,11 @@
        (let ((kind (aref color 0))
              (value (aref color 1)))
          (cond
-           ((and (stringp kind) (string= kind "default")) (null value))
+           ((and (stringp kind) (string= kind "default"))
+            (or (null value)
+                (and (vectorp value)
+                     (not (stringp value))
+                     (zerop (length value)))))
            ((and (stringp kind) (string= kind "indexed"))
             (and (integerp value) (<= 0 value 255)))
            ((and (stringp kind) (string= kind "rgb"))
