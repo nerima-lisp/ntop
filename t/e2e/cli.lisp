@@ -9,6 +9,8 @@
 (defparameter *comparison-scope-choices*
   (quote ("condition-a")))
 
+(defparameter *route-mode-choices* '("ntop" "btm-self"))
+
 (defun command-goldens (invocation)
   (capture-btm-goldens :output
                        (cl-cli:option-value invocation :output)
@@ -51,10 +53,22 @@
 (defun %handle-n7 (invocation)
   (run-n7 :root (cl-cli:option-value invocation :root)))
 
+(defun %handle-routes (invocation)
+  (run-route-harness :mode (cl-cli:option-value invocation :mode)
+                     :btm (cl-cli:option-value invocation :btm)
+                     :ntop (cl-cli:option-value invocation :ntop)
+                     :evidence-directory
+                     (cl-cli:option-value invocation :evidence-directory)
+                     :rows (cl-cli:option-value invocation :rows)
+                     :columns (cl-cli:option-value invocation :columns)
+                     :rate (cl-cli:option-value invocation :rate)
+                     :timeout-seconds
+                     (cl-cli:option-value invocation :timeout-seconds)))
+
 (cl-cli:define-app *e2e-app*
                    (:name "ntop-e2e"
                           :summary
-                          "Capture btm screen goldens and run bounded measurements."
+                          "Capture btm goldens, run route checks, and measure workloads."
                           :require-command
                           t)
                    (:command "goldens"
@@ -255,7 +269,92 @@
                                       :description
                                       (concatenate 'string
                                                    "On macOS, scan the golden directory "
-                                                   "for host-specific data."))))
+                                                   "for host-specific data.")))
+                   (:command "routes"
+                             (:description
+                              "Run the typed route catalog against ntop and btm."
+                              :handler
+                              #'%handle-routes)
+                             (:option "mode"
+                                      :kind
+                                      :value
+                                      :choices
+                                      *route-mode-choices*
+                                      :default
+                                      "ntop"
+                                      :description
+                                      "Run ntop against btm, or run btm against itself.")
+                             (:option "btm"
+                                      :kind
+                                      :value
+                                      :default
+                                      "btm"
+                                      :value-hint
+                                      :file
+                                      :description
+                                      "Reference btm executable.")
+                             (:option "ntop"
+                                      :kind
+                                      :value
+                                      :default
+                                      "./ntop"
+                                      :value-hint
+                                      :file
+                                      :description
+                                      "Candidate ntop executable.")
+                             (:option "evidence-directory"
+                                      :kind
+                                      :value
+                                      :default
+                                      "/tmp"
+                                      :value-hint
+                                      :dir
+                                      :description
+                                      "Parent directory for route evidence.")
+                             (:option "rows"
+                                      :kind
+                                      :value
+                                      :type
+                                      :integer
+                                      :min
+                                      1
+                                      :default
+                                      60
+                                      :description
+                                      "Route terminal height in rows.")
+                             (:option "columns"
+                                      :kind
+                                      :value
+                                      :type
+                                      :integer
+                                      :min
+                                      1
+                                      :default
+                                      220
+                                      :description
+                                      "Route terminal width in columns.")
+                             (:option "rate"
+                                      :kind
+                                      :value
+                                      :type
+                                      :integer
+                                      :min
+                                      1
+                                      :default
+                                      250
+                                      :description
+                                      "Sampling interval in milliseconds.")
+                             (:option "timeout-seconds"
+                                      :kind
+                                      :value
+                                      :type
+                                      :integer
+                                      :min
+                                      1
+                                      :default
+                                      30
+                                      :description
+                                      "Maximum wait for each route child.")))
 
 (defun main (&optional (argv (cl-cli:application-argv)))
   (cl-cli:run-app *e2e-app* :argv argv))
