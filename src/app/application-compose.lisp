@@ -252,31 +252,31 @@
     (let ((screen (cl-tty-kit:make-screen columns rows)))
       (setf (application-composition-screen composition) screen)
       screen))
-  (defun %render-application-composition (composition state
-                                                      config
-                                                      snapshot
-                                                      columns
-                                                      rows
-                                                      unavailability-reasons)
+(defun %render-application-composition (composition state
+                                                    config
+                                                    snapshot
+                                                    columns
+                                                    rows
+                                                    unavailability-reasons)
   (check-type state ntop.app.domain:app-state)
   (check-type config ntop.shared.application:application-config)
   (check-type columns (integer 1 *))
   (check-type rows (integer 1 *))
   (let* ((screen (%new-composition-screen composition columns rows))
          (ntop.app.presentation::*screen-selection-active-p*
-           (application-composition-selection-active-p composition))
+          (application-composition-selection-active-p composition))
          (widget-areas
-           (funcall (application-composition-draw-screen composition)
-                    screen
-                    state
-                    config
-                    snapshot
-                    columns
-                    rows
-                    unavailability-reasons
-                    (%composition-series-by-widget composition
-                                                   snapshot
-                                                   unavailability-reasons)))
+          (funcall (application-composition-draw-screen composition)
+                   screen
+                   state
+                   config
+                   snapshot
+                   columns
+                   rows
+                   unavailability-reasons
+                   (%composition-series-by-widget composition
+                                                  snapshot
+                                                  unavailability-reasons)))
          (areas (append widget-areas
                         (%draw-help-overlay screen
                                             state
@@ -285,7 +285,9 @@
                                             rows))))
     (setf (application-composition-clickable-areas composition) areas)
     (cl-tty-kit:render-diff screen
-                            (application-composition-previous-screen composition))
+                              (application-composition-previous-screen composition)
+                              *standard-output*)
+      (finish-output)
     (setf (application-composition-previous-screen composition)
           (cl-tty-kit:screen-copy screen))
     areas))
