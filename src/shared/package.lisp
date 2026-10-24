@@ -47,6 +47,7 @@
    #:application-config-show-table-scroll-position-p #:application-config-disable-gpu-p
    #:application-config-dot-marker-p #:application-config-widget-rows #:define-collector
    #:collector-unavailability-reason
+   #:normalize-collector-unavailability-reason
    #:collect-cpu-sample #:collect-memory-sample #:collect-gpu-sample #:collect-network-sample
    #:collect-disk-sample #:collect-temperature-sample #:collect-battery-sample
    #:collect-process-sample

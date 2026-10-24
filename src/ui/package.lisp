@@ -5,8 +5,8 @@
  #:clickable-area #:make-clickable-area #:clickable-area-rectangle #:clickable-area-action
  #:clickable-area-value #:draw-widget #:define-widget #:translate-input
  ;; WP1: formatting and themes.
- #:format-cpu-basic-percent #:format-cpu-title #:format-process-cpu-percent
- #:format-process-memory-percent #:format-memory-percentage #:format-memory-fraction
+ #:format-cpu-basic-percent #:format-cpu-title #:format-percent-value
+ #:format-memory-percentage #:format-memory-fraction
  #:format-memory-legend #:format-process-binary-bytes #:format-process-decimal-bytes
  #:format-disk-capacity #:format-disk-io-rate #:format-process-io-rate #:format-network-rate
  #:format-network-total #:format-network-legend #:format-disk-io-legend-rate
@@ -19,7 +19,8 @@
  #:layout-widgets #:define-layout
  ;; WP6: charts and gauges.
  #:chart-series #:make-chart-series #:chart-series-name #:chart-series-style
- #:chart-series-samples #:chart-config #:make-chart-config #:define-chart-config
+ #:chart-series-samples
+ #:chart-series-maximum-value #:chart-config #:make-chart-config #:define-chart-config
  #:chart-config-x-start #:chart-config-x-end #:chart-config-y-min #:chart-config-y-max
  #:chart-config-y-scale #:chart-config-y-labels #:chart-config-x-labels
  #:chart-config-theme-name #:chart-config-legend-position
