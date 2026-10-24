@@ -107,7 +107,9 @@
 (ntop.ui:define-widget :cpu
                        (target rectangle state config series)
                        (let* ((sample (%cpu-sample series))
-                              (theme (%cpu-theme-name config)))
+                              (theme
+                               (ntop.shared.application:application-config-theme
+                                config)))
                          (if (ntop.shared.application:application-config-basic-p
                               config)
                              (%draw-cpu-basic target

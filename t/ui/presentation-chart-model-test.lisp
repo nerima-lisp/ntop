@@ -112,7 +112,7 @@
                      ((:y-min "0" :y-max 1))
                      ((:y-scale :log))
                      ((:y-labels (1 "one")))
-                     ((:theme-name :default))
+                     ((:theme-name 7))
                      ((:legend-position :center))
                      ((:legend-width-ratio -0.1))
                      ((:legend-width-ratio 1.1))

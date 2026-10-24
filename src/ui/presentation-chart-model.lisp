@@ -65,8 +65,9 @@
   (unless (and (typep y-labels 'sequence)
                (every #'stringp y-labels))
     (error "Y-LABELS must be a sequence of strings."))
-  (unless (stringp theme-name)
-    (error "A chart theme name must be a string."))
+  (unless (or (stringp theme-name)
+              (keywordp theme-name))
+    (error "A chart theme name must be a string or keyword."))
   (unless (or (null legend-position)
               (member legend-position
                       '(:top :top-left :top-right :left :right
