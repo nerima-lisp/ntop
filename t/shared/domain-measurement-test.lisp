@@ -178,7 +178,9 @@
                                        (multiple-value-bind (output warnings
                                                                     failure)
                                            (compile-file
-                                            "src/shared/domain-measurement.lisp"
+                                            (asdf:system-relative-pathname
+                                             "ntop"
+                                             "src/shared/domain-measurement.lisp")
                                             :output-file
                                             fasl)
                                          (declare (ignore warnings))
