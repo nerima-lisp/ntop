@@ -21,16 +21,35 @@
         (declare (ignore ntop.ui::widget-key))
         :rendered)))
 
-  (cl-weave:it "draws No GPU when both series groups are empty"
-    (let* ((screen (cl-tty-kit:make-screen 30 8))
-           (rectangle
-             (ntop.ui:make-rectangle :x 0 :y 0 :width 30 :height 8))
-           (config (ntop.shared.application:make-application-config)))
-      (ntop.ui:draw-widget :gpu screen rectangle nil config
-                           '(:usage nil :memory #()))
-      (cl-weave:expect
-       (not (null (search "No GPU" (cl-tty-kit:screen-to-string screen))))
-       :to-be t)))
+  (cl-weave:it "selects a label for every empty GPU availability reason"
+    (dolist (entry '((:not-present "No GPU")
+                     (:disabled "N/A")
+                     (:permission-denied "N/A")
+                     (:unsupported-platform "N/A")
+                     (:private-api-unavailable "N/A")
+                     (:read-failed "N/A")
+                     (:missing "N/A")
+                     (:unknown "N/A")))
+      (let* ((reason (first entry))
+             (expected (second entry))
+             (screen (cl-tty-kit:make-screen 30 8))
+             (rectangle
+               (ntop.ui:make-rectangle :x 0 :y 0 :width 30 :height 8))
+             (config (ntop.shared.application:make-application-config))
+             (series (list :usage nil :memory nil)))
+        (unless (eq reason :missing)
+          (setf (getf series :unavailability-reason) reason))
+        (ntop.ui:draw-widget :gpu screen rectangle nil config series)
+        (let ((rendered (cl-tty-kit:screen-to-string screen)))
+          (cl-weave:expect
+           (list (not (null (search expected rendered)))
+                 (not (null
+                       (search (if (string= expected "No GPU")
+                                   "N/A"
+                                   "No GPU")
+                               rendered))))
+           :to-equal
+           (list t nil))))))
 
   (cl-weave:it "renders deterministic fixture histories to the screen golden"
     (let* ((screen (cl-tty-kit:make-screen 40 16))
@@ -45,7 +64,9 @@
            (rows nil)
            (golden-lines nil))
       (ntop.ui:draw-widget :gpu screen rectangle nil config
-                           (list :usage usage :memory memory))
+                           (list :usage usage
+                                 :memory memory
+                                 :unavailability-reason :not-present))
       (setf rows (%f3-gpu-screen-rows screen)
             golden-lines (%f3-gpu-screen-golden-lines))
       (cl-weave:expect

@@ -52,7 +52,7 @@
      chart-config
      series)))
 
-(defun %draw-no-gpu (target rectangle theme)
+(defun %draw-gpu-empty-state (target rectangle theme label)
   (let ((width (ntop.ui:rectangle-width rectangle))
         (height (ntop.ui:rectangle-height rectangle)))
     (when (and (plusp width) (plusp height))
@@ -64,8 +64,7 @@
        height
        #\Space
        :style (ntop.ui:presentation-theme-style theme :general-widget))
-      (let* ((label "No GPU")
-             (x (+ (ntop.ui:rectangle-x rectangle)
+      (let* ((x (+ (ntop.ui:rectangle-x rectangle)
                    (floor (max 0 (- width (length label))) 2)))
              (y (+ (ntop.ui:rectangle-y rectangle) (floor height 2))))
         (cl-tty-kit:screen-write-string
@@ -79,11 +78,14 @@
   (declare (ignore state))
   (let* ((usage (coerce (or (getf series :usage) #()) 'list))
          (memory (coerce (or (getf series :memory) #()) 'list))
+         (reason (getf series :unavailability-reason))
          (theme (string-downcase
                  (string
                   (ntop.shared.application:application-config-theme config)))))
     (if (and (null usage) (null memory))
-        (%draw-no-gpu target rectangle theme)
+        (%draw-gpu-empty-state
+         target rectangle theme
+         (if (eq reason :not-present) "No GPU" "N/A"))
         (let* ((chart-config (%gpu-chart-config theme config))
                (short-names-p
                  (ntop.shared.application:application-config-short-gpu-names-p
