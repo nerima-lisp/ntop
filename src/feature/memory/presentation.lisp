@@ -32,9 +32,21 @@
                             series :cache-samples :cache-used-bytes
                             :cache-total-bytes "CACHE"
                             (ntop.ui:presentation-theme-style theme :cache))))))
+         (gpu-series
+           (remove-if-not
+            (lambda (item)
+              (plusp
+               (array-total-size (ntop.ui:chart-series-samples item))))
+            (getf series :gpu-memory-series)))
+         (gpu-total (getf series :gpu-memory-total-bytes))
          (maximum-total
            (if entries (loop for entry in entries maximize (second entry)) 1d0)))
-    (values (mapcar #'first entries) (float maximum-total 1d0))))
+    (when (and gpu-series
+               (not (and (integerp gpu-total) (plusp gpu-total))))
+      (error "A positive integer GPU memory total is required for sampled GPU series."))
+    (values
+     (append (mapcar (function first) entries) gpu-series)
+     (float (if gpu-series (max maximum-total gpu-total) maximum-total) 1d0))))
 
 (defun %memory-chart-config (theme config maximum)
   (let ((legend-position

@@ -305,4 +305,108 @@
       (cl-weave:expect
        (not (null (search "6.0GiB/8.0GiB"
                           (cl-tty-kit:screen-to-string screen))))
-       :to-be t))))
+       :to-be t)))
+  (cl-weave:it "appends GPU memory histories after RAM, swap, and cache"
+    (let* ((gib (* 1024 1024 1024))
+           (gpu-series
+             (list
+              (ntop.ui:make-chart-series
+               :name "GPU zero"
+               :style :gpu-zero
+               :samples (%f2-memory-history (list (* 2 gib) (* 4 gib))))
+              (ntop.ui:make-chart-series
+               :name "GPU one"
+               :style :gpu-one
+               :samples (%f2-memory-history (list (* 3 gib) (* 5 gib))))))
+           (series
+             (append (%f2-memory-fixture-series)
+                     (list :gpu-memory-series gpu-series
+                           :gpu-memory-total-bytes (* 16 gib)))))
+      (multiple-value-bind (chart-series maximum)
+          (ntop.memory.presentation::%memory-chart-series
+           series "default" t)
+        (cl-weave:expect
+         (loop for item in chart-series
+               collect (ntop.ui:chart-series-name item))
+         :to-equal
+         (list "RAM: 75%   6.0GiB/8.0GiB"
+               "SWP: 50%   1.0GiB/2.0GiB"
+               "CACHE: 25%   2.0GiB/8.0GiB"
+               "GPU zero"
+               "GPU one"))
+        (cl-weave:expect
+         (loop for item in chart-series
+               collect (ntop.ui:chart-series-style item))
+         :to-equal
+         (list (ntop.ui:presentation-theme-style "default" :ram)
+               (ntop.ui:presentation-theme-style "default" :swap)
+               (ntop.ui:presentation-theme-style "default" :cache)
+               :gpu-zero
+               :gpu-one))
+        (cl-weave:expect maximum :to-be (float (* 16 gib) 1d0))
+        (cl-weave:expect
+         (loop for item in (nthcdr 3 chart-series)
+               collect
+               (loop for sample across (ntop.ui:chart-series-samples item)
+                     collect
+                     (ntop.shared.domain:history-sample-value sample)))
+         :to-equal
+         (list (list (* 2 gib) (* 4 gib))
+               (list (* 3 gib) (* 5 gib)))))))
+  (cl-weave:it "omits empty GPU histories without requiring or using capacity"
+    (let* ((gib (* 1024 1024 1024))
+           (empty-series
+             (ntop.ui:make-chart-series
+              :name "Empty GPU"
+              :style :empty-gpu
+              :samples nil))
+           (base-series (%f2-memory-fixture-series)))
+      (dolist (total (list nil (* 64 gib)))
+        (let ((series
+                (append base-series
+                        (list :gpu-memory-series (list empty-series)
+                              :gpu-memory-total-bytes total))))
+          (multiple-value-bind (chart-series maximum)
+              (ntop.memory.presentation::%memory-chart-series
+               series "default" nil)
+            (cl-weave:expect
+             (loop for item in chart-series
+                   collect (ntop.ui:chart-series-name item))
+             :to-equal
+             (list "RAM: 75%   6.0GiB/8.0GiB"
+                   "SWP: 50%   1.0GiB/2.0GiB"))
+            (cl-weave:expect maximum :to-be (float (* 8 gib) 1d0)))))))
+  (cl-weave:it "requires a positive integer total for sampled GPU histories"
+    (let* ((gpu-series
+             (ntop.ui:make-chart-series
+              :name "GPU"
+              :style :gpu
+              :samples (%f2-memory-history (list 256))))
+           (invalid-totals (list nil 0 -1 1.5 "16")))
+      (cl-weave:expect
+       (loop for total in invalid-totals
+             always
+             (handler-case
+                 (progn
+                   (ntop.memory.presentation::%memory-chart-series
+                    (list :gpu-memory-series (list gpu-series)
+                          :gpu-memory-total-bytes total)
+                    "default"
+                    nil)
+                   nil)
+               (error () t)))
+       :to-be t)))
+  (cl-weave:it "keeps the no-GPU call shape and axis maximum"
+    (let* ((gib (* 1024 1024 1024))
+           (series (%f2-memory-fixture-series)))
+      (multiple-value-bind (chart-series maximum)
+          (ntop.memory.presentation::%memory-chart-series
+           series "default" t)
+        (cl-weave:expect
+         (loop for item in chart-series
+               collect (ntop.ui:chart-series-name item))
+         :to-equal
+         (list "RAM: 75%   6.0GiB/8.0GiB"
+               "SWP: 50%   1.0GiB/2.0GiB"
+               "CACHE: 25%   2.0GiB/8.0GiB"))
+        (cl-weave:expect maximum :to-be (float (* 8 gib) 1d0))))))
