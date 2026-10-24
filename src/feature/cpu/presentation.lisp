@@ -40,10 +40,6 @@
                                     :style
                                     style)))
 
-(defun %cpu-theme-name (config)
-  (string-downcase
-   (string (ntop.shared.application:application-config-theme config))))
-
 (defun %cpu-sample (series)
   (let ((sample (getf series :sample)))
     (when (and sample (not (typep sample 'ntop.cpu.domain:cpu-sample)))

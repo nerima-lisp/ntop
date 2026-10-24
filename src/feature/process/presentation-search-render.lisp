@@ -5,10 +5,6 @@
     ("Whole" process-search-field-state-whole-word-p)
     ("Regex" process-search-field-state-regex-p)))
 
-(defun %process-search-theme (config)
-  (string-downcase
-   (string (ntop.shared.application:application-config-theme config))))
-
 (defun %process-search-visible-range (query cursor width)
   (let* ((length (length query))
          (cursor (min length (max 0 cursor)))
@@ -239,7 +235,7 @@
                                         :invalid-query)))))
 
 (defun %draw-process-search-field (target rectangle state config)
-  (let* ((theme (%process-search-theme config))
+  (let* ((theme (ntop.shared.application:application-config-theme config))
          (error
           (ntop.process.application:process-search-state-syntax-error
            (process-search-field-state-application-state state)))

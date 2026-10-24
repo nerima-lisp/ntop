@@ -234,7 +234,7 @@
                                                              :binary))))
         (format nil
                 "~A~A"
-                (ntop.ui::format-fixed (ntop.shared.domain:scaled-quantity-value scaled) 1)
+                (ntop.ui:format-fixed (ntop.shared.domain:scaled-quantity-value scaled) 1)
                 (ntop.shared.domain:scaled-quantity-symbol scaled)))))
 
 (defun %network-total-bytes (sample direction baseline config)
