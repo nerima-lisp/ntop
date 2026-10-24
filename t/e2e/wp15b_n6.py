@@ -1,0 +1,500 @@
+from __future__ import annotations
+
+import argparse
+import errno
+import fcntl
+import json
+import os
+import pty
+import re
+import select
+import shutil
+import signal
+import struct
+import subprocess
+import sys
+import termios
+import tempfile
+import time
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+QUERY = b"\x1b[?25$p"
+CURSOR_QUERY = b"\x1b[6n"
+CURSOR_REPLY = b"\x1b[1;1R"
+BEFORE_BEGIN = b"__NTOP_N6_BEFORE_BEGIN__"
+BEFORE_END = b"__NTOP_N6_BEFORE_END__"
+AFTER_BEGIN = b"__NTOP_N6_AFTER_BEGIN__"
+AFTER_END = b"__NTOP_N6_AFTER_END__"
+TARGET_PID = b"__NTOP_N6_TARGET_PID__"
+TARGET_EXIT = b"__NTOP_N6_TARGET_EXIT__"
+REPLY_MARKER = b"__NTOP_N6_QUERY_REPLY__"
+READINESS_TIMEOUT = 30.0
+EXIT_TIMEOUT = 15.0
+QUERY_TIMEOUT = 3.0
+OUTPUT_LIMIT = 16 * 1024 * 1024
+
+WRAPPER = r"""
+printf '%s\n' '__NTOP_N6_BEFORE_BEGIN__'
+stty -a </dev/tty
+printf '%s\n' '__NTOP_N6_BEFORE_END__'
+exec 3>&2
+{
+  /bin/sh -c 'printf "__NTOP_N6_TARGET_PID__%s\\n" "$$"; exec "$@"' \
+    ntop-n6-target "$@" </dev/tty 2>&3
+  target_status=$?
+} 2>"$NTOP_N6_SHELL_STDERR"
+printf '\n%s%s\n' '__NTOP_N6_TARGET_EXIT__' "$target_status"
+printf '%s\n' '__NTOP_N6_AFTER_BEGIN__'
+stty -a </dev/tty
+printf '%s\n' '__NTOP_N6_AFTER_END__'
+saved=$(stty -g </dev/tty) || exit 125
+stty raw -echo </dev/tty || exit 125
+printf '\033[?25$p'
+reply=$(dd bs=1 count=9 </dev/tty 2>/dev/null | od -An -tx1 | tr -d ' \n')
+stty "$saved" </dev/tty || exit 125
+printf '%s%s\n' '__NTOP_N6_QUERY_REPLY__' "$reply"
+exit "$target_status"
+"""
+
+
+def _resolve_executable(value: str) -> str:
+    path = shutil.which(value)
+    if path is None:
+        raise ValueError(f"Executable not found: {value}")
+    return str(Path(path).resolve())
+
+
+def _btm_version(command: list[str]) -> str:
+    result = subprocess.run(
+        [*command, "--version"],
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    output = (result.stdout + result.stderr).decode("utf-8", errors="replace").strip()
+    if result.returncode != 0 or re.search(r"\b0\.14\.9\b", output) is None:
+        raise ValueError(f"Expected btm 0.14.9; reported {output!r}")
+    return output
+
+
+def _set_window_size(fd: int, rows: int, columns: int) -> None:
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
+
+
+def _child_tty_setup() -> None:
+    os.setsid()
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+
+def _read_once(master: int, output: bytearray, wait: float) -> bool:
+    ready, _, _ = select.select([master], [], [], wait)
+    if not ready:
+        return False
+    try:
+        chunk = os.read(master, 65536)
+    except OSError as error:
+        if error.errno == errno.EIO:
+            return False
+        raise
+    if not chunk:
+        return False
+    output.extend(chunk)
+    if len(output) > OUTPUT_LIMIT:
+        raise RuntimeError("PTY output exceeded the 16 MiB evidence limit.")
+    return True
+
+
+def _marker_integer(output: bytes, marker: bytes) -> int | None:
+    pattern = re.escape(marker) + rb"(-?[0-9]+)"
+    return next(map(int, re.findall(pattern, output)), None)
+
+
+def _wait_for_raw(process: subprocess.Popen[bytes], slave: int, master: int,
+                  output: bytearray,
+                  probes: list[dict[str, object]]) -> int:
+    deadline = time.monotonic() + READINESS_TIMEOUT
+    query_offset = 0
+    replied = False
+    post_reply_output = 0
+    last_activity = time.monotonic()
+    while True:
+        while True:
+            query_position = bytes(output).find(CURSOR_QUERY, query_offset)
+            if query_position < 0:
+                break
+            os.write(master, CURSOR_REPLY)
+            probes.append(
+                {"query_hex": CURSOR_QUERY.hex(" "),
+                 "reply_hex": CURSOR_REPLY.hex(" ")}
+            )
+            query_offset = query_position + len(CURSOR_QUERY)
+            replied = True
+            post_reply_output = len(output)
+        target_pid = _marker_integer(bytes(output), TARGET_PID)
+        flags = termios.tcgetattr(slave)[3]
+        raw = not flags & (termios.ECHO | termios.ICANON)
+        response_seen = not replied or len(output) > post_reply_output
+        if (target_pid is not None and raw and response_seen and
+                time.monotonic() - last_activity >= 0.1):
+            return target_pid
+        if process.poll() is not None:
+            raise RuntimeError("PTY wrapper exited before target entered raw mode.")
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Timed out waiting for target raw mode.")
+        if _read_once(master, output, 0.05):
+            last_activity = time.monotonic()
+
+
+def _marked_section(output: bytes, start_marker: bytes,
+                    end_marker: bytes) -> bytes | None:
+    start = output.find(start_marker)
+    if start < 0:
+        return None
+    end = output.find(end_marker, start + len(start_marker))
+    return output[start + len(start_marker):end].strip(b" \t\r\n") if end >= 0 else None
+
+
+def _query_exchange(master: int, output: bytearray,
+                    status: int) -> tuple[list[int] | None, int | None]:
+    query_offset = bytes(output).rfind(QUERY)
+    if query_offset < 0:
+        query_offset = len(output)
+        deadline = time.monotonic() + QUERY_TIMEOUT
+        while QUERY not in output[query_offset:]:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("DECRQM query was not visible on the PTY master.")
+            _read_once(master, output, 0.05)
+        query_offset = output.find(QUERY, query_offset)
+    reply = f"\x1b[?25;{status}$y".encode("ascii")
+    os.write(master, reply)
+    deadline = time.monotonic() + QUERY_TIMEOUT
+    while (REPLY_MARKER not in output[query_offset:] or
+           output.find(b"\n", output.find(REPLY_MARKER, query_offset)) < 0):
+        if time.monotonic() >= deadline:
+            raise TimeoutError("DECRQM reply was not recorded by the PTY wrapper.")
+        _read_once(master, output, 0.05)
+    marker_offset = output.find(REPLY_MARKER, query_offset) + len(REPLY_MARKER)
+    line_end = output.find(b"\n", marker_offset)
+    if line_end < 0:
+        raise RuntimeError("DECRQM reply marker was incomplete.")
+    try:
+        received = bytes.fromhex(
+            output[marker_offset:line_end].decode("ascii").strip()
+        )
+    except ValueError:
+        return None, None
+    match = re.fullmatch(rb"\x1b\[\?25;([0-4])\$y", received)
+    return list(received), int(match.group(1)) if match else None
+
+
+def _pid_alive(pid: int, wrapper: subprocess.Popen[bytes] | None = None) -> bool:
+    if wrapper is not None and pid == wrapper.pid:
+        return wrapper.poll() is None
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _cleanup(process: subprocess.Popen[bytes], target_pid: int | None,
+             target_finished: bool) -> list[dict[str, object]]:
+    actions = []
+    pids = []
+    if target_pid is not None and not target_finished:
+        pids.append((target_pid, "target", None))
+    if process.poll() is None:
+        pids.append((process.pid, "wrapper", process))
+    for pid, role, owner in pids:
+        for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            if not _pid_alive(pid, owner):
+                break
+            try:
+                os.kill(pid, signum)
+                result = "sent"
+            except ProcessLookupError:
+                result = "already-exited"
+            except PermissionError:
+                result = "permission-denied"
+            actions.append({"pid": pid, "role": role,
+                            "signal": signal.Signals(signum).name,
+                            "result": result})
+            if result != "sent":
+                break
+            deadline = time.monotonic() + 0.5
+            while _pid_alive(pid, owner) and time.monotonic() < deadline:
+                if owner is not None:
+                    owner.poll()
+                time.sleep(0.02)
+    return actions
+
+
+def _private_mode_events(output: bytes) -> list[dict[str, object]]:
+    return [
+        {"mode": int(value),
+         "action": "set" if match.group(2) == b"h" else "reset"}
+        for match in re.finditer(rb"\x1b\[\?([0-9;]+)([hl])", output)
+        for value in match.group(1).split(b";")
+    ]
+
+
+def _cursor_status(events: list[dict[str, object]]) -> int:
+    return next(
+        (1 if event["action"] == "set" else 2
+         for event in reversed(events) if event["mode"] == 25),
+        1,
+    )
+
+
+def _save_case(directory: Path, name: str, raw: bytes,
+               metadata: dict[str, object]) -> None:
+    (directory / f"{name}.raw").write_bytes(raw)
+    (directory / f"{name}.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def _run_case(directory: Path, target: str, command: list[str],
+              termination: str, signum: int | None) -> dict[str, object]:
+    name = f"{target}-{termination.lower()}"
+    output = bytearray()
+    process: subprocess.Popen[bytes] | None = None
+    master = -1
+    slave = -1
+    target_pid: int | None = None
+    target_exit: int | None = None
+    before: bytes | None = None
+    after: bytes | None = None
+    reply_octets: list[int] | None = None
+    reply_status: int | None = None
+    failure: str | None = None
+    cleanup_actions: list[dict[str, object]] = []
+    terminal_probes: list[dict[str, object]] = []
+    shell_stderr = directory / f"{name}.shell-job-control.stderr"
+    metadata: dict[str, object] = {
+        "target": target,
+        "termination": termination,
+        "command": command,
+        "launch_scope": "PTY session leader shell, synchronous foreground target",
+        "signal_scope": "captured target PID only" if signum is not None else None,
+        "term": "xterm-256color",
+        "window": {"rows": 48, "columns": 160},
+        "stty_command": ["stty", "-a"],
+        "query_hex": QUERY.hex(" "),
+        "query_provider": "harness model from observed DEC private-mode events",
+        "raw_output": f"{name}.raw",
+        "shell_job_control_stderr": shell_stderr.name,
+    }
+    try:
+        master, slave = pty.openpty()
+        _set_window_size(slave, 48, 160)
+        environment = os.environ.copy()
+        environment["TERM"] = "xterm-256color"
+        environment["NTOP_N6_SHELL_STDERR"] = str(shell_stderr)
+        process = subprocess.Popen(
+            ["/bin/sh", "-c", WRAPPER, "ntop-wp15b-n6", *command],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            cwd=ROOT,
+            env=environment,
+            close_fds=True,
+            preexec_fn=_child_tty_setup,
+        )
+        metadata["wrapper_pid"] = process.pid
+        target_pid = _wait_for_raw(process, slave, master, output, terminal_probes)
+        metadata["target_pid"] = target_pid
+        if signum is None:
+            os.write(master, b"q")
+            metadata["termination_action"] = "write q to PTY input"
+        else:
+            os.kill(target_pid, signum)
+            metadata["termination_action"] = f"os.kill({target_pid}, {termination})"
+            metadata["signal_number"] = signum
+        deadline = time.monotonic() + EXIT_TIMEOUT
+        while TARGET_EXIT not in output or AFTER_END not in output:
+            if process.poll() is not None:
+                raise RuntimeError("PTY wrapper exited before the after-stty marker.")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Timed out waiting for target restoration markers.")
+            _read_once(master, output, 0.05)
+        target_exit = _marker_integer(bytes(output), TARGET_EXIT)
+        if target_exit is None:
+            raise RuntimeError("Target exit marker did not contain an integer status.")
+        before = _marked_section(bytes(output), BEFORE_BEGIN, BEFORE_END)
+        after = _marked_section(bytes(output), AFTER_BEGIN, AFTER_END)
+        events = _private_mode_events(bytes(output))
+        reply_octets, reply_status = _query_exchange(
+            master, output, _cursor_status(events)
+        )
+        process.wait(timeout=EXIT_TIMEOUT)
+    except Exception as error:
+        failure = f"{type(error).__name__}: {error}"
+        if process is not None:
+            if target_pid is None:
+                target_pid = _marker_integer(bytes(output), TARGET_PID)
+            target_finished = TARGET_EXIT in output
+            cleanup_actions = _cleanup(process, target_pid, target_finished)
+            try:
+                process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                metadata["wrapper_still_running_after_cleanup"] = True
+            try:
+                before = _marked_section(bytes(output), BEFORE_BEGIN, BEFORE_END)
+                after = _marked_section(bytes(output), AFTER_BEGIN, AFTER_END)
+            except Exception as cleanup_error:
+                metadata["post_failure_error"] = (
+                    f"{type(cleanup_error).__name__}: {cleanup_error}"
+                )
+    finally:
+        if slave >= 0:
+            os.close(slave)
+        if master >= 0:
+            os.close(master)
+
+    raw = bytes(output)
+    events = _private_mode_events(raw)
+    wrapper_code = process.returncode if process is not None else None
+    expected_exit = (
+        target_exit == 0 if signum is None
+        else target_exit == 128 + signum
+    )
+    checks = {
+        "both_stty_snapshots": before is not None and after is not None,
+        "stty_unchanged": before is not None and before == after,
+        "expected_exit_status": expected_exit,
+        "query_seen": QUERY in raw,
+        "recognized_query_reply": reply_status in (1, 2, 3, 4),
+        "cursor_visible_after_run": reply_status == 1,
+        "dec_mode_reset_seen": any(e["action"] == "reset" for e in events),
+        "target_pid_recorded": target_pid is not None,
+        "harness_completed": process is not None and wrapper_code is not None,
+        "no_runner_error": failure is None,
+        "no_target_or_wrapper_running": (
+            (target_pid is None or not _pid_alive(target_pid))
+            and (process is None or process.poll() is not None)
+        ),
+    }
+    metadata.update(
+        {
+            "target_exit_code": target_exit,
+            "wrapper_returncode": wrapper_code,
+            "stty_before": before.decode("utf-8", errors="replace") if before else None,
+            "stty_after": after.decode("utf-8", errors="replace") if after else None,
+            "private_mode_events": events,
+            "terminal_probe_exchanges": terminal_probes,
+            "cursor_status_before_reply": _cursor_status(events),
+            "dec_mode_reset_seen": checks["dec_mode_reset_seen"],
+            "query_seen": checks["query_seen"],
+            "reply_octets": reply_octets,
+            "reply_status": reply_status,
+            "checks": checks,
+            "cleanup_actions": cleanup_actions,
+            "shell_job_control_stderr_bytes": (
+                shell_stderr.stat().st_size if shell_stderr.exists() else 0
+            ),
+            "status": "PASS" if all(checks.values()) else "FAIL",
+        }
+    )
+    if failure:
+        metadata["error"] = failure
+    _save_case(directory, name, raw, metadata)
+    return metadata
+
+
+def _btm_config() -> str:
+    return (
+        "[flags]\n"
+        "basic = false\n"
+        "dot_marker = false\n"
+        "rate = 700\n\n"
+        "[processes]\n"
+        "case_sensitive = false\n"
+        "default_grouped = true\n\n"
+        "[[row]]\n[[row.child]]\ntype = \"cpu\"\nratio = 2\n\n"
+        "[[row.child]]\ntype = \"mem\"\n\n"
+        "[[row]]\n[[row.child]]\ntype = \"net\"\nratio = 2\n\n"
+        "[[row.child]]\ntype = \"disk\"\nratio = 2\n\n"
+        "[[row.child]]\ntype = \"temp\"\n\n"
+        "[[row]]\n[[row.child]]\ntype = \"proc\"\nratio = 2\n"
+        "default = true\n"
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Measure N6 terminal restoration in PTYs.")
+    parser.add_argument("--ntop", required=True, help="Path to the built ntop executable.")
+    parser.add_argument("--btm", default="btm", help="btm 0.14.9 executable or PATH name.")
+    parser.add_argument("--sbcl", default="sbcl", help="SBCL source-runtime executable.")
+    arguments = parser.parse_args()
+    try:
+        ntop = [_resolve_executable(arguments.ntop)]
+        btm = [_resolve_executable(arguments.btm)]
+        sbcl = _resolve_executable(arguments.sbcl)
+        btm_version = _btm_version(btm)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+
+    directory = Path(tempfile.mkdtemp(prefix="ntop-wp15b-n6-", dir="/tmp"))
+    config = directory / "btm.toml"
+    config.write_text(_btm_config(), encoding="utf-8")
+    btm.extend(["-C", str(config)])
+    results: list[dict[str, object]] = []
+    unavailable = (
+        ("ntop-lisp-exception", "ntop-built-executable", "not-generated",
+         "No exception injection seam exists in the built ntop executable.", ntop),
+        ("btm-lisp-exception", "btm", "not-applicable",
+         "btm is Rust; the source-runtime Lisp exception case is separate.", btm),
+    )
+    for name, target, status, reason, command in unavailable:
+        record = {"target": target, "termination": "lisp-exception",
+                  "status": status, "reason": reason, "command_not_run": command,
+                  "raw_output": f"{name}.raw"}
+        _save_case(directory, name, b"", record)
+        results.append(record)
+    for target, command in (("ntop", ntop), ("btm", btm)):
+        for termination, signum in (
+            ("normal", None),
+            ("SIGINT", signal.SIGINT),
+            ("SIGTERM", signal.SIGTERM),
+            ("SIGHUP", signal.SIGHUP),
+        ):
+            result = _run_case(directory, target, command, termination, signum)
+            if target == "btm":
+                result["btm_version"] = btm_version
+                raw_path = directory / str(result["raw_output"])
+                _save_case(directory, raw_path.stem, raw_path.read_bytes(), result)
+            results.append(result)
+
+    from wp15b_n6_exception import run_exception_case
+
+    results.append(run_exception_case(directory, ROOT, sbcl))
+    failures = sum(result.get("status") == "FAIL" for result in results)
+    incomplete = sum(result.get("status") == "not-generated" for result in results)
+    summary = {
+        "results": results,
+        "counts": {
+            "pass": sum(result.get("status") == "PASS" for result in results),
+            "fail": failures,
+            "not_applicable": sum(
+                result.get("status") == "not-applicable" for result in results
+            ),
+            "not_generated": incomplete,
+        },
+        "overall": "FAIL" if failures else "INCOMPLETE" if incomplete else "PASS",
+    }
+    (directory / "manifest.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    print(f"N6 evidence: {directory}")
+    print(f"N6 result: {summary['overall']}")
+    return 1 if failures else 2 if incomplete else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
