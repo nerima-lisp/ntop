@@ -148,18 +148,13 @@
                                     "(let* ((stream (open ~S :direction :output :if-exists "
                                     ":append :if-does-not-exist :create :element-type "
                                     "'(unsigned-byte 8))) (chunk (make-array 65536 "
-                                    ":element-type '(unsigned-byte 8))) (interval (floor "
-                                    "internal-time-units-per-second 16)) (next-write "
-                                    "(get-internal-real-time)) (deadline (+ next-write (* 12 "
-                                    "internal-time-units-per-second)))) (dotimes (index "
-                                    "(length chunk)) (setf (aref chunk index) (random 256))) "
-                                    "(unwind-protect (loop while (< (get-internal-real-time) "
-                                    "deadline) do (write-sequence chunk stream) "
+                                    ":element-type '(unsigned-byte 8)))) "
+                                    "(dotimes (index (length chunk)) "
+                                    "(setf (aref chunk index) (random 256))) "
+                                    "(unwind-protect (loop do "
+                                    "(write-sequence chunk stream) "
                                     "(finish-output stream) (sb-posix:fsync "
-                                    "(sb-sys:fd-stream-fd stream)) (incf next-write "
-                                    "interval) (let ((remaining (- next-write "
-                                    "(get-internal-real-time)))) (when (plusp remaining) "
-                                    "(sleep (/ remaining internal-time-units-per-second))))) "
+                                    "(sb-sys:fd-stream-fd stream)) (sleep (/ 1 16))) "
                                     "(close stream)))")
                        (namestring pathname))))
          (sb-ext:run-program
@@ -169,13 +164,13 @@
                 "--eval" form)
           :search nil :wait nil :input nil :output nil :error nil)))
      (%f8a-darwin-stop-child (child)
+       (unwind-protect
+            (when (sb-ext:process-alive-p child)
+              (sb-posix:kill (sb-ext:process-pid child) sb-posix:sigkill))
+         (sb-ext:process-wait child))
        (when (sb-ext:process-alive-p child)
-         (handler-case
-             (sb-posix:kill (sb-ext:process-pid child) sb-posix:sigkill)
-           (sb-posix:syscall-error (condition)
-             (when (sb-ext:process-alive-p child)
-               (error condition)))))
-       (sb-ext:process-wait child)))
+         (error "The child writer remained alive after process-wait."))
+       t))
   (cl-weave:describe
    "Darwin process infrastructure"
    #+darwin
