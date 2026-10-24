@@ -187,7 +187,7 @@
                          :to-be
                          t))
                       (multiple-value-bind (pids name)
-                          (ntop.app.presentation:resolve-selected-process-targets state
+                          (ntop.app.presentation::resolve-selected-process-targets state
                                                                                   config
                                                                                   snapshot
                                                                                   nil)
@@ -206,7 +206,7 @@
                                          :to-be
                                          t))
                       (multiple-value-bind (pids name)
-                          (ntop.app.presentation:resolve-selected-process-targets state
+                          (ntop.app.presentation::resolve-selected-process-targets state
                                                                                   config
                                                                                   snapshot
                                                                                   nil)
@@ -231,4 +231,38 @@
                        500)
                       (cl-weave:expect (ntop.app.presentation::%screen-process-gpu-memory-total nil)
                                        :to-be
-                                       nil))))
+                                       nil)))
+                   (cl-weave:it
+                    "falls back from invalid saved views and skips empty rectangles"
+                    (let* ((state (ntop.app.domain:make-app-state :selected-widget :memory))
+                           (states (ntop.app.domain:app-state-widget-v-states state))
+                           (target (cl-tty-kit:make-screen 2 2))
+                           (config (ntop.shared.application:make-application-config)))
+                      (dolist (case (list (list :memory :unknown-view :memory)
+                                          (list :temperature :unknown-view :temperature)
+                                          (list :disks :unknown-view :disks)))
+                        (destructuring-bind (widget view expected) case
+                          (setf (gethash widget states) view)
+                          (cl-weave:expect
+                           (ntop.app.presentation::%screen-effective-widget widget state)
+                           :to-equal expected)))
+                      (cl-weave:expect
+                       (assoc :cpu-legend
+                              (ntop.app.presentation::%screen-layout-placements
+                               1 24 state :default))
+                       :to-be nil)
+                      (dolist (dimensions (list (list 0 2) (list 2 0)))
+                        (cl-weave:expect
+                         (ntop.app.presentation::%screen-draw-frame
+                          target
+                          (ntop.ui:make-rectangle :x 0 :y 0
+                                                  :width (first dimensions)
+                                                  :height (second dimensions))
+                          config nil)
+                         :to-be nil))
+                      (cl-weave:expect
+                       (ntop.app.presentation::%screen-draw-widget
+                        target :basic-table-arrows
+                        (ntop.ui:make-rectangle :x 0 :y 0 :width 2 :height 2)
+                        nil state config nil nil nil)
+                       :to-equal nil))))

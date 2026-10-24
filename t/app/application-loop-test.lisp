@@ -126,6 +126,15 @@
        :to-equal
        (list (list state :select (list :battery-tab :left))
              (list state :select (list :battery-tab :right))))))
+  (cl-weave:it "leaves battery navigation unchanged while a dialog is active"
+               (let* ((context
+                       (ntop.app.domain:make-input-context
+                        :selected-widget :battery :active-dialog :help))
+                      (action
+                       (ntop.app.domain:make-app-action :kind :navigation :value :left)))
+                 (cl-weave:expect
+                  (ntop.app.application::%contextualize-application-action action context)
+                  :to-be action)))
 
   (cl-weave:it "toggles and explicitly sets basic and expanded modes"
     (let ((state (ntop.app.domain::make-app-state)))
