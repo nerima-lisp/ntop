@@ -277,17 +277,6 @@
               (setf (ntop.app.domain:app-state-active-dialog state) nil)))
         t))))
 
-(defun %copy-process-kill-dialog (dialog)
-  (let* ((copy (copy-structure dialog))
-         (selection
-           (copy-structure
-            (ntop.process.presentation::process-termination-dialog-state-selection-state
-             dialog))))
-    (setf (ntop.process.presentation::process-termination-dialog-state-selection-state
-           copy)
-          selection)
-    copy))
-
 (defun %process-kill-dialog-action (composition state action)
   (let* ((kind (ntop.app.domain:app-action-kind action))
          (value (ntop.app.domain:app-action-value action))
@@ -304,7 +293,8 @@
                          (:choice-up -1)
                          (:choice-down 1))))
          (when (and movement dialog)
-           (let ((copy (%copy-process-kill-dialog dialog)))
+           (let ((copy (ntop.process.presentation:copy-process-termination-dialog-state
+                        dialog)))
              (ntop.process.presentation:move-process-termination-dialog-selection
               copy sample movement (max 0 (- rows 3)))
              (setf (gethash :process-kill states) copy))
@@ -321,7 +311,8 @@
              composition state dialog most-positive-fixnum viewport-height)
             t)
            ((and movement dialog)
-            (let ((copy (%copy-process-kill-dialog dialog)))
+            (let ((copy (ntop.process.presentation:copy-process-termination-dialog-state
+                        dialog)))
               (ntop.process.presentation:move-process-termination-dialog-selection
                copy sample movement viewport-height)
               (setf (gethash :process-kill states) copy))
@@ -343,7 +334,8 @@
 (defun %move-process-kill-selection
     (composition state dialog amount viewport-height)
   (when dialog
-    (let ((copy (%copy-process-kill-dialog dialog)))
+    (let ((copy (ntop.process.presentation:copy-process-termination-dialog-state
+                 dialog)))
       (ntop.process.presentation:move-process-termination-dialog-selection
        copy
        (application-composition-latest-process-sample composition)
@@ -355,10 +347,11 @@
 
 (defun %select-process-kill-choice (composition state dialog index)
   (when dialog
-    (let* ((copy (%copy-process-kill-dialog dialog))
+    (let* ((copy (ntop.process.presentation:copy-process-termination-dialog-state
+                  dialog))
            (sample (application-composition-latest-process-sample composition))
            (selection-index
-             (if (eq index most-positive-fixnum) 0 index)))
+            (if (eq index most-positive-fixnum) 0 index)))
       (ntop.process.presentation:select-process-termination-dialog-choice
        copy sample selection-index)
       (setf (gethash :process-kill
