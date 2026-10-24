@@ -103,15 +103,23 @@
                (< (car excluded) (cdr span))))
         exclusions))
 
-(defun criterion-title-columns (text)
-  (when (criterion-title-row-p text)
+(defun criterion-title-columns (text row frames)
+  (when (and (criterion-title-row-p text)
+             (some (lambda (frame) (= row (first frame))) frames))
     (let ((exclusions (criterion-title-exclusion-spans text)))
-      (loop for label in (criterion-rule-values :fixed-title-labels)
+      (loop for frame in frames
+            when (= row (first frame))
             append
-            (loop for span in (criterion-label-spans text label)
-                  unless (criterion-span-excluded-p span exclusions)
-                    append (loop for column from (car span) below (cdr span)
-                                 collect column))))))
+            (loop for label in (criterion-rule-values :fixed-title-labels)
+                  append
+                  (loop for span in (criterion-label-spans text label)
+                        when (and (> (car span) (third frame))
+                                  (<= (cdr span) (fourth frame))
+                                  (not (criterion-span-excluded-p
+                                        span exclusions)))
+                        append
+                        (loop for column from (car span) below (cdr span)
+                              collect column)))))))
 
 (defun criterion-process-header-span (text eligible-p)
   (when eligible-p
@@ -167,6 +175,31 @@
                                grid row left right (second corner-pairs))
                               left
                               right)))))
+(defun criterion-frame-contains-p (outer inner)
+  (destructuring-bind (outer-top outer-bottom outer-left outer-right) outer
+    (destructuring-bind (inner-top inner-bottom inner-left inner-right) inner
+      (and (< outer-top inner-top)
+           (< inner-bottom outer-bottom)
+           (< outer-left inner-left)
+           (< inner-right outer-right)))))
+(defun criterion-projection-frames (grid)
+  (let* ((frames (criterion-frame-spans grid))
+         (terminal-frame
+           (find (list 0
+                       (1- (grid-height grid))
+                       0
+                       (1- (grid-width grid)))
+                 frames
+                 :test #'equal))
+         (frames-without-terminal
+           (remove terminal-frame frames :test #'equal)))
+    (append (when terminal-frame (list terminal-frame))
+            (remove-if
+             (lambda (frame)
+               (some (lambda (container)
+                       (criterion-frame-contains-p container frame))
+                     frames-without-terminal))
+             frames-without-terminal))))
 (defun criterion-frame-divider-row-p (grid row left right)
   (some (lambda (pair)
           (and (char= (cell-character (grid-cell-at grid row left))
@@ -226,26 +259,26 @@
               (:rgb (coerce value 'vector))))))
 (defun project-criterion-grid (grid)
   (let ((entries nil)
-        (frames (criterion-frame-spans grid)))
+        (frames (criterion-projection-frames grid)))
     (dotimes (row (grid-height grid))
       (let* ((text (criterion-row-text grid row))
-             (title-columns (criterion-title-columns text))
+             (title-columns (criterion-title-columns text row frames))
              (header-span
-              (criterion-process-header-span
-               text
-               (criterion-process-header-row-p grid row frames))))
+               (criterion-process-header-span
+                text
+                (criterion-process-header-row-p grid row frames))))
         (dotimes (column (grid-width grid))
           (let* ((cell (grid-cell-at grid row column))
                  (character (cell-character cell))
                  (category
-                  (cond
-                   ((criterion-border-cell-p grid row column character frames)
-                    "border")
-                   ((and header-span
-                         (<= (car header-span) column)
-                         (< column (cdr header-span)))
-                    "process-header")
-                   ((member column title-columns) "title"))))
+                   (cond
+                     ((criterion-border-cell-p grid row column character frames)
+                      "border")
+                     ((and header-span
+                           (<= (car header-span) column)
+                           (< column (cdr header-span)))
+                      "process-header")
+                     ((member column title-columns) "title"))))
             (when category
               (push (vector category row column (string character)
                             (criterion-color-vector (cell-foreground cell))
