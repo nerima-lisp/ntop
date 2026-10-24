@@ -240,13 +240,6 @@
                (sample-pids
                  (mapcar #'ntop.process.domain:process-record-pid
                          (ntop.process.domain:process-sample-processes sample)))
-               (union-pids (union stable-pids sample-pids :test #'eql))
-               (shared-pids
-                 (intersection stable-pids sample-pids :test #'eql))
-               (overlap
-                 (and (plusp (length union-pids))
-                      (/ (float (length shared-pids) 1d0)
-                         (length union-pids))))
                (unix-now (- (get-universal-time) 2208988800))
                (row
                  (and record
@@ -258,7 +251,9 @@
                  (max 0 (- unix-now (second after-identity)))))
           (cl-weave:expect reason :to-be :unset)
           (cl-weave:expect (plusp (length stable-pids)) :to-be t)
-          (cl-weave:expect (and overlap (>= overlap 0.98d0)) :to-be t)
+          (cl-weave:expect
+           (subsetp stable-pids sample-pids :test #'eql)
+           :to-be t)
           (cl-weave:expect record :to-be-truthy)
           (cl-weave:expect
            (ntop.process.domain:process-record-user-name record)
