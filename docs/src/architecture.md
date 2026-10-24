@@ -2,7 +2,7 @@
 
 ## Source layout
 
-The `src/` tree groups code by feature and by technical role. Each directory under `src/feature/` holds one feature, including `cpu`, `memory`, `gpu`, `network`, `disk`, `temperature`, `battery`, and `process`. Each feature's package file declares only the layers that feature uses. The architecture checker enforces the package placement and layer rules described below.
+The `src/` tree groups code by feature and by technical role. Each directory under `src/feature/` holds one feature, including `cpu`, `memory`, `gpu`, `network`, `disk`, `temperature`, `battery`, and `process`. The architecture checker enforces the package placement and layer rules described below.
 
 Package declarations are distributed with their source areas. `src/package.lisp` defines `define-ntop-package`, which adds `COMMON-LISP` to each package's use list. A use list makes exported symbols available without a package qualifier. The declarations live in `src/shared/package.lisp`, `src/platform/package.lisp`, `src/ui/package.lisp`, `src/feature/<name>/package.lisp`, `src/app/package.lisp`, and `src/cli/package.lisp`. `ntop.asd` loads the macro and these declaration files before the production source files.
 
