@@ -257,11 +257,11 @@
                                                      :memory)))
 
 (defun %wp12b-screen-render (columns rows
-                                     &key
-                                     state
-                                     config
-                                     series
-                                     unavailability-reasons)
+                             &key
+                             state
+                             config
+                             series
+                             unavailability-reasons)
   (let* ((screen (cl-tty-kit:make-screen columns rows))
          (state (or state (ntop.app.domain:make-app-state)))
          (config (or config (%wp12b-screen-config)))

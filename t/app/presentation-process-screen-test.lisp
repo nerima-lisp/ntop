@@ -381,4 +381,37 @@
       (cl-weave:expect
        (gethash :process-selected-key empty-states)
        :to-be
-       nil)))))
+       nil))))
+(cl-weave:it
+  "renders elapsed process time from the supplied Unix clock"
+  (let* ((snapshot
+           (ntop.app.domain:make-collection-snapshot
+            :sampled-at 3d0
+            :process-sample
+            (ntop.process.domain:make-process-sample
+             :sampled-at 3d0
+             :processes
+             (list
+              (ntop.process.domain:make-process-record
+               :pid 100
+               :ppid 1
+               :name "alpha"
+               :command "alpha --serve"
+               :start-time-unix-seconds 100)))))
+         (state
+           (ntop.app.domain:make-app-state
+            :selected-widget :process :expanded-p t))
+         (config
+           (ntop.shared.application:make-application-config
+            :theme :default
+            :process-default-grouped-p nil
+            :process-columns
+            (quote (:pid-or-count :name-or-command :time))))
+         (screen (cl-tty-kit:make-screen 80 24)))
+    (ntop.app.presentation:draw-application-screen
+     screen state config snapshot 80 24 nil nil 175)
+    (cl-weave:expect
+     (not
+      (null
+       (search "1m 15.00s" (cl-tty-kit:screen-to-string screen))))
+     :to-be t))))

@@ -137,6 +137,24 @@
         (values columns rows)
         (values 80 24))))
 
+(defun %render-with-unix-time (render clock)
+  (lambda (state config snapshot columns rows reasons)
+    (let ((current-time-unix-seconds nil))
+      (ntop.shared.domain:read-unix-time
+       clock
+       (lambda (time)
+         (setf current-time-unix-seconds time))
+       (lambda (reason)
+         (declare (ignore reason))))
+      (funcall render
+               state
+               config
+               snapshot
+               columns
+               rows
+               reasons
+               current-time-unix-seconds))))
+
 (defun run-application (config collectors
                                clock
                                render
@@ -183,7 +201,7 @@
                                                        worker)
                                                       poll-input
                                                       poll-size
-                                                      render
+                                                      (%render-with-unix-time render clock)
                                                       :poll-signal
                                                       poll-terminal-event
                                                       :histories

@@ -117,9 +117,11 @@
                    (funcall render state received-config :snapshot 110 36
                             (quote (:unavailable))))
              :loop-result)
-           (lambda (state received-config snapshot columns rows reasons)
+           (lambda (state received-config snapshot columns rows reasons
+                     &optional current-time-unix-seconds)
              (setf observed-render
-                   (list state received-config snapshot columns rows reasons))
+                   (list state received-config snapshot columns rows reasons
+                         current-time-unix-seconds))
              :rendered))
         (cl-weave:expect
          (list result
@@ -134,6 +136,7 @@
                (nth 4 observed-loop)
                (nth 5 observed-loop)
                (nth 5 observed-render)
+               (nth 6 observed-render)
                render-result
                (ntop.shared.application:application-config-rate-ms config))
          :to-equal
@@ -147,6 +150,7 @@
                  nil
                  (110 36)
                  (:unavailable)
+                 1700000000
                  :rendered
                  123))))))
 
@@ -156,8 +160,10 @@
          (lambda (&rest arguments)
            (declare (ignore arguments))
            (error "deliberate application loop error"))
-         (lambda (state config snapshot columns rows reasons)
-           (declare (ignore state config snapshot columns rows reasons))
+         (lambda (state config snapshot columns rows reasons
+                  &optional current-time-unix-seconds)
+           (declare (ignore state config snapshot columns rows reasons
+                            current-time-unix-seconds))
            nil))
       (cl-weave:expect
        (list (first result)

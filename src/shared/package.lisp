@@ -1,9 +1,11 @@
-(define-ntop-package #:ntop.shared.domain (:documentation "Measurements and time-series history.")
+(define-ntop-package #:ntop.shared.domain
+  (:documentation "Measurements and time-series history.")
   (:export
    ;; WP0-3: measurement values, clocks, rates and units.
    #:measurement-value #:measurement-counter #:optional-counter #:monotonic-seconds
    #:measurement-available-p #:sample-record #:make-sample-record #:sample-record-sampled-at
-   #:define-value-type #:define-sample-type #:counter-rate-per-second #:read-monotonic-time
+   #:define-value-type #:define-sample-type #:counter-rate-per-second
+   #:read-monotonic-time #:read-unix-time
    #:quantity #:make-quantity #:quantity-value #:quantity-unit #:unit-definition
    #:convert-quantity #:scaled-quantity #:make-scaled-quantity #:scaled-quantity-value
    #:scaled-quantity-unit #:scaled-quantity-prefix #:scaled-quantity-symbol #:scale-quantity
@@ -14,8 +16,7 @@
    #:history-store-zoom-step-seconds #:history-store-window-width-seconds #:history-paused-p
    #:history-append #:history-prune #:history-pause #:history-resume #:history-scroll-older
    #:history-scroll-newer #:history-go-current #:history-current-window #:history-set-window-width
-   #:history-zoom-in #:history-zoom-out #:history-reset-zoom #:history-slice
-   ))
+   #:history-zoom-in #:history-zoom-out #:history-reset-zoom #:history-slice))
 
 (define-ntop-package #:ntop.shared.application (:documentation "Configuration and collector ports.")
   (:export

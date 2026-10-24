@@ -228,7 +228,7 @@
                                    series-by-widget
                                    snapshot
                                    unavailability-reasons
-                                   &optional cpu-frame-rectangles)
+                                   &optional cpu-frame-rectangles current-time-unix-seconds)
   (let* ((basic-p (ntop.shared.application:application-config-basic-p config))
          (widget-rectangle
            (if basic-p
@@ -241,7 +241,7 @@
                                snapshot
                                state
                                config
-                               unavailability-reasons)
+                               unavailability-reasons current-time-unix-seconds)
       (unless basic-p
         (%screen-draw-frame target rectangle config
                             (and selected-p *screen-selection-active-p*)))
@@ -270,7 +270,8 @@
                                        rows
                                        unavailability-reasons
                                        &optional
-                                       series-by-widget)
+                                       series-by-widget
+                                       current-time-unix-seconds)
   (let* ((mode (%screen-layout-mode state config))
          (render-config (%screen-config config mode))
          (*screen-table-theme*
@@ -302,7 +303,7 @@
                                             snapshot
                                             unavailability-reasons
                                             (and (eq layout-widget :cpu)
-                                                 cpu-frames)))))))
+                                                 cpu-frames) current-time-unix-seconds))))))
     (setf clickable-areas
           (nconc clickable-areas
                  (%screen-draw-active-process-modal target
@@ -348,7 +349,7 @@
                                      snapshot
                                      state
                                      config
-                                     unavailability-reasons)
+                                     unavailability-reasons &optional current-time-unix-seconds)
   (case widget
     (:cpu
      (values (%screen-state-for-widget state :cpu)
@@ -408,7 +409,8 @@
                                    state
                                    config
                                    sort-state
-                                   (%screen-series series-by-widget :process))))
+                                   (%screen-series series-by-widget :process)
+                                   current-time-unix-seconds)))
        (multiple-value-bind (table-state table-config)
            (%screen-process-widget-config snapshot
                                           state

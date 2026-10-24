@@ -44,6 +44,10 @@ printf "
   (+ (get-internal-real-time)
      (ceiling
       (* +terminal-test-timeout-seconds+ internal-time-units-per-second))))
+(defmethod ntop.shared.domain:read-unix-time
+    ((clock (eql :clock)) on-time on-unavailable)
+  (declare (ignore clock on-unavailable))
+  (funcall on-time 1700000000))
 
 (defun %terminal-test-remaining-seconds (deadline)
   (/ (float (- deadline (get-internal-real-time)) 1d0)

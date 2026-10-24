@@ -76,7 +76,8 @@
              :show-scroll-position-p show-scroll-position-p
              :column-ids column-ids))))
 
-(defun %screen-process-rows (snapshot state config sort-state process-series)
+(defun %screen-process-rows (snapshot state config sort-state process-series
+                                      &optional current-time-unix-seconds)
   (let* ((sample
           (and snapshot
                (ntop.app.domain:collection-snapshot-process-sample snapshot)))
@@ -112,11 +113,13 @@
                                 memory-total
                                 :gpu-memory-total-bytes
                                 gpu-memory-total
+                                :current-time-unix-seconds
+                                current-time-unix-seconds
                                 :unnormalized-p
                                 (ntop.shared.application:application-config-unnormalized-cpu-p
                                  config)))
                 when row
-                  collect row))
+                collect row))
          (tree-p
           (ntop.shared.application:application-config-process-default-tree-p
            config))
@@ -128,11 +131,11 @@
           (if (ntop.shared.application:application-config-process-show-command-p
                config)
               :command
-              :name))
+            :name))
          (grouped-rows
           (if grouped-p
               (ntop.process.domain:group-process-domain-rows raw-rows group-key)
-              raw-rows))
+            raw-rows))
          (sorted-rows
           (ntop.process.domain:sort-process-domain-rows grouped-rows sort-state))
          (search-field
@@ -152,17 +155,17 @@
               (remove-if-not
                (lambda (row) (funcall search-predicate row))
                sorted-rows)
-              sorted-rows)))
+            sorted-rows)))
     (let ((displayed-rows
-          (if tree-p
-              (let ((default-collapsed-p
+           (if tree-p
+               (let ((default-collapsed-p
                       (ntop.shared.application:application-config-process-tree-collapse-p
                        config)))
-                (ntop.process.domain:process-tree-visible-rows
-                 (ntop.process.domain:build-process-tree filtered-rows sort-state)
-                 (ntop.process.domain:make-process-tree-state
-                  :default-collapsed-p default-collapsed-p)))
-              filtered-rows)))
+                 (ntop.process.domain:process-tree-visible-rows
+                  (ntop.process.domain:build-process-tree filtered-rows sort-state)
+                  (ntop.process.domain:make-process-tree-state
+                   :default-collapsed-p default-collapsed-p)))
+             filtered-rows)))
       (multiple-value-bind (table-state table-config)
           (%screen-process-widget-config
            snapshot
@@ -196,7 +199,7 @@
          state
          config
          sort-state
-         (list :previous-sample previous-process-sample))
+         (list :previous-sample previous-process-sample) nil)
       (multiple-value-bind (table-state table-config)
           (%screen-process-widget-config snapshot
                                          state

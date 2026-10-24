@@ -257,7 +257,9 @@
                                                     snapshot
                                                     columns
                                                     rows
-                                                    unavailability-reasons)
+                                                    unavailability-reasons
+                                                    &optional
+                                                    current-time-unix-seconds)
   (check-type state ntop.app.domain:app-state)
   (check-type config ntop.shared.application:application-config)
   (check-type columns (integer 1 *))
@@ -266,17 +268,22 @@
          (ntop.app.presentation::*screen-selection-active-p*
           (application-composition-selection-active-p composition))
          (widget-areas
-          (funcall (application-composition-draw-screen composition)
-                   screen
-                   state
-                   config
-                   snapshot
-                   columns
-                   rows
-                   unavailability-reasons
-                   (%composition-series-by-widget composition
-                                                  snapshot
-                                                  unavailability-reasons)))
+          (apply (application-composition-draw-screen composition)
+                 (append
+                  (list screen
+                        state
+                        config
+                        snapshot
+                        columns
+                        rows
+                        unavailability-reasons
+                        (%composition-series-by-widget composition
+                                                       snapshot
+                                                       unavailability-reasons))
+                  (when (and current-time-unix-seconds
+                             (eq (application-composition-draw-screen composition)
+                                 (function ntop.app.presentation:draw-application-screen)))
+                    (list current-time-unix-seconds)))))
          (areas (append widget-areas
                         (%draw-help-overlay screen
                                             state
@@ -344,47 +351,37 @@
                    state
                    forwarded-action))))
     state))
-  (defun make-application-composition (config &key
-                                              on-action
-                                              (draw-screen
-                                               (function
-                                                ntop.app.presentation:draw-application-screen)))
-    (check-type config ntop.shared.application:application-config)
-    (unless (or (null on-action) (functionp on-action))
-      (error "ON-ACTION must be a function or NIL."))
-    (unless (functionp draw-screen)
-      (error "DRAW-SCREEN must be a function."))
-    (let ((composition
-           (%make-application-composition :config
-                                          config
-                                          :draw-screen
-                                          draw-screen
-                                          :external-on-action
-                                          on-action)))
-      (setf (application-composition-render composition) (lambda
-                                                             (state current-config
-                                                                    snapshot
-                                                                    columns
-                                                                    rows
-                                                                    reasons)
-                                                           (%render-application-composition
-                                                            composition
-                                                            state
-                                                            current-config
-                                                            snapshot
-                                                            columns
-                                                            rows
-                                                            reasons))
-            (application-composition-on-snapshot composition) (lambda (snapshot)
-                                                                (%record-snapshot-history
-                                                                 composition
-                                                                 snapshot))
-            (application-composition-on-action composition) (lambda (state action)
-                                                              (%compose-application-action
-                                                               composition
-                                                               state
-                                                               action)))
-      composition))
+  (defun make-application-composition
+    (config &key on-action
+                 (draw-screen
+                   (function ntop.app.presentation:draw-application-screen)))
+  (check-type config ntop.shared.application:application-config)
+  (unless (or (null on-action) (functionp on-action))
+    (error "ON-ACTION must be a function or NIL."))
+  (unless (functionp draw-screen)
+    (error "DRAW-SCREEN must be a function."))
+  (let ((composition
+          (%make-application-composition :config config
+                                         :draw-screen draw-screen
+                                         :external-on-action on-action)))
+    (setf (application-composition-render composition)
+          (lambda (state current-config snapshot columns rows reasons
+                   &optional current-time-unix-seconds)
+            (%render-application-composition composition
+                                             state
+                                             current-config
+                                             snapshot
+                                             columns
+                                             rows
+                                             reasons
+                                             current-time-unix-seconds))
+          (application-composition-on-snapshot composition)
+          (lambda (snapshot)
+            (%record-snapshot-history composition snapshot))
+          (application-composition-on-action composition)
+          (lambda (state action)
+            (%compose-application-action composition state action)))
+    composition))
 
 (defun %help-dialog-p (state)
     (member (ntop.app.domain:app-state-active-dialog state)
