@@ -180,4 +180,40 @@
                         (ntop.e2e::e2e-session-closed-p session)
                         (not (sb-ext:process-alive-p process)))
                        :to-be
-                       t))))
+                       t)))
+                   (cl-weave:it
+                    "answers the terminal cursor position query"
+                    (let* ((command
+                            (concatenate 'string
+                                         "import os,sys,tty,time; tty.setraw(0); "
+                                         "query=bytes([27,91,54,110]); "
+                                         "expected=bytes([27,91,49,59,49,82]); "
+                                         "os.write(1,query); "
+                                         "actual=bytes().join(os.read(0,1) for _ in range(6)); "
+                                         "time.sleep(0.25); "
+                                         "os.write(1,b'CURSOR_POSITION_RESPONSE_OK' "
+                                         "if actual==expected else "
+                                         "b'CURSOR_POSITION_RESPONSE_BAD'); "
+                                         "time.sleep(0.25); sys.exit(actual!=expected)"))
+                           (session
+                            (ntop.e2e::launch-e2e-process
+                             "python3" (list "-c" command) 24 80 :timeout-seconds 3d0))
+                           (output nil))
+                      (unwind-protect
+                          (progn
+                            (multiple-value-bind (frame)
+                                (ntop.e2e::pty-read-until-idle
+                                 session :quiet-seconds 0.1d0 :timeout-seconds 3d0)
+                              (setf output frame))
+                            (cl-weave:expect
+                             (ntop.e2e::%route-wait-for-exit session 3d0)
+                             :to-equal
+                             0)
+                            (cl-weave:expect
+                             (not (null
+       (search
+        "CURSOR_POSITION_RESPONSE_OK"
+        (ntop.e2e::%octets-to-text output))))
+                             :to-be
+                             t))
+                        (ntop.e2e::close-e2e-session session)))))
