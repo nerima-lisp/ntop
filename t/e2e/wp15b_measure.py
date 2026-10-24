@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse, json, os, re, shutil, signal, statistics, subprocess, sys, time, traceback
-from wp15b_measure_support import PtySession, QUIET_SECONDS, TerminalGrid
+from wp15b_measure_support import PtySession, QUIET_SECONDS, TerminalGrid, interaction_result
 from pathlib import Path
 ROWS, COLUMNS, RATE_MS = 48, 160, 700
 N1_RUNS, N1_SECONDS = 5, 60
@@ -271,94 +271,174 @@ def run_n3(ntop, raw_dir):
         "decomposition": {"status": "not_measured",
         "reason": "--version exposes no hooks to split core load and initialization."}}
     write_json(raw_dir / "n3.json", result); return result
-def interaction_result(session, raw_dir, name, number, action, screen, target=None):
-    pre = raw_dir / f"{name}-pre-{number:02d}.ansi"
-    raw = raw_dir / f"{name}-sample-{number:02d}.ansi"
-    with pre.open("wb") as sink: session.read_idle(sink, timeout=10, allow_empty=True)
-    before_valid = screen.feed(pre.read_bytes()); before = screen.signature()
-    with raw.open("wb") as sink:
-        sent = time.perf_counter(); action()
-        size, first, last, quiet = session.read_idle(sink, timeout=10, allow_empty=True)
-    if target: screen.resize(*target)
-    response = raw.read_bytes()
-    parse_valid = screen.feed(response) and before_valid
-    window = session.window_size()
-    return {"sample": number, "action_at_seconds": sent - session.started,
-        "first_byte_latency_seconds": first - sent if first else None,
-        "last_byte_latency_seconds": last - sent if last else None,
-        "quiet_complete_latency_seconds": quiet - sent, "response_observed": size > 0,
-        "raw_bytes": size, "raw_output": raw.name, "raw_pre_output": pre.name,
-        "grid_parse_valid": parse_valid, "grid_rows": screen.rows,
-        "grid_columns": screen.columns, "pty_rows": window[0], "pty_columns": window[1],
-        "visible_change_verified": before != screen.signature() and parse_valid,
-        "redraw_completed": False if target else None,
-        "redraw_completion_reason": ("ANSI output has no frame-complete marker; "
-            "valid parsing and matching dimensions cannot prove a complete repaint."
-            if target else None)}
 def run_terminal_interactions(ntop, raw_dir, measurement):
     name = measurement.lower()
     argv = terminal_command("ntop", ntop, None, raw_dir)
     session = begin_session(argv, raw_dir / f"{name}-initial.ansi")
     screen = TerminalGrid(ROWS, COLUMNS)
     initial_valid = screen.feed((raw_dir / f"{name}-initial.ansi").read_bytes())
-    result = {"measurement": measurement.upper(), "status": "running", "command": argv,
+    result = {
+        "measurement": measurement.upper(),
+        "status": "running",
+        "command": argv,
         "owned_process": {"pid": session.pid, "pgid": session.group_id},
-        "settings": {"rows": ROWS, "columns": COLUMNS, "rate_ms": RATE_MS,
-        "samples_requested": 20}, "samples": [], "acceptance": {"status": "incomplete",
-        "passed": False, "reason": ("N5 full redraw is unprovable from ANSI output."
-            if measurement == "n5" else "Pass requires 20 visible changes and quiet.")}}
-    output = raw_dir / f"{name}.json"; write_json(output, result)
+        "settings": {
+            "rows": ROWS,
+            "columns": COLUMNS,
+            "rate_ms": RATE_MS,
+            "samples_requested": 20,
+            "minimum_observation_window_seconds": 5 * RATE_MS / 1000,
+            "load_limit_1min": 40,
+        },
+        "samples": [],
+        "acceptance": {
+            "status": "incomplete",
+            "passed": False,
+            "reason": (
+                "N5 requires 20 requested-size complete repaint frames and quiet output."
+                if measurement == "n5"
+                else "N4 requires 20 verified layout toggles and quiet output."
+            ),
+        },
+    }
+    output = raw_dir / f"{name}.json"
+    write_json(output, result)
     try:
         result["uptime_before"] = command_output(["uptime"])
+        result["load_before"] = system_load()
         for number in range(1, 21):
             if measurement == "n4":
-                key = b"?" if number % 2 else b"\x1b"
-                sample = interaction_result(session, raw_dir, name, number,
-                    lambda key=key: session.send(key), screen)
-                sample["key"] = "?" if key == b"?" else "Escape"
+                sample = interaction_result(
+                    session, raw_dir, name, number,
+                    lambda: session.send(b"e"), screen,
+                    minimum_observation_seconds=5 * RATE_MS / 1000)
             else:
                 rows, columns = (49, 161) if number % 2 else (48, 160)
-                sample = interaction_result(session, raw_dir, name, number,
+                sample = interaction_result(
+                    session, raw_dir, name, number,
                     lambda rows=rows, columns=columns: session.resize(rows, columns),
-                    screen, (rows, columns))
+                    screen, (rows, columns),
+                    minimum_observation_seconds=5 * RATE_MS / 1000)
                 sample.update({"rows": rows, "columns": columns})
             sample["grid_parse_valid"] &= initial_valid
-            if measurement == "n5": sample["redraw_completed"] &= initial_valid
-            else: sample["visible_change_verified"] &= initial_valid
-            result["samples"].append(sample); write_json(output, result)
+            result["samples"].append(sample)
+            write_json(output, result)
         result["uptime_after"] = command_output(["uptime"])
-        observed = [x["last_byte_latency_seconds"] for x in result["samples"]
-                    if x["last_byte_latency_seconds"] is not None]
-        quiet = [x["quiet_complete_latency_seconds"] for x in result["samples"]
-                 if x["response_observed"]]
-        verified = all(x["visible_change_verified"] if measurement == "n4"
-                       else x["redraw_completed"] for x in result["samples"])
-        metric = "last_byte_latency_seconds"
-        samples = observed
-        median = statistics.median(samples) if samples else None
+        result["load_after"] = system_load()
+        last_bytes = [
+            sample["last_byte_latency_seconds"] for sample in result["samples"]
+            if sample["last_byte_latency_seconds"] is not None
+        ]
+        quiet = [
+            sample["quiet_complete_latency_seconds"] for sample in result["samples"]
+            if sample["response_observed"]
+        ]
+        metric = (
+            "visible_change_latency_seconds"
+            if measurement == "n4"
+            else "redraw_completion_latency_seconds"
+        )
+        latencies = [
+            sample[metric] for sample in result["samples"]
+            if sample.get(metric) is not None
+        ]
+        if measurement == "n4":
+            verified = initial_valid and all(
+                sample["visible_change_verified"]
+                for sample in result["samples"])
+        else:
+            verified = initial_valid and all(
+                sample["redraw_completed"]
+                for sample in result["samples"])
+        median = statistics.median(latencies) if latencies else None
         limit = .05 if measurement == "n4" else .1
-        passed = len(samples) == 20 and len(quiet) == 20 and verified and median <= limit
-        status = ("pass" if passed else "incomplete"
-                  if not verified or len(samples) != 20 or len(quiet) != 20 else "fail")
-        result["acceptance"] = {"status": status, "passed": passed,
-            "latency_metric": metric, "median_latency_seconds": median,
-            "median_limit_seconds": limit, "quiet_stability_gate_seconds": QUIET_SECONDS,
-            "quiet_complete_samples": len(quiet), "visual_verification_complete": verified,
-            "visual_verification_reason": ("ANSI output has no frame-complete marker; "
-                "N5 full redraw cannot be proven." if measurement == "n5" else None)}
-        result.update({"status": status, "response_samples_with_output": len(observed),
-            "median_last_byte_latency_seconds": statistics.median(observed) if observed else None,
-            "median_quiet_complete_latency_seconds": statistics.median(quiet) if quiet else None,
-            "raw_initial_output": f"{name}-initial.ansi"})
-        write_json(output, result); return result
+        load_values = [
+            result["load_before"]["values"][0],
+            result["load_after"]["values"][0],
+        ]
+        high_load = any(value >= 40 for value in load_values)
+        reasons = []
+        if not initial_valid:
+            reasons.append("initial terminal grid ANSI parse was invalid")
+        if not verified:
+            if measurement == "n5":
+                incomplete = [
+                    sample["sample"] for sample in result["samples"]
+                    if not sample["redraw_completed"]
+                ]
+                if incomplete:
+                    reasons.append(
+                        "requested-size full repaint was not proven for samples "
+                        + ", ".join(map(str, incomplete)))
+            else:
+                incomplete = [
+                    sample["sample"] for sample in result["samples"]
+                    if not sample["visible_change_verified"]
+                ]
+                if incomplete:
+                    reasons.append(
+                        "expected layout change was not visible for samples "
+                        + ", ".join(map(str, incomplete)))
+        if len(latencies) != 20:
+            reasons.append(f"only {len(latencies)} of 20 latency samples were verified")
+        if len(quiet) != 20:
+            reasons.append(f"quiet output was observed for only {len(quiet)} of 20 samples")
+        if high_load:
+            reasons.append(
+                "one-minute load average was at least 40 "
+                f"(before={load_values[0]}, after={load_values[1]})")
+        passed = (
+            len(latencies) == 20 and len(quiet) == 20
+            and verified and not high_load and median is not None
+            and median <= limit
+        )
+        incomplete = (
+            len(latencies) != 20 or len(quiet) != 20
+            or not verified or high_load
+        )
+        status = "pass" if passed else "incomplete" if incomplete else "fail"
+        if not passed and not incomplete:
+            reasons.append(f"median latency {median:.6f}s exceeded {limit:.3f}s")
+        result["acceptance"] = {
+            "status": status,
+            "passed": passed,
+            "latency_metric": metric,
+            "median_latency_seconds": median,
+            "latency_samples": len(latencies),
+            "median_limit_seconds": limit,
+            "quiet_stability_gate_seconds": QUIET_SECONDS,
+            "quiet_complete_samples": len(quiet),
+            "visual_verification_complete": verified,
+            "visual_verification_reason": (
+                reasons[0] if reasons else None),
+            "reasons": reasons,
+            "one_minute_load_values": load_values,
+            "load_limit_1min": 40,
+            "load_gate_passed": not high_load,
+        }
+        result.update({
+            "status": status,
+            "response_samples_with_output": len(last_bytes),
+            "median_last_byte_latency_seconds": (
+                statistics.median(last_bytes) if last_bytes else None),
+            "median_quiet_complete_latency_seconds": (
+                statistics.median(quiet) if quiet else None),
+            "median_verified_latency_seconds": median,
+            "raw_initial_output": f"{name}-initial.ansi",
+        })
+        write_json(output, result)
+        return result
     finally:
         previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
-            cleanup = session.close(); result["cleanup"] = cleanup
+            cleanup = session.close()
+            result["cleanup"] = cleanup
             write_json(output, result)
-        finally: signal.signal(signal.SIGINT, previous)
+        finally:
+            signal.signal(signal.SIGINT, previous)
         if not cleanup["verified"]:
-            result["status"] = "cleanup_failed"; write_json(output, result)
+            result["status"] = "cleanup_failed"
+            write_json(output, result)
             raise RuntimeError("PTY child PID/PGID remained after bounded cleanup")
 def main(argv=None):
     parser = argparse.ArgumentParser(
