@@ -250,6 +250,7 @@
    (:file "t/feature/process/application-selection-test")
    (:file "t/feature/process/application-termination-test")
    (:file "t/feature/process/domain-types-test")
+   (:file "t/feature/process/domain-constructor-slot-types-test")
    (:file "t/feature/process/infrastructure-darwin-test")
    (:file "t/feature/process/infrastructure-linux-test")
    (:file "t/feature/process/infrastructure-linux-failure-paths-test")
