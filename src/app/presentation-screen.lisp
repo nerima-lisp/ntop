@@ -83,10 +83,15 @@
                                    :memory-rows 2
                                    :table-widget :process))
          (cpu (assoc :cpu placements :test (function eq)))
-         (cpu-legend (assoc :cpu-legend placements :test (function eq))))
+         (cpu-legend (assoc :cpu-legend placements :test (function eq)))
+         (cpu-frames
+           (and cpu cpu-legend (list (cdr cpu) (cdr cpu-legend)))))
     (when (and cpu cpu-legend)
       (setf (cdr cpu) (%screen-rectangle-union (cdr cpu) (cdr cpu-legend))))
-    (remove :cpu-legend placements :key (function car) :test (function eq))))
+    (values
+     (remove :cpu-legend placements :key (function car) :test (function eq))
+     cpu-frames)))
+
 
 (defun %screen-config (config mode)
   (let ((copy (ntop.shared.application::copy-application-config config)))
@@ -108,26 +113,36 @@
 
 (defvar *screen-selection-active-p* nil)
 
-(defun %screen-draw-frame (target rectangle config selected-p)
+(defun %screen-draw-frame (target rectangle config selected-p
+                                  &optional right-edge-only-p)
   (when (and (plusp (ntop.ui:rectangle-width rectangle))
              (plusp (ntop.ui:rectangle-height rectangle)))
-    (let ((theme (ntop.shared.application:application-config-theme config)))
-      (cl-tty-kit:screen-draw-box target
-                                  (ntop.ui:rectangle-x rectangle)
-                                  (ntop.ui:rectangle-y rectangle)
-                                  (ntop.ui:rectangle-width rectangle)
-                                  (ntop.ui:rectangle-height rectangle)
-                                  :border
-                                  :single
-                                  :style
-                                  (if (and (not selected-p)
-                                           (eq theme :default))
-                                      nil
-                                      (ntop.ui:presentation-theme-style
-                                       theme
-                                       (if selected-p
-                                           :highlighted-border
-                                           :border)))))))
+    (let* ((theme (ntop.shared.application:application-config-theme config))
+           (style
+             (if (and (not selected-p) (eq theme :default))
+                 nil
+                 (ntop.ui:presentation-theme-style
+                  theme
+                  (if selected-p :highlighted-border :border)))))
+      (if right-edge-only-p
+          (let* ((x (+ (ntop.ui:rectangle-x rectangle)
+                       (1- (ntop.ui:rectangle-width rectangle))))
+                 (top (ntop.ui:rectangle-y rectangle))
+                 (bottom (+ top (1- (ntop.ui:rectangle-height rectangle)))))
+            (cl-tty-kit:screen-write-string target x top "┐" :style style)
+            (loop for y from (1+ top) below bottom
+                  do (cl-tty-kit:screen-write-string target x y "│" :style style))
+            (cl-tty-kit:screen-write-string target x bottom "┘" :style style))
+          (cl-tty-kit:screen-draw-box target
+                                      (ntop.ui:rectangle-x rectangle)
+                                      (ntop.ui:rectangle-y rectangle)
+                                      (ntop.ui:rectangle-width rectangle)
+                                      (ntop.ui:rectangle-height rectangle)
+                                      :border
+                                      :single
+                                      :style
+                                      style)))))
+
 (defvar *screen-table-theme* :default)
 (defmethod ntop.ui:draw-table-text ((target cl-tty-kit:screen) x y text role)
   (cl-tty-kit:screen-write-string target
@@ -204,12 +219,13 @@
                                    config
                                    series-by-widget
                                    snapshot
-                                   unavailability-reasons)
+                                   unavailability-reasons
+                                   &optional cpu-frame-rectangles)
   (let* ((basic-p (ntop.shared.application:application-config-basic-p config))
          (widget-rectangle
-          (if basic-p
-              rectangle
-              (%screen-inner-rectangle rectangle)))
+           (if basic-p
+               rectangle
+               (%screen-inner-rectangle rectangle)))
          (clickable-areas nil))
     (multiple-value-bind (widget-state widget-config widget-series)
         (%screen-widget-inputs widget
@@ -230,7 +246,14 @@
                                    widget-state
                                    widget-config
                                    widget-series)))
+      (when (and (not basic-p) cpu-frame-rectangles)
+        (%screen-draw-frame target (first cpu-frame-rectangles) config
+                            (and selected-p *screen-selection-active-p*) t)
+        (%screen-draw-frame target (second cpu-frame-rectangles) config
+                            (and selected-p *screen-selection-active-p*)))
       clickable-areas)))
+
+
 
 (defun draw-application-screen (target state
                                        config
@@ -247,7 +270,11 @@
          (selected
           (%screen-widget-base
            (ntop.app.domain:app-state-selected-widget state)))
-         (placements (%screen-layout-placements columns rows state mode))
+         (layout-results
+           (multiple-value-list
+            (%screen-layout-placements columns rows state mode)))
+         (placements (first layout-results))
+         (cpu-frames (second layout-results))
          (clickable-areas nil))
     (dolist (placement placements)
       (let* ((layout-widget (car placement))
@@ -265,7 +292,9 @@
                                             render-config
                                             series-by-widget
                                             snapshot
-                                            unavailability-reasons))))))
+                                            unavailability-reasons
+                                            (and (eq layout-widget :cpu)
+                                                 cpu-frames)))))))
     (setf clickable-areas
           (nconc clickable-areas
                  (%screen-draw-active-process-modal target
@@ -275,6 +304,7 @@
                                                     columns
                                                     rows)))
     clickable-areas))
+
 
 (ntop.ui:define-widget :basic-table-arrows
                        (target rectangle state config series)

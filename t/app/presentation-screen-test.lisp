@@ -304,27 +304,24 @@
                         (or (< index 2)
                             (not (char= (char output (- index 2)) #\Return))))))
        :to-be t)))
-  (cl-weave:it "places the CPU title on its top frame with default attributes"
+  (cl-weave:it "preserves the CPU and legend frame corners"
     (multiple-value-bind (areas screen)
         (%wp12b-screen-render 80 24)
       (declare (ignore areas))
       (cl-weave:expect
-       (list
-        (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 2 0))
-        (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 0 0))
-        (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 0 5))
-        (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 1 1)))
-       :to-equal
-       (list #\C #\┌ #\└ #\1))
+       (loop for (x y) in '((2 0) (0 0) (0 7) (45 0) (46 0) (47 0)
+                            (45 7) (46 7))
+             collect (cl-tty-kit:cell-char
+                      (cl-tty-kit:screen-cell screen x y)))
+       :to-equal '(#\C #\┌ #\└ #\┐ #\┌ #\─ #\┘ #\└))
       (cl-weave:expect
-       (cl-tty-kit:cell-style
-        (cl-tty-kit:screen-cell screen 2 0))
+       (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 2 0))
        :to-be nil)
       (cl-weave:expect
        (list (ntop.ui:presentation-theme-style :default :widget-title)
              (ntop.ui:presentation-theme-style :default :border))
-       :to-equal
-       '(nil nil)))))
+       :to-equal '(nil nil))))
+)
 
 
 (defun %wp12b-screen-golden-bytes (name)
