@@ -2,3 +2,4 @@
 /coverage/
 /result
 /result-*
+__pycache__/
