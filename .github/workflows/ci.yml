@@ -9,9 +9,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  flake-check:
-    name: Linux amd64 flake check
+  check:
+    name: nix flake check
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -19,31 +23,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check with pinned Nix on Linux amd64
-        shell: bash
-        run: |
-          set -euo pipefail
-          container_name="ntop-flake-check-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          cleanup() {
-            local command_status=$?
-            local cleanup_status=0
-            local output
-            trap - EXIT
-            output=$(timeout --signal=TERM --kill-after=5s 20s \
-              docker rm --force "$container_name" 2>&1) || cleanup_status=$?
-            if [[ "$cleanup_status" -ne 0 && "$output" != *"No such container"* ]]; then
-              printf '%s\n' "$output" >&2
-              exit 1
-            fi
-            exit "$command_status"
-          }
-          trap cleanup EXIT
-          timeout --signal=TERM --kill-after=15s 1800s docker run \
-            --name "$container_name" \
-            --platform linux/amd64 \
-            --rm \
-            --volume "$GITHUB_WORKSPACE:/src" \
-            --workdir /src \
-            nixos/nix:2.35.3 \
-            nix --extra-experimental-features 'nix-command flakes' \
-              flake check --print-build-logs path:/src
+      - uses: ./.github/actions/nix-setup
+        with:
+          cachix-cache: ${{ vars.CACHIX_CACHE }}
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Check flake
+        run: nix flake check --print-build-logs
+
+      - name: Check diff hygiene
+        run: git diff --check

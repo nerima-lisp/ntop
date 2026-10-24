@@ -239,7 +239,11 @@
         "cl-regex-kit": "cl-regex-kit",
         "cl-tty-kit": "cl-tty-kit",
         "cl-weave": "cl-weave",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "treefmt-nix": [
+          "cl-nix-forge",
+          "treefmt-nix"
+        ]
       }
     },
     "treefmt-nix": {

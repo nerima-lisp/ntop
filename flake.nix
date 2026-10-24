@@ -4,6 +4,8 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    treefmt-nix.follows = "cl-nix-forge/treefmt-nix";
+
     cl-nix-forge = {
       url = "github:nerima-lisp/cl-nix-forge/v0.6.1";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -59,6 +61,7 @@
     {
       self,
       nixpkgs,
+      treefmt-nix,
       cl-nix-forge,
       cl-tty-kit,
       cl-codec-kit,
@@ -200,6 +203,8 @@
       asd = ./ntop.asd;
       root = ./.;
       src = sourceRoot;
+      treefmt.evalModule = treefmt-nix.lib.evalModule;
+      docs.root = ./docs;
       timeoutSeconds = 1800;
       executable = {
         installSource = false;

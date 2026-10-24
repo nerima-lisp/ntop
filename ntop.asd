@@ -2,7 +2,7 @@
 
 (asdf:defsystem "ntop"
   :description "A terminal system monitor."
-  :author "ntop contributors"
+  :author "takeokunn <bararararatty@gmail.com>"
   :maintainer "ntop contributors"
   :license "MIT"
   :version "0.1.0"
