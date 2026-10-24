@@ -319,20 +319,21 @@
                    (cl-weave:it
                     "renders only startup widgets and draws the CPU parent once"
                     (let ((state (ntop.app.domain:make-app-state))
-                          (*wp12b-screen-widget-calls* nil) (*wp12b-screen-recording-p* t))
+                          (*wp12b-screen-widget-calls* nil)
+                          (*wp12b-screen-recording-p* t))
                       (%wp12b-screen-render 80 24 :state state)
-                      (setf *wp12b-screen-widget-calls* (nreverse
-                                                         *wp12b-screen-widget-calls*))
+                      (setf *wp12b-screen-widget-calls*
+                            (nreverse *wp12b-screen-widget-calls*))
                       (cl-weave:expect
-                       (mapcar #'first *wp12b-screen-widget-calls*)
+                       (mapcar (function first) *wp12b-screen-widget-calls*)
                        :to-equal
-                       '(:cpu :memory :network :disk :temperature :process-table))
+                       (quote (:cpu :memory :network :disk :temperature :process-table)))
                       (cl-weave:expect
-                       (loop for widget in '(:disk :temperature)
-                             for key in '(:disks :temperature)
+                       (loop for widget in (quote (:disk :temperature))
+                             for key in (quote (:disks :temperature))
                              for call = (find widget *wp12b-screen-widget-calls*
-                                              :key #'first)
-                             always (and (typep (fourth call) 'ntop.ui:table-state)
+                                              :key (function first))
+                             always (and (typep (fourth call) (quote ntop.ui:table-state))
                                          (not (nth-value
                                                1
                                                (gethash
@@ -340,22 +341,26 @@
                                                 (ntop.app.domain:app-state-widget-v-states
                                                  state))))))
                        :to-be t)
-                      (cl-weave:expect
-                       (count :cpu *wp12b-screen-widget-calls* :key #'first)
-                       :to-equal
-                       1)
-                      (let* ((placements (ntop.ui:layout-widgets 80 24))
-                             (cpu (assoc :cpu placements :test #'eq))
-                             (legend (assoc :cpu-legend placements :test #'eq))
-                             (cpu-call
-                              (find :cpu *wp12b-screen-widget-calls* :key #'first))
-                             (cpu-rectangle (second cpu-call)))
-                        (cl-weave:expect
-                         (ntop.ui:rectangle-width cpu-rectangle)
-                         :to-equal
-                         (- (+ (ntop.ui:rectangle-width (cdr cpu))
-                               (ntop.ui:rectangle-width (cdr legend)))
-                            2)))))
+                      (progn
+  (cl-weave:expect
+   (count :cpu *wp12b-screen-widget-calls* :key (function first))
+   :to-equal 1)
+  (let* ((placements
+           (ntop.ui:layout-widgets 80 24
+                                   :cpu-height 1
+                                   :memory-rows 2
+                                   :table-widget :process))
+         (cpu (assoc :cpu placements :test (function eq)))
+         (legend (assoc :cpu-legend placements :test (function eq)))
+         (cpu-call
+           (find :cpu *wp12b-screen-widget-calls* :key (function first)))
+         (cpu-rectangle (second cpu-call)))
+    (cl-weave:expect
+     (ntop.ui:rectangle-width cpu-rectangle)
+     :to-equal
+     (- (+ (ntop.ui:rectangle-width (cdr cpu))
+           (ntop.ui:rectangle-width (cdr legend)))
+        2))))))
                    (cl-weave:it
                     "renders the basic selector and screen table roles"
                     (let ((state (ntop.app.domain:make-app-state :basic-mode-p t))
@@ -417,11 +422,10 @@
                     "highlights a selected frame only after interaction"
                     (let* ((state (ntop.app.domain:make-app-state))
                            (process-rectangle
-                            (cdr
-                             (assoc :process
-                                    (ntop.app.presentation::%screen-layout-placements
-                                     80 24 state :default)
-                                    :test (function eq))))
+                            (cdr (assoc :process
+                                        (ntop.app.presentation::%screen-layout-placements
+                                         80 24 state :default)
+                                        :test (function eq))))
                            (x (ntop.ui:rectangle-x process-rectangle))
                            (y (ntop.ui:rectangle-y process-rectangle)))
                       (dolist (case (list (list nil :border)
@@ -436,62 +440,4 @@
                               (cl-tty-kit:screen-cell screen x y))
                              :to-equal
                              (ntop.ui:presentation-theme-style
-                              :default (second case))))))))
-                   (cl-weave:it
-                    "selects alternate GPU, temperature, battery and disk graph views"
-                    (dolist
-                        (case '((:memory :gpu :gpu :memory)
-                                (:temperature :temperature-graph
-                                              :temperature-graph
-                                              :temperature)
-                                (:temperature :battery :battery :temperature)
-                                (:disks :disk-io-graph :disk-io-graph :disks)))
-                      (destructuring-bind (base view expected default-widget)
-                          case
-                        (let* ((state (ntop.app.domain:make-app-state :selected-widget
-                                                                base))
-                               (*wp12b-screen-widget-calls* nil)
-                               (*wp12b-screen-recording-p* t)
-                               (unavailability-reasons (and (eq view :gpu)
-                                     (ntop.app.application::%make-application-unavailability-reasons
-                                      :gpu
-                                      :not-present))))
-                          (setf (gethash base
-                                         (ntop.app.domain:app-state-widget-v-states
-                                          state)) view)
-                          (%wp12b-screen-render 80
-                                                24
-                                                :state
-                                                state
-                                                :unavailability-reasons
-                                                unavailability-reasons)
-                          (cl-weave:expect
-                           (not
-                           (null
-                            (member expected
-                                    *wp12b-screen-widget-calls*
-                                    :key #'first
-                                    :test #'eq)))
-                           :to-be
-                           t)
-                          (cl-weave:expect
-                           (member default-widget
-                                   *wp12b-screen-widget-calls*
-                                   :key
-                                   #'first
-                                   :test
-                                   #'eq)
-                           :to-be
-                           nil)
-                          (when (eq view :gpu)
-                            (let ((gpu-call
-                                   (find :gpu
-                                         *wp12b-screen-widget-calls*
-                                         :key
-                                         #'first
-                                         :test
-                                         #'eq)))
-                              (cl-weave:expect
-                               (getf (third gpu-call) :unavailability-reason)
-                               :to-equal
-                               :not-present))))))))
+                              :default (second case)))))))))

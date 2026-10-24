@@ -75,25 +75,19 @@
 (defun %screen-layout-placements (columns rows state mode)
   (let* ((selected (ntop.app.domain:app-state-selected-widget state))
          (expanded-widget
-          (and (eq mode :expanded) (%screen-effective-widget selected state)))
+           (and (eq mode :expanded) (%screen-effective-widget selected state)))
          (placements
-          (ntop.ui:layout-widgets columns
-                                  rows
-                                  :mode
-                                  mode
-                                  :selected-widget
-                                  expanded-widget
-                                  :cpu-height
-                                  1
-                                  :memory-rows
-                                  2
-                                  :table-widget
-                                  :process))
-         (cpu (assoc :cpu placements :test #'eq))
-         (cpu-legend (assoc :cpu-legend placements :test #'eq)))
+           (ntop.ui:layout-widgets columns rows
+                                   :mode mode
+                                   :selected-widget expanded-widget
+                                   :cpu-height 1
+                                   :memory-rows 2
+                                   :table-widget :process))
+         (cpu (assoc :cpu placements :test (function eq)))
+         (cpu-legend (assoc :cpu-legend placements :test (function eq))))
     (when (and cpu cpu-legend)
       (setf (cdr cpu) (%screen-rectangle-union (cdr cpu) (cdr cpu-legend))))
-    (remove :cpu-legend placements :key #'car :test #'eq)))
+    (remove :cpu-legend placements :key (function car) :test (function eq))))
 
 (defun %screen-config (config mode)
   (let ((copy (ntop.shared.application::copy-application-config config)))
@@ -223,17 +217,18 @@
                                state
                                config
                                unavailability-reasons)
-      (when
-          (and (plusp (ntop.ui:rectangle-width widget-rectangle))
-               (plusp (ntop.ui:rectangle-height widget-rectangle)))
-        (setf clickable-areas (ntop.ui:draw-widget widget
-                                                   target
-                                                   widget-rectangle
-                                                   widget-state
-                                                   widget-config
-                                                   widget-series)))
+      (when (and (plusp (ntop.ui:rectangle-width widget-rectangle))
+                 (plusp (ntop.ui:rectangle-height widget-rectangle)))
+        (setf clickable-areas
+              (ntop.ui:draw-widget widget
+                                   target
+                                   widget-rectangle
+                                   widget-state
+                                   widget-config
+                                   widget-series)))
       (unless basic-p
-        (%screen-draw-frame target rectangle config (and selected-p *screen-selection-active-p*)))
+        (%screen-draw-frame target rectangle config
+                            (and selected-p *screen-selection-active-p*)))
       clickable-areas)))
 
 (defun draw-application-screen (target state
@@ -247,7 +242,7 @@
   (let* ((mode (%screen-layout-mode state config))
          (render-config (%screen-config config mode))
          (*screen-table-theme*
-           (ntop.shared.application:application-config-theme render-config))
+          (ntop.shared.application:application-config-theme render-config))
          (selected
           (%screen-widget-base
            (ntop.app.domain:app-state-selected-widget state)))
@@ -263,10 +258,8 @@
                        (%screen-draw-widget target
                                             widget
                                             rectangle
-                                            (eq
-                                             (%screen-widget-base
-                                              layout-widget)
-                                             selected)
+                                            (eq (%screen-widget-base layout-widget)
+                                                selected)
                                             state
                                             render-config
                                             series-by-widget
@@ -355,12 +348,13 @@
               :temperature-unit
               (ntop.shared.application:application-config-temperature-unit
                config))
-             (or (%screen-series series-by-widget :temperature)
-                 (and snapshot
-                      (ntop.app.domain:collection-snapshot-temperature-sample
-                       snapshot)))))
+             (and snapshot
+                  (ntop.app.domain:collection-snapshot-temperature-sample
+                   snapshot))))
     (:temperature-graph
-     (values nil config (%screen-series series-by-widget :temperature-graph)))
+     (values nil config
+             (or (%screen-series series-by-widget :temperature-graph)
+                 (%screen-series series-by-widget :temperature))))
     (:battery
      (values (%screen-state-for-widget state :battery)
              config
