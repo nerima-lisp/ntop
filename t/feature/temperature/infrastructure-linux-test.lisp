@@ -11,9 +11,7 @@
         (active-collector
          (or collector
              (ntop.temperature.infrastructure:make-linux-temperature-collector
-              :now
-              (lambda ()
-                10.0d0)))))
+              (make-instance 'temperature-fixture-clock :time 10.0d0)))))
     (ntop.platform.linux:with-linux-root
      (%linux-temperature-fixture-root fixture)
      (ntop.shared.application:collect-temperature-sample active-collector
@@ -30,10 +28,8 @@
 (defun %collect-linux-temperature-without-root ()
   (let ((result nil)
         (collector
-         (ntop.temperature.infrastructure:make-linux-temperature-collector :now
-                                                                           (lambda
-                                                                               ()
-                                                                             10.0d0))))
+         (ntop.temperature.infrastructure:make-linux-temperature-collector
+          (make-instance 'temperature-fixture-clock :time 10.0d0))))
     (let ((ntop.platform.linux:*linux-root* nil))
       (ntop.shared.application:collect-temperature-sample collector
                                                           (lambda (sample)
@@ -77,19 +73,23 @@
                     (let* ((sampled-at 10.0d0)
                            (collector
                             (ntop.temperature.infrastructure:make-linux-temperature-collector
-                             :now
-                             (lambda ()
-                               sampled-at))))
+                             (make-instance 'temperature-fixture-clock
+                                            :time
+                                            sampled-at))))
                       (cl-weave:expect
                        (%collect-linux-temperature-fixture "empty" collector)
                        :to-equal
                        '(:unavailable :not-present))
-                      (setf sampled-at 69.0d0)
+                      (setf (%temperature-fixture-clock-time
+                             (ntop.temperature.infrastructure::%temperature-clock
+                              collector)) 69.0d0)
                       (cl-weave:expect
                        (%collect-linux-temperature-fixture "complete" collector)
                        :to-equal
                        '(:unavailable :not-present))
-                      (setf sampled-at 70.0d0)
+                      (setf (%temperature-fixture-clock-time
+                             (ntop.temperature.infrastructure::%temperature-clock
+                              collector)) 70.0d0)
                       (let* ((result
                               (%collect-linux-temperature-fixture "complete"
                                                                   collector))
@@ -119,9 +119,9 @@
                     (let* ((sampled-at 10.0d0)
                            (collector
                             (ntop.temperature.infrastructure:make-linux-temperature-collector
-                             :now
-                             (lambda ()
-                               sampled-at)))
+                             (make-instance 'temperature-fixture-clock
+                                            :time
+                                            sampled-at)))
                            (initial
                             (%collect-linux-temperature-fixture "complete"
                                                                 collector)))
@@ -131,7 +131,9 @@
                        :to-equal
                        '(("coretemp: Package id 0" 42) ("coretemp" 0)
                          ("amdgpu: Edge" 58)))
-                      (setf sampled-at 69.0d0)
+                      (setf (%temperature-fixture-clock-time
+                             (ntop.temperature.infrastructure::%temperature-clock
+                              collector)) 69.0d0)
                       (let ((cached
                              (%collect-linux-temperature-fixture "thermal-only"
                                                                  collector)))
@@ -141,7 +143,9 @@
                          :to-equal
                          '(("coretemp: Package id 0" nil) ("coretemp" nil)
                            ("amdgpu: Edge" nil)))
-                        (setf sampled-at 70.0d0)
+                        (setf (%temperature-fixture-clock-time
+                               (ntop.temperature.infrastructure::%temperature-clock
+                                collector)) 70.0d0)
                         (let ((refreshed
                                (%collect-linux-temperature-fixture
                                 "thermal-only"
@@ -151,13 +155,13 @@
                            (%linux-temperature-sample-rows (second refreshed))
                            :to-equal
                            '(("acpitz" -5) ("x86_pkg_temp" 65)))))))
-                   (cl-weave:it
-                    "keeps an empty descriptor list empty"
-                    (cl-weave:expect
-                     (ntop.temperature.infrastructure::%linux-temperature-sources nil)
-                     :to-be
-                     nil)
-                    (cl-weave:expect
-                     (%collect-linux-temperature-fixture "empty")
-                     :to-equal
-                     '(:unavailable :not-present))))
+                   (cl-weave:it "keeps an empty descriptor list empty"
+                                (cl-weave:expect
+                                 (ntop.temperature.infrastructure::%linux-temperature-sources
+                                  nil)
+                                 :to-be
+                                 nil)
+                                (cl-weave:expect
+                                 (%collect-linux-temperature-fixture "empty")
+                                 :to-equal
+                                 '(:unavailable :not-present))))

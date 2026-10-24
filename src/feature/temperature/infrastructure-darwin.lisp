@@ -11,28 +11,19 @@
 (defun %darwin-temperature-sources (services)
   (loop for (identity name handle) in services
         when (and (stringp name) (plusp (length name)))
-          collect (make-temperature-source :identity
-                                           identity
-                                           :name
-                                           name
-                                           :handle
-                                           handle)))
+          collect (make-temperature-source :identity identity :name name :handle handle)))
 
-(defun %enumerate-darwin-temperature-sensors (api-loader api-cache
-                                                         on-sources
-                                                         on-unavailable)
+(defun %enumerate-darwin-temperature-sensors (api-loader api-cache on-sources on-unavailable)
   (let ((api
          (or (car api-cache)
-             (handler-case (setf (car api-cache) (%validate-darwin-iohid-api
-                                                  (funcall api-loader)))
+             (handler-case (setf (car api-cache) (%validate-darwin-iohid-api (funcall api-loader)))
                (error ()
                  nil)))))
     (if (null api)
         (funcall on-unavailable :private-api-unavailable)
         (multiple-value-bind (sources failure)
             (handler-case (values
-                           (%darwin-temperature-sources
-                            (funcall (getf api :enumerate-services)))
+                           (%darwin-temperature-sources (funcall (getf api :enumerate-services)))
                            nil)
               (error ()
                 (values nil t)))
@@ -40,14 +31,10 @@
               (funcall on-unavailable :read-failed)
               (funcall on-sources sources))))))
 
-(defun %read-darwin-temperature-sensors (sources api-loader
-                                                 api-cache
-                                                 on-values
-                                                 on-unavailable)
+(defun %read-darwin-temperature-sensors (sources api-loader api-cache on-values on-unavailable)
   (let ((api
          (or (car api-cache)
-             (handler-case (setf (car api-cache) (%validate-darwin-iohid-api
-                                                  (funcall api-loader)))
+             (handler-case (setf (car api-cache) (%validate-darwin-iohid-api (funcall api-loader)))
                (error ()
                  nil)))))
     (cond
@@ -59,33 +46,28 @@
                  (lambda (source)
                    (cons (temperature-source-identity source)
                          (handler-case (funcall (getf api :read-temperature)
-                                                (temperature-source-handle
-                                                 source))
+                                                (temperature-source-handle source))
                            (error ()
                              nil))))
                  sources))))))
 
-(defun make-darwin-temperature-collector (&key
-                                          (api-loader
-                                           #'ntop.platform.darwin:load-darwin-iohid-api)
-                                          (now nil now-p))
+(defun make-darwin-temperature-collector (clock &key
+                                                (api-loader
+                                                 #'ntop.platform.darwin:load-darwin-iohid-api))
   (unless (functionp api-loader)
     (error "API-LOADER must be a function, got ~S." api-loader))
   (let ((api-cache (list nil)))
-    (apply #'make-temperature-collector
-           (append
-            (list :enumerate-sensors
-                  (lambda (on-sources on-unavailable)
-                    (%enumerate-darwin-temperature-sensors api-loader
-                                                           api-cache
-                                                           on-sources
-                                                           on-unavailable))
-                  :read-sensors
-                  (lambda (sources on-values on-unavailable)
-                    (%read-darwin-temperature-sensors sources
-                                                      api-loader
-                                                      api-cache
-                                                      on-values
-                                                      on-unavailable)))
-            (when now-p
-              (list :now now))))))
+    (make-temperature-collector clock
+                                :enumerate-sensors
+                                (lambda (on-sources on-unavailable)
+                                  (%enumerate-darwin-temperature-sensors api-loader
+                                                                         api-cache
+                                                                         on-sources
+                                                                         on-unavailable))
+                                :read-sensors
+                                (lambda (sources on-values on-unavailable)
+                                  (%read-darwin-temperature-sensors sources
+                                                                    api-loader
+                                                                    api-cache
+                                                                    on-values
+                                                                    on-unavailable)))))

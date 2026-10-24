@@ -14,70 +14,72 @@
  "temperature infrastructure collector"
  (cl-weave:it
   "refreshes its source cache at sixty seconds and creates fresh samples"
-  (let* ((now 0)
-         (enumeration-count 0)
-         (sources
-          (list
-           (ntop.temperature.infrastructure:make-temperature-source :identity
-                                                                    "cpu0"
-                                                                    :name
-                                                                    "CPU"
-                                                                    :handle
-                                                                    :cpu0)))
-         (collector
-          (ntop.temperature.infrastructure:make-temperature-collector
-           :enumerate-sensors
-           (lambda (on-sources on-unavailable)
-            (declare (ignore on-unavailable))
-            (incf enumeration-count)
-            (funcall on-sources (copy-list sources)))
-           :read-sensors
-           (lambda (read-sources on-values on-unavailable)
-            (declare (ignore on-unavailable))
-            (funcall on-values
-                     (mapcar
-                      (lambda (source)
+  (let* ((enumeration-count 0)
+       (sources
+        (list
+         (ntop.temperature.infrastructure:make-temperature-source :identity
+                                                                  "cpu0"
+                                                                  :name
+                                                                  "CPU"
+                                                                  :handle
+                                                                  :cpu0)))
+       (collector
+        (ntop.temperature.infrastructure:make-temperature-collector
+         (make-instance 'temperature-fixture-clock :time 0)
+         :enumerate-sensors
+         (lambda (on-sources on-unavailable)
+           (declare (ignore on-unavailable))
+           (incf enumeration-count)
+           (funcall on-sources (copy-list sources)))
+         :read-sensors
+         (lambda (read-sources on-values on-unavailable)
+           (declare (ignore on-unavailable))
+           (funcall on-values
+                    (mapcar
+                     (lambda (source)
                        (cons
                         (ntop.temperature.infrastructure:temperature-source-identity
                          source)
                         45))
-                      read-sources)))
-           :now
-           (lambda ()
-            now)))
-         (first-result (%temperature-test-collect collector))
-         (first-sample (second first-result)))
-   (setf sources (list
-                  (ntop.temperature.infrastructure:make-temperature-source
-                   :identity
-                   "gpu0"
-                   :name
-                   "GPU"
-                   :handle
-                   :gpu0))
-         now 59)
-   (let* ((before-expiry (%temperature-test-collect collector))
-          (before-expiry-sample (second before-expiry)))
-    (setf now 60)
+                     read-sources)))))
+       (first-result (%temperature-test-collect collector))
+       (first-sample (second first-result)))
+  (setf sources (list
+                 (ntop.temperature.infrastructure:make-temperature-source
+                  :identity
+                  "gpu0"
+                  :name
+                  "GPU"
+                  :handle
+                  :gpu0))
+        (%temperature-fixture-clock-time
+         (ntop.temperature.infrastructure::%temperature-clock collector)) 59)
+  (let* ((before-expiry (%temperature-test-collect collector))
+         (before-expiry-sample (second before-expiry)))
+    (setf (%temperature-fixture-clock-time
+           (ntop.temperature.infrastructure::%temperature-clock collector)) 60)
     (let* ((at-expiry (%temperature-test-collect collector))
            (at-expiry-sample (second at-expiry)))
-     (cl-weave:expect
-      (list enumeration-count
-            (mapcar (lambda (sensor)
-                      (ntop.temperature.domain:temperature-sensor-name sensor))
-                    (%temperature-test-sensors first-result))
-            (mapcar (lambda (sensor)
-                      (ntop.temperature.domain:temperature-sensor-name sensor))
-                    (%temperature-test-sensors before-expiry))
-            (mapcar (lambda (sensor)
-                      (ntop.temperature.domain:temperature-sensor-name sensor))
-                    (%temperature-test-sensors at-expiry))
-            (ntop.shared.domain:sample-record-sampled-at first-sample)
-            (ntop.shared.domain:sample-record-sampled-at before-expiry-sample)
-            (ntop.shared.domain:sample-record-sampled-at at-expiry-sample)
-            (not (eq first-sample before-expiry-sample)))
-      :to-equal
-      (list 2 (list "CPU") (list "CPU") (list "GPU") 0 59 60 t))))))
+      (cl-weave:expect
+       (list enumeration-count
+             (mapcar
+              (lambda (sensor)
+                (ntop.temperature.domain:temperature-sensor-name sensor))
+              (%temperature-test-sensors first-result))
+             (mapcar
+              (lambda (sensor)
+                (ntop.temperature.domain:temperature-sensor-name sensor))
+              (%temperature-test-sensors before-expiry))
+             (mapcar
+              (lambda (sensor)
+                (ntop.temperature.domain:temperature-sensor-name sensor))
+              (%temperature-test-sensors at-expiry))
+             (ntop.shared.domain:sample-record-sampled-at first-sample)
+             (ntop.shared.domain:sample-record-sampled-at before-expiry-sample)
+             (ntop.shared.domain:sample-record-sampled-at at-expiry-sample)
+             (not (eq first-sample before-expiry-sample)))
+       :to-equal
+       (list 2 (list "CPU") (list "CPU") (list "GPU") 0 59 60 t))))))
  (cl-weave:it
   "matches identities with equal and keeps missing readings as N/A rows"
   (let* ((sources
@@ -102,18 +104,17 @@
                                                                     :cpu2)))
          (collector
           (ntop.temperature.infrastructure:make-temperature-collector
+           (make-instance 'temperature-fixture-clock :time 0)
            :enumerate-sensors
            (lambda (on-sources on-unavailable)
-            (declare (ignore on-unavailable))
-            (funcall on-sources sources))
+             (declare (ignore on-unavailable))
+             (funcall on-sources sources))
            :read-sensors
            (lambda (read-sources on-values on-unavailable)
-            (declare (ignore read-sources on-unavailable))
-            (funcall on-values
-                     (list (cons (copy-seq "cpu0") 42.5) (cons "cpu1" nil))))
-           :now
-           (lambda ()
-            12)))
+             (declare (ignore read-sources on-unavailable))
+             (funcall on-values
+                      (list (cons (copy-seq "cpu0") 42.5)
+                            (cons "cpu1" nil))))))
          (result (%temperature-test-collect collector))
          (sample (second result))
          (sensors (%temperature-test-sensors result)))
@@ -142,17 +143,15 @@
          (unavailable nil)
          (collector
           (ntop.temperature.infrastructure:make-temperature-collector
+           (make-instance 'temperature-fixture-clock :time 0)
            :enumerate-sensors
            (lambda (on-sources on-unavailable)
-            (declare (ignore on-sources))
-            (funcall on-unavailable :read-failed))
+             (declare (ignore on-sources))
+             (funcall on-unavailable :read-failed))
            :read-sensors
            (lambda (sources on-values on-unavailable)
-            (declare (ignore sources on-values on-unavailable))
-            (setf reader-called t))
-           :now
-           (lambda ()
-            0))))
+             (declare (ignore sources on-values on-unavailable))
+             (setf reader-called t)))))
    (ntop.shared.application:collect-temperature-sample collector
                                                        (lambda (value)
                                                         (setf sample value))
@@ -161,56 +160,42 @@
    (cl-weave:expect reader-called :to-be nil)
    (cl-weave:expect sample :to-be nil)
    (cl-weave:expect unavailable :to-be :read-failed)))
- (cl-weave:it "validates collector callbacks and forwards reader failures"
-              (cl-weave:signals simple-error
-                                (ntop.temperature.infrastructure:make-temperature-collector
-                                 :read-sensors
-                                 (lambda (sources on-values on-unavailable)
-                                  (declare (ignore sources
-                                                   on-values
-                                                   on-unavailable)))))
-              (cl-weave:signals simple-error
-                                (ntop.temperature.infrastructure:make-temperature-collector
-                                 :enumerate-sensors
-                                 (lambda (on-sources on-unavailable)
-                                  (declare (ignore on-sources on-unavailable)))))
-              (cl-weave:signals simple-error
-                                (ntop.temperature.infrastructure:make-temperature-collector
-                                 :enumerate-sensors
-                                 (lambda (on-sources on-unavailable)
-                                  (declare (ignore on-sources on-unavailable)))
-                                 :read-sensors
-                                 (lambda (sources on-values on-unavailable)
-                                  (declare (ignore sources
-                                                   on-values
-                                                   on-unavailable)))
-                                 :now
-                                 nil))
-              (let* ((source
-                      (ntop.temperature.infrastructure:make-temperature-source
-                       :identity
-                       "cpu0"
-                       :name
-                       "CPU"
-                       :handle
-                       :cpu0))
-                     (collector
-                      (ntop.temperature.infrastructure:make-temperature-collector
-                       :enumerate-sensors
-                       (lambda (on-sources on-unavailable)
-                        (declare (ignore on-unavailable))
-                        (funcall on-sources (list source)))
-                       :read-sensors
-                       (lambda (sources on-values on-unavailable)
-                        (declare (ignore sources on-values))
-                        (funcall on-unavailable :permission-denied))
-                       :now
-                       (lambda ()
-                        0)))
-                     (result (%temperature-test-collect collector)))
-               (cl-weave:expect result
-                                :to-equal
-                                '(:unavailable :permission-denied))))
+ (cl-weave:it
+  "validates collector callbacks and forwards reader failures"
+  (cl-weave:signals simple-error
+    (ntop.temperature.infrastructure:make-temperature-collector
+     (make-instance 'temperature-fixture-clock :time 0)
+     :read-sensors
+     (lambda (sources on-values on-unavailable)
+       (declare (ignore sources on-values on-unavailable)))))
+  (cl-weave:signals simple-error
+    (ntop.temperature.infrastructure:make-temperature-collector
+     (make-instance 'temperature-fixture-clock :time 0)
+     :enumerate-sensors
+     (lambda (on-sources on-unavailable)
+       (declare (ignore on-sources on-unavailable)))))
+  (cl-weave:signals program-error
+    (funcall #'ntop.temperature.infrastructure:make-temperature-collector))
+  (let* ((source
+          (ntop.temperature.infrastructure:make-temperature-source
+           :identity "cpu0"
+           :name "CPU"
+           :handle :cpu0))
+         (collector
+          (ntop.temperature.infrastructure:make-temperature-collector
+           (make-instance 'temperature-fixture-clock :time 0)
+           :enumerate-sensors
+           (lambda (on-sources on-unavailable)
+             (declare (ignore on-unavailable))
+             (funcall on-sources (list source)))
+           :read-sensors
+           (lambda (sources on-values on-unavailable)
+             (declare (ignore sources on-values))
+             (funcall on-unavailable :permission-denied))))
+         (result (%temperature-test-collect collector)))
+    (cl-weave:expect result
+                     :to-equal
+                     '(:unavailable :permission-denied))))
  (cl-weave:it
  "requires source identity and handle and validates display names"
  (cl-weave:signals simple-error
@@ -231,25 +216,25 @@
    (ntop.temperature.infrastructure:make-temperature-source
     :identity "cpu0" :name nil :handle :cpu0))
   :to-be nil))
- (cl-weave:it "uses deterministic monotonic clock readings"
-             (let* ((clock-id nil)
-                   (sampled-at nil)
-                   (ntop.temperature.infrastructure::*temperature-clock-gettime*
-                    (lambda (clock)
-                      (setf clock-id clock)
-                      (values 123 456789000)))
-                   (collector
-                    (ntop.temperature.infrastructure:make-temperature-collector
-                     :enumerate-sensors
-                     (lambda (on-sources on-unavailable)
-                       (declare (ignore on-sources on-unavailable)))
-                     :read-sensors
-                     (lambda (sources on-values on-unavailable)
-                       (declare (ignore sources on-values on-unavailable))))))
-               (setf sampled-at (funcall
-                                 (ntop.temperature.infrastructure::%temperature-now
-                                  collector)))
-               (cl-weave:expect (list clock-id sampled-at)
-                                :to-equal
-                                (list sb-unix:clock-monotonic 123.456789d0)))))
+ (cl-weave:it
+  "forwards clock failures without enumerating or reading sensors"
+  (let* ((enumeration-called nil)
+         (reader-called nil)
+         (collector
+          (ntop.temperature.infrastructure:make-temperature-collector
+           (make-instance 'temperature-fixture-clock
+                          :time 0
+                          :unavailable-reason :read-failed)
+           :enumerate-sensors
+           (lambda (on-sources on-unavailable)
+             (declare (ignore on-sources on-unavailable))
+             (setf enumeration-called t))
+           :read-sensors
+           (lambda (sources on-values on-unavailable)
+             (declare (ignore sources on-values on-unavailable))
+             (setf reader-called t))))
+         (result (%temperature-test-collect collector)))
+    (cl-weave:expect (list result enumeration-called reader-called)
+                     :to-equal
+                     '((:unavailable :read-failed) nil nil)))))
 

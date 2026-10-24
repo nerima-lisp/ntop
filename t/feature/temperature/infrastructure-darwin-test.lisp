@@ -37,13 +37,13 @@
                     (let* ((loader-calls 0)
                            (collector
                             (ntop.temperature.infrastructure:make-darwin-temperature-collector
+                             (make-instance 'temperature-fixture-clock
+                                            :time
+                                            0.0d0)
                              :api-loader
                              (lambda ()
                                (incf loader-calls)
-                               (error "Injected IOHID loader failure."))
-                             :now
-                             (lambda ()
-                               0.0d0)))
+                               (error "Injected IOHID loader failure."))))
                            (clock
                             (make-instance '%darwin-temperature-cpu-clock))
                            (cpu-collector
@@ -56,7 +56,8 @@
                                          :core-values
                                          (list
                                           (ntop.cpu.domain:make-cpu-core-value
-                                           :core-index 0)))))
+                                           :core-index
+                                           0)))))
                              :clock
                              clock))
                            (snapshot nil)
@@ -95,24 +96,27 @@
                                       (ntop.shared.application:make-application-config)
                                       5)
                                      :key
-                                     (lambda (row) (getf row :kind)))))
-                         (list
-                          (not (null cpu-sample))
-                          (ntop.cpu.domain:cpu-core-value-frequency-mhz
-                           (first
-                            (ntop.cpu.domain:cpu-sample-core-values cpu-sample)))
-                          (getf cpu-row :frequency)))
+                                     (lambda (row)
+                                       (getf row :kind)))))
+                         (list (not (null cpu-sample))
+                               (ntop.cpu.domain:cpu-core-value-frequency-mhz
+                                (first
+                                 (ntop.cpu.domain:cpu-sample-core-values
+                                  cpu-sample)))
+                               (getf cpu-row :frequency)))
                        :to-equal
                        (quote (t nil "N/A")))
                       (cl-weave:expect top-level-unavailable :to-be :not-called)))
                    (cl-weave:it
                     "keeps duplicate named services as rows and samples cached handles again"
-                    (let* ((times '(0.0d0 1.0d0))
-                           (loader-calls 0)
+                    (let* ((loader-calls 0)
                            (enumeration-count 0)
                            (read-count 0)
                            (collector
                             (ntop.temperature.infrastructure:make-darwin-temperature-collector
+                             (make-instance 'temperature-fixture-clock
+                                            :time
+                                            0.0d0)
                              :api-loader
                              (lambda ()
                                (incf loader-calls)
@@ -129,17 +133,18 @@
                                        (ecase handle
                                          (:service-a 40.0d0)
                                          (:service-b 41.0d0)
-                                         (:service-c nil)))))
-                             :now
-                             (lambda ()
-                               (pop times))))
+                                         (:service-c nil)))))))
                            (first-result nil)
                            (second-result nil))
                       (cl-weave:expect loader-calls :to-be 0)
-                      (setf first-result (%collect-darwin-temperature-sample
-                                          collector)
-                            second-result (%collect-darwin-temperature-sample
-                                           collector))
+                      (progn
+                        (setf first-result (%collect-darwin-temperature-sample
+                                            collector))
+                        (setf (%temperature-fixture-clock-time
+                               (ntop.temperature.infrastructure::%temperature-clock
+                                collector)) 1.0d0)
+                        (setf second-result (%collect-darwin-temperature-sample
+                                             collector)))
                       (cl-weave:expect loader-calls :to-be 1)
                       (cl-weave:expect enumeration-count :to-be 1)
                       (cl-weave:expect read-count :to-be 6)
@@ -158,6 +163,9 @@
                            (read-count 0)
                            (collector
                             (ntop.temperature.infrastructure:make-darwin-temperature-collector
+                             (make-instance 'temperature-fixture-clock
+                                            :time
+                                            0.0d0)
                              :api-loader
                              (lambda ()
                                (list :enumerate-services
@@ -167,10 +175,7 @@
                                      :read-temperature
                                      (lambda (handle)
                                        (declare (ignore handle))
-                                       (incf read-count))))
-                             :now
-                             (lambda ()
-                               0.0d0))))
+                                       (incf read-count)))))))
                       (cl-weave:expect
                        (%collect-darwin-temperature-sample collector)
                        :to-equal
@@ -182,43 +187,62 @@
                     (cl-weave:signals
                      simple-error
                      (ntop.temperature.infrastructure:make-darwin-temperature-collector
-                      :api-loader nil))
+                      (make-instance 'temperature-fixture-clock
+                                     :time
+                                     0.0d0)
+                      :api-loader
+                      nil))
                     (let ((collector
                            (ntop.temperature.infrastructure:make-darwin-temperature-collector
-                            :api-loader (lambda ()
-                                          (list :enumerate-services nil
-                                                :read-temperature (lambda (handle)
-                                                                    (declare (ignore handle)))))
-                            :now (lambda () 0.0d0))))
+                            (make-instance 'temperature-fixture-clock
+                                           :time
+                                           0.0d0)
+                            :api-loader
+                            (lambda ()
+                              (list :enumerate-services
+                                    nil
+                                    :read-temperature
+                                    (lambda (handle)
+                                      (declare (ignore handle))))))))
                       (cl-weave:expect
                        (%collect-darwin-temperature-sample collector)
                        :to-equal
                        '(:unavailable :private-api-unavailable)))
                     (let ((collector
                            (ntop.temperature.infrastructure:make-darwin-temperature-collector
-                            :api-loader (lambda ()
-                                          (list :enumerate-services
-                                                (lambda () (error "Injected enumeration failure."))
-                                                :read-temperature (lambda (handle)
-                                                                    (declare (ignore handle)))))
-                            :now (lambda () 0.0d0))))
+                            (make-instance 'temperature-fixture-clock
+                                           :time
+                                           0.0d0)
+                            :api-loader
+                            (lambda ()
+                              (list :enumerate-services
+                                    (lambda ()
+                                      (error "Injected enumeration failure."))
+                                    :read-temperature
+                                    (lambda (handle)
+                                      (declare (ignore handle))))))))
                       (cl-weave:expect
                        (%collect-darwin-temperature-sample collector)
                        :to-equal
                        '(:unavailable :read-failed)))
                     (let* ((collector
                             (ntop.temperature.infrastructure:make-darwin-temperature-collector
-                             :api-loader (lambda ()
-                                           (list :enumerate-services
-                                                 (lambda () '((101 "CPU" :cpu)))
-                                                 :read-temperature (lambda (handle)
-                                                                     (declare (ignore handle))
-                                                                     (error
-                                                                      "Injected read failure."))))
-                             :now (lambda () 0.0d0)))
-                           (result (%collect-darwin-temperature-sample collector)))
+                             (make-instance 'temperature-fixture-clock
+                                            :time
+                                            0.0d0)
+                             :api-loader
+                             (lambda ()
+                               (list :enumerate-services
+                                     (lambda ()
+                                       '((101 "CPU" :cpu)))
+                                     :read-temperature
+                                     (lambda (handle)
+                                       (declare (ignore handle))
+                                       (error "Injected read failure."))))))
+                           (result
+                            (%collect-darwin-temperature-sample collector)))
                       (cl-weave:expect (first result) :to-be :sample)
-                      (cl-weave:expect (%darwin-temperature-rows (second result))
-                                       :to-equal
-                                       '(("CPU" nil))))))
-
+                      (cl-weave:expect
+                       (%darwin-temperature-rows (second result))
+                       :to-equal
+                       '(("CPU" nil))))))

@@ -34,12 +34,9 @@
                millidegree-values)))
    on-unavailable))
 
-(defun make-linux-temperature-collector (&key now)
-  (apply #'make-temperature-collector
-         (append
-          (list :enumerate-sensors
-                #'%enumerate-linux-temperature-sensors
-                :read-sensors
-                #'%read-linux-temperature-sensors)
-          (when now
-            (list :now now)))))
+(defun make-linux-temperature-collector (clock)
+  (make-temperature-collector clock
+                              :enumerate-sensors
+                              #'%enumerate-linux-temperature-sensors
+                              :read-sensors
+                              #'%read-linux-temperature-sensors))
