@@ -55,11 +55,15 @@ def _check_python_supervisor(root: Path) -> None:
 
 
 def _check_package_use(root: Path, sbcl: str) -> None:
-    run_bounded(
+    result = run_bounded(
         [sbcl, "--script", str(root / "scripts" / "check-package-use.lisp")],
         timeout_seconds=60,
         cwd=str(root),
     )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Package-use check failed with exit code {result.returncode}."
+        )
 
 
 def main() -> int:
