@@ -1,4 +1,7 @@
 (in-package #:ntop.cpu.presentation)
+(defun %cpu-theme-name (config)
+  (string-downcase
+   (string (ntop.shared.application:application-config-theme config))))
 
 (defstruct
     (%cpu-legend-target

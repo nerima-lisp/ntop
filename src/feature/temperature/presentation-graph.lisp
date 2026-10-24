@@ -1,4 +1,7 @@
 (in-package #:ntop.temperature.presentation)
+(defun %temperature-graph-theme-name (config)
+  (string-downcase
+   (string (ntop.shared.application:application-config-theme config))))
 
 (defun %temperature-graph-series (series theme unit)
   (let* ((items (coerce (or series #()) 'list))
@@ -93,7 +96,7 @@
 (ntop.ui:define-widget :temperature-graph
                        (target rectangle state config series)
                        (declare (ignore state))
-                       (let* ((theme (ntop.shared.application:application-config-theme config))
+                       (let* ((theme (%temperature-graph-theme-name config))
                               (unit
                                (ntop.shared.application:application-config-temperature-unit
                                 config))
