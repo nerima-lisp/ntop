@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write # Create the GitHub Release.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Verify tag matches ntop.asd version
+        run: |
+          set -euo pipefail
+          asd_version="$(sed -n 's/^[[:space:]]*:version \"\([^\"]*\)\".*/\1/p' ntop.asd | head -n1)"
+          tag_version="${GITHUB_REF_NAME#v}"
+          echo "asd=$asd_version tag=$tag_version"
+          if [[ "$asd_version" != "$tag_version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match ntop.asd version $asd_version" >&2
+            exit 1
+          fi
+
+      # Check the checked-out tag tree using the same pinned Nix image as CI.
+      - name: Verify the tagged tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_name="ntop-release-flake-check-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            local command_status=$?
+            local cleanup_status=0
+            local output
+            trap - EXIT
+            output=$(timeout --signal=TERM --kill-after=5s 20s \
+              docker rm --force "$container_name" 2>&1) || cleanup_status=$?
+            if [[ "$cleanup_status" -ne 0 && "$output" != *"No such container"* ]]; then
+              printf '%s\n' "$output" >&2
+              exit 1
+            fi
+            exit "$command_status"
+          }
+          trap cleanup EXIT
+          timeout --signal=TERM --kill-after=15s 1800s docker run \
+            --name "$container_name" \
+            --platform linux/amd64 \
+            --rm \
+            --volume "$GITHUB_WORKSPACE:/src" \
+            --workdir /src \
+            nixos/nix:2.35.3 \
+            nix --extra-experimental-features 'nix-command flakes' \
+              flake check --print-build-logs path:/src
+
+      # Keep the release as a draft until its notes have been reviewed.
+      - name: Create draft release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          draft: true
