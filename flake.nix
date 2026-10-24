@@ -36,7 +36,7 @@
       flake = false;
     };
     cl-boundary-kit = {
-      url = "github:nerima-lisp/cl-boundary-kit/v2.3.0";
+      url = "github:nerima-lisp/cl-boundary-kit/v2.2.0";
       flake = false;
     };
     cl-date-kit = {

@@ -3,16 +3,16 @@
     "cl-boundary-kit": {
       "flake": false,
       "locked": {
-        "lastModified": 1785937199,
-        "narHash": "sha256-FAuQIpnySCV4KoPm2ugbq/9uMsBGBO5XzF0SE3o0MTI=",
+        "lastModified": 1785936130,
+        "narHash": "sha256-08xaERzRLebGgHfjBTWzhVNyJqojzocMGZxey5dUgtc=",
         "owner": "nerima-lisp",
         "repo": "cl-boundary-kit",
-        "rev": "62e4a7df3e52061c38b7ff4f596436bdda985f71",
+        "rev": "7ba808aa609e0ee860860feba5413883b69a9a03",
         "type": "github"
       },
       "original": {
         "owner": "nerima-lisp",
-        "ref": "v2.3.0",
+        "ref": "v2.2.0",
         "repo": "cl-boundary-kit",
         "type": "github"
       }
