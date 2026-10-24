@@ -372,7 +372,8 @@
  "merges Apple battery fields into the first matching source only"
  (let* ((source-types
           (mapcar
-           (lambda (source) (not (null (ntop.platform.darwin::%apple-smart-battery-source-p source))))
+           (lambda (source)
+             (not (null (ntop.platform.darwin::%apple-smart-battery-source-p source))))
            '((:source-type 7)
              (:source-type "UPS")
              (:source-type "InternalBattery")

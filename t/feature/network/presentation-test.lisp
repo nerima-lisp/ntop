@@ -293,7 +293,8 @@
     (let* ((ordinary-screen (cl-tty-kit:make-screen 80 8))
            (ordinary-state (%f4-state))
            (ordinary-config (%f4-basic-config)))
-      (ntop.ui:draw-widget :network ordinary-screen rectangle ordinary-state ordinary-config samples)
+      (ntop.ui:draw-widget :network ordinary-screen rectangle
+                           ordinary-state ordinary-config samples)
       (cl-weave:expect
        (list (%f4-baseline ordinary-state)
              (not (null (search "2.1KB" (cl-tty-kit:screen-to-string ordinary-screen)))))

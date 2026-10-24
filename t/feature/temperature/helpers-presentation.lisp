@@ -25,7 +25,9 @@
   "Load the expected rows for the graph fixture."
   (with-open-file
       (stream
-       (asdf:system-relative-pathname "ntop/test" "t/feature/temperature/fixtures/graph-golden.txt"))
+       (asdf:system-relative-pathname
+        "ntop/test"
+        "t/feature/temperature/fixtures/graph-golden.txt"))
     (loop for line = (read-line stream nil)
           while line
           collect line)))
