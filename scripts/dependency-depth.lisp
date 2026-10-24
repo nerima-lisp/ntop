@@ -133,23 +133,13 @@
                     "<none>"))))
     (format t "Longest org-edge path depth ~D:~%" maximum)
     (dolist (path paths)
-      (when (= (max 0
-                    (1- (count-if
-                         (lambda (system-name)
-                           (member system-name *org-main-system-names*
-                                   :test (function string=)))
-                         path)))
+      (when (= (maximum-dependency-depth (list path))
                maximum)
         (format t "  ~{~A~^ -> ~}~%" path)))
     (format t "Over-limit org-edge paths (> 4):~%")
     (dolist (path paths)
       (let ((depth
-              (max 0
-                   (1- (count-if
-                        (lambda (system-name)
-                          (member system-name *org-main-system-names*
-                                  :test (function string=)))
-                        path)))))
+              (maximum-dependency-depth (list path))))
         (when (> depth 4)
           (format t "  ~{~A~^ -> ~} [org-edge depth ~D]~%"
                   path depth))))
