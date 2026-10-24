@@ -165,11 +165,18 @@
          :to-be
          0)
         (cl-weave:expect
-         (hash-table-count
-          (ntop.app.application::application-composition-gpu-memory-device-totals
-           empty-composition))
-         :to-be
-         0)
+         (list
+          (hash-table-count
+           (ntop.app.application::application-composition-gpu-memory-device-totals
+            empty-composition))
+          (hash-table-count
+           (ntop.app.application::application-composition-history-names
+            empty-composition))
+          (length
+           (ntop.app.application::application-composition-history-keys
+            empty-composition)))
+         :to-equal
+         (list 0 0 0))
         (flet ((values-for (key)
                  (loop for sample across (ntop.app.application::%history-samples-for
                                           composition
@@ -191,9 +198,12 @@
           (cl-weave:expect (values-for (list :cpu :usage (list :core 1)))
                            :to-equal
                            (list 80d0))
-          (cl-weave:expect (values-for (list :memory :swap))
-                           :to-equal
-                           (list 20d0))
+          (cl-weave:expect
+           (list
+            (values-for (list :memory :ram))
+            (values-for (list :memory :swap)))
+           :to-equal
+           (list (list 50d0) (list 20d0)))
           (cl-weave:expect (values-for (list :memory :cache))
                            :to-equal
                            (list 10d0))
