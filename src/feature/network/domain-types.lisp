@@ -1,11 +1,43 @@
 (in-package #:ntop.network.domain)
 
-(ntop.shared.domain:define-value-type network-interface
-  (name nil :type (or null string))
-  (rx-bytes nil :type (or null ntop.shared.domain:measurement-counter))
-  (tx-bytes nil :type (or null ntop.shared.domain:measurement-counter))
-  (rx-packets nil :type (or null ntop.shared.domain:measurement-counter))
-  (tx-packets nil :type (or null ntop.shared.domain:measurement-counter)))
+(defun validate-typed-slots (instance specifications)
+  (dolist (specification specifications instance)
+    (destructuring-bind (accessor expected-type) specification
+      (let ((value (funcall (symbol-function accessor) instance)))
+        (if (typep value expected-type)
+            nil
+            (error (quote type-error) :datum value :expected-type expected-type))))))
 
-(ntop.shared.domain:define-sample-type network-sample
-  (interfaces nil :type list))
+(progn
+  (defstruct
+      (network-interface (:constructor make-network-interface-raw)
+                         (:copier nil))
+    (name nil :read-only t)
+    (rx-bytes nil :read-only t)
+    (tx-bytes nil :read-only t)
+    (rx-packets nil :read-only t)
+    (tx-packets nil :read-only t))
+  (defun make-network-interface (&rest initargs)
+    (let ((instance (apply #'make-network-interface-raw initargs)))
+      (validate-typed-slots instance
+                            '((network-interface-name (or null string))
+                              (network-interface-rx-bytes
+                               (or null ntop.shared.domain:measurement-counter))
+                              (network-interface-tx-bytes
+                               (or null ntop.shared.domain:measurement-counter))
+                              (network-interface-rx-packets
+                               (or null ntop.shared.domain:measurement-counter))
+                              (network-interface-tx-packets
+                               (or null ntop.shared.domain:measurement-counter))))
+      instance)))
+
+(progn
+  (defstruct
+      (network-sample (:include ntop.shared.domain:sample-record)
+                      (:constructor make-network-sample-raw)
+                      (:copier nil))
+    (interfaces nil :read-only t))
+  (defun make-network-sample (&rest initargs)
+    (let ((instance (apply #'make-network-sample-raw initargs)))
+      (validate-typed-slots instance '((network-sample-interfaces list)))
+      instance)))

@@ -70,3 +70,79 @@
                                          sample)
                                         :to-be
                                         expected))))
+
+(cl-weave:it-each
+ ((:ram-used-bytes ntop.memory.domain:make-memory-sample
+                   ntop.memory.domain:memory-sample-ram-used-bytes
+                   (:sampled-at 0.0)
+                   nil
+                   nil
+                   4096
+                   -1)
+  (:ram-total-bytes ntop.memory.domain:make-memory-sample
+                    ntop.memory.domain:memory-sample-ram-total-bytes
+                    (:sampled-at 0.0)
+                    nil
+                    nil
+                    8192
+                    -1)
+  (:swap-used-bytes ntop.memory.domain:make-memory-sample
+                    ntop.memory.domain:memory-sample-swap-used-bytes
+                    (:sampled-at 0.0)
+                    nil
+                    nil
+                    2048
+                    -1)
+  (:swap-total-bytes ntop.memory.domain:make-memory-sample
+                     ntop.memory.domain:memory-sample-swap-total-bytes
+                     (:sampled-at 0.0)
+                     nil
+                     nil
+                     4096
+                     -1)
+  (:cache-used-bytes ntop.memory.domain:make-memory-sample
+                     ntop.memory.domain:memory-sample-cache-used-bytes
+                     (:sampled-at 0.0)
+                     nil
+                     nil
+                     1024
+                     -1)
+  (:cache-total-bytes ntop.memory.domain:make-memory-sample
+                      ntop.memory.domain:memory-sample-cache-total-bytes
+                      (:sampled-at 0.0)
+                      nil
+                      nil
+                      2048
+                      -1)
+  (:arc-used-bytes ntop.memory.domain:make-memory-sample
+                   ntop.memory.domain:memory-sample-arc-used-bytes
+                   (:sampled-at 0.0)
+                   nil
+                   nil
+                   nil
+                   1)
+  (:arc-total-bytes ntop.memory.domain:make-memory-sample
+                    ntop.memory.domain:memory-sample-arc-total-bytes
+                    (:sampled-at 0.0)
+                    nil
+                    nil
+                    nil
+                    1))
+ "checks typed memory slot ~S"
+ (initarg constructor
+          accessor
+          required-initargs
+          default-value
+          nil-value
+          accepted-value
+          invalid-value)
+ (cl-weave:expect
+  (constructor-slot-outcomes constructor
+                             accessor
+                             required-initargs
+                             initarg
+                             nil-value
+                             accepted-value
+                             invalid-value)
+  :to-equal
+  (list default-value nil-value accepted-value :type-error)))
