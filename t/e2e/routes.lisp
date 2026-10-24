@@ -101,8 +101,12 @@
              (ntop.app.domain:parity-extension-behavior entry)))))
 
 (defun %route-classification (entry kind)
-  (declare (ignore entry kind))
-  (values :automated nil))
+  (if (and (eq kind :mouse)
+           (string= (ntop.app.domain:parity-mouse-action entry)
+                    "Ignore other buttons"))
+      (values :manual
+              "Crossterm 0.29 cannot encode a distinct Other button-down event.")
+    (values :automated nil)))
 
 (defun %additional-route (id action input expected classification reason
                           comparable-p)
@@ -127,7 +131,7 @@
     nil)
    (%additional-route
     "basic-mode" "Basic mode" "--basic"
-    "Basic mode shows CPU core and RAM gauges with network totals."
+    "Basic mode shows RAM and RX/TX totals with Disks and Temperatures navigation."
     :automated nil t)
    (%additional-route
     "resize" "Terminal resize" "80x24 to 120x36"
@@ -137,7 +141,9 @@
     "sleep-child" "Stop harness-owned sleep child"
     "search exact child PID; select its row; confirm stop"
     "Only the child started by this route exits after confirmation."
-    :automated nil t)
+    :manual
+    "BTM 0.14.9 showed No data for the harness-owned PID on this macOS host."
+    nil)
    (%additional-route
     "restore-normal" "Terminal restore after normal exit" "q"
     "stty -g before and after are equal after normal exit."
