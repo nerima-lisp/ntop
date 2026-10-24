@@ -32,24 +32,53 @@
    :wait wait))
 
 (cl-weave:describe "application event loop"
+  (cl-weave:it
+   "keeps widget navigation aligned with visible screen placements"
+   (let* ((state (ntop.app.domain:make-app-state :selected-widget :cpu))
+          (config (ntop.shared.application:make-application-config))
+          (screen-layout
+           (ntop.app.presentation::%screen-layout-placements
+            80 24 state :default))
+          (navigation-layout
+           (ntop.app.application::%layout-widgets-for-state
+            state config 80 24))
+          (expected
+           (quote ((:cpu 0 0 53 6)
+                   (:memory 53 0 27 6)
+                   (:network 0 6 32 6)
+                   (:disks 32 6 32 6)
+                   (:temperature 64 6 16 6)
+                   (:process 0 12 80 12)))))
+     (flet ((layout-values (placements)
+              (mapcar
+               (lambda (entry)
+                 (let ((rectangle (cdr entry)))
+                   (list (car entry)
+                         (ntop.ui:rectangle-x rectangle)
+                         (ntop.ui:rectangle-y rectangle)
+                         (ntop.ui:rectangle-width rectangle)
+                         (ntop.ui:rectangle-height rectangle))))
+               placements)))
+       (cl-weave:expect (layout-values screen-layout) :to-equal expected)
+       (cl-weave:expect (layout-values navigation-layout) :to-equal expected))
+     (ntop.app.application::%select-layout-neighbor state config 80 24 :down)
+     (cl-weave:expect
+      (ntop.app.domain:app-state-selected-widget state)
+      :to-equal
+      :network)))
   (cl-weave:it "pauses and resumes the selected histories"
-    (let ((state (ntop.app.domain::make-app-state))
-          (history (ntop.shared.domain:make-history-store 1)))
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :pause :value nil)
-       (list history) nil)
-      (cl-weave:expect (ntop.app.domain::app-state-paused-p state)
-                       :to-be t)
-      (cl-weave:expect (ntop.shared.domain:history-paused-p history)
-                       :to-be t)
-      (ntop.app.application:apply-application-action
-       state (ntop.app.domain:make-app-action :kind :pause :value nil)
-       (list history) nil)
-      (cl-weave:expect (ntop.app.domain::app-state-paused-p state)
-                       :to-be nil)
-      (cl-weave:expect (ntop.shared.domain:history-paused-p history)
-                       :to-be nil)))
-
+               (let ((state (ntop.app.domain::make-app-state))
+                     (history (ntop.shared.domain:make-history-store 1)))
+                 (ntop.app.application:apply-application-action
+                  state (ntop.app.domain:make-app-action :kind :pause :value nil)
+                  (list history) nil)
+                 (cl-weave:expect (ntop.app.domain::app-state-paused-p state) :to-be t)
+                 (cl-weave:expect (ntop.shared.domain:history-paused-p history) :to-be t)
+                 (ntop.app.application:apply-application-action
+                  state (ntop.app.domain:make-app-action :kind :pause :value nil)
+                  (list history) nil)
+                 (cl-weave:expect (ntop.app.domain::app-state-paused-p state) :to-be nil)
+                 (cl-weave:expect (ntop.shared.domain:history-paused-p history) :to-be nil)))
   (cl-weave:it "dispatches battery tab navigation as selection actions"
     (defmethod ntop.ui:translate-input
         ((raw-event (eql :battery-left-event))

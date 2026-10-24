@@ -1,44 +1,11 @@
 (in-package #:ntop.app.application)
 
   (defun %layout-widgets-for-state (state config columns rows)
-    (let* ((basic-p
-            (or (ntop.app.domain:app-state-basic-mode-p state)
-                (ntop.shared.application:application-config-basic-p config)))
-           (expanded-p
-            (or (ntop.app.domain:app-state-expanded-p state)
-                (ntop.shared.application:application-config-expanded-p config)))
-           (selected (ntop.app.domain:app-state-selected-widget state))
-           (view (gethash selected (ntop.app.domain:app-state-widget-v-states state)))
-           (view
-            (and
-             (or (null view)
-                 (loop with current-view = nil
-                       for next-view = (next-widget-view selected current-view)
-                       while next-view
-                       thereis (eq next-view view)
-                       do (setf current-view next-view)))
-             view))
-           (effective-widget (or view selected)))
-      (cond
-        (basic-p
-         (ntop.ui:layout-widgets columns
-                                 rows
-                                 :mode
-                                 :basic
-                                 :cpu-height
-                                 1
-                                 :memory-rows
-                                 2
-                                 :table-widget
-                                 :process))
-        (expanded-p
-         (ntop.ui:layout-widgets columns
-                                 rows
-                                 :mode
-                                 :expanded
-                                 :selected-widget
-                                 effective-widget))
-        (t (ntop.ui:layout-widgets columns rows)))))
+    (ntop.app.presentation::%screen-layout-placements
+     columns
+     rows
+     state
+     (ntop.app.presentation::%screen-layout-mode state config)))
 
   (defun %layout-widget-base (widget)
     (case widget ((:cpu :memory :network :disks :temperature :process) widget)
