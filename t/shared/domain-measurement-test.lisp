@@ -46,32 +46,91 @@
                      (ntop.shared.domain:measurement-available-p value)
                      :to-be
                      expected))
-                   (cl-weave:it "defines value types with read-only slots"
-                                (cl-weave:expect
-                                 (macroexpand-1
-                                  '(ntop.shared.domain:define-value-type
-                                    sample-value
-                                    amount
-                                    (count 0 :type integer)))
-                                 :to-equal
-                                 '(defstruct
-                                      (ntop.test::sample-value (:copier nil))
-                                    (ntop.test::amount nil :read-only t)
-                                    (count 0 :type integer :read-only t))))
+                   (cl-weave:it
+                    "defines value types with read-only slots and validating constructors"
+                    (cl-weave:expect
+                     (macroexpand-1
+                      '(ntop.shared.domain:define-value-type
+                        sample-value
+                        amount
+                        (item-count 0 :type integer)))
+                     :to-satisfy
+                     (lambda (form)
+                       (let ((structure (second form))
+                             (constructor (third form)))
+                         (and
+                          (equal (first form) 'progn)
+                          (equal (second structure)
+                                 '(ntop.test::sample-value
+                                   (:constructor
+                                    ntop.test::make-sample-value-raw)
+                                   (:copier nil)))
+                          (member
+                           '(ntop.test::amount nil :read-only t)
+                           (cddr structure)
+                           :test #'equal)
+                          (member
+                           '(ntop.test::item-count 0 :read-only t)
+                           (cddr structure)
+                           :test #'equal)
+                          (equal
+                           (third constructor)
+                           '(&key (ntop.test::amount nil)
+                             (ntop.test::item-count 0)))
+                          (equal
+                           (fourth constructor)
+                           '(ntop.shared.domain::validate-typed-slots
+                             (list
+                              (list ntop.test::item-count 'integer))))
+                          (equal
+                           (fifth constructor)
+                           '(ntop.test::make-sample-value-raw
+                             :amount ntop.test::amount
+                             :item-count ntop.test::item-count)))))))
                    (cl-weave:it
                     "defines sample types with the shared timestamp record"
                     (cl-weave:expect
                      (macroexpand-1
-                      '(ntop.shared.domain:define-sample-type sample-value
-                                                              (amount 0)))
+                      '(ntop.shared.domain:define-sample-type
+                        sample-value
+                        (amount 0 :type integer)))
                      :to-satisfy
                      (lambda (form)
-                       (equal form
-                              '(defstruct
-                                   (ntop.test::sample-value
-                                    (:include ntop.shared.domain:sample-record)
-                                    (:copier nil))
-                                 (ntop.test::amount 0 :read-only t))))))
+                       (let ((structure (second form))
+                             (constructor (third form)))
+                         (and
+                          (equal (first form) 'progn)
+                          (equal
+                           (second structure)
+                           '(ntop.test::sample-value
+                             (:include ntop.shared.domain:sample-record)
+                             (:constructor
+                              ntop.test::make-sample-value-raw)
+                             (:copier nil)))
+                          (member
+                           '(ntop.test::amount 0 :read-only t)
+                           (cddr structure)
+                           :test #'equal)
+                          (equal
+                           (third constructor)
+                           '(&key
+                             (ntop.shared.domain::sampled-at
+                              (error "Sample timestamp is required."))
+                             (ntop.test::amount 0)))
+                          (equal
+                           (fourth constructor)
+                           '(ntop.shared.domain::validate-typed-slots
+                             (list
+                              (list
+                               ntop.shared.domain::sampled-at
+                               'ntop.shared.domain:monotonic-seconds)
+                              (list ntop.test::amount 'integer))))
+                          (equal
+                           (fifth constructor)
+                           '(ntop.test::make-sample-value-raw
+                             :sampled-at
+                             ntop.shared.domain::sampled-at
+                             :amount ntop.test::amount)))))))
                    (cl-weave:it
                     "constructs a shared record with its monotonic timestamp"
                     (let ((sample
@@ -83,19 +142,48 @@
                        12.5))))
 
 (cl-weave:describe "shared measurement type boundaries"
-                   (cl-weave:it "expands sample types with symbol slots"
-                                (cl-weave:expect
-                                 (macroexpand-1
-                                  '(ntop.shared.domain:define-sample-type
-                                    sample-value
-                                    amount))
-                                 :to-equal
-                                 '(defstruct
-                                      (ntop.test::sample-value
-                                       (:include
-                                        ntop.shared.domain:sample-record)
-                                       (:copier nil))
-                                    (ntop.test::amount nil :read-only t))))
+                   (cl-weave:it
+                    "expands sample types with symbol slots"
+                    (cl-weave:expect
+                     (macroexpand-1
+                      '(ntop.shared.domain:define-sample-type sample-value
+                                                              amount))
+                     :to-satisfy
+                     (lambda (form)
+                       (let ((structure (second form))
+                             (constructor (third form)))
+                         (and
+                          (equal (first form) 'progn)
+                          (equal
+                           (second structure)
+                           '(ntop.test::sample-value
+                             (:include ntop.shared.domain:sample-record)
+                             (:constructor
+                              ntop.test::make-sample-value-raw)
+                             (:copier nil)))
+                          (member
+                           '(ntop.test::amount nil :read-only t)
+                           (cddr structure)
+                           :test #'equal)
+                          (equal
+                           (third constructor)
+                           '(&key
+                             (ntop.shared.domain::sampled-at
+                              (error "Sample timestamp is required."))
+                             (ntop.test::amount nil)))
+                          (equal
+                           (fourth constructor)
+                           '(ntop.shared.domain::validate-typed-slots
+                             (list
+                              (list
+                               ntop.shared.domain::sampled-at
+                               'ntop.shared.domain:monotonic-seconds))))
+                          (equal
+                           (fifth constructor)
+                           '(ntop.test::make-sample-value-raw
+                             :sampled-at
+                             ntop.shared.domain::sampled-at
+                             :amount ntop.test::amount)))))))
                    (cl-weave:it-each
                     ((ntop.shared.domain:measurement-value nil t)
                      (ntop.shared.domain:measurement-value 0 t)

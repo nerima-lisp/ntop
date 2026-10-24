@@ -8,10 +8,34 @@
                             '(ntop.shared.domain:define-value-type
                               cpu-core-value
                               (core-index nil)))))
-                      (cl-weave:expect (car expansion) :to-be 'defstruct)
-                      (cl-weave:expect (second (second expansion))
-                                       :to-equal
-                                       '(:copier nil))))
+                      (cl-weave:expect (car expansion) :to-be 'progn)
+                      (let ((defstruct-form (second expansion))
+                            (constructor-form (third expansion))
+                            (struct-spec (second (second expansion))))
+                        (cl-weave:expect (car defstruct-form)
+                                         :to-be
+                                         'defstruct)
+                        (cl-weave:expect (second struct-spec)
+                                         :to-equal
+                                         '(:constructor make-cpu-core-value-raw))
+                        (cl-weave:expect (third struct-spec)
+                                         :to-equal
+                                         '(:copier nil))
+                        (cl-weave:expect (third defstruct-form)
+                                         :to-equal
+                                         '(core-index nil :read-only t))
+                        (cl-weave:expect (car constructor-form)
+                                         :to-be
+                                         'defun)
+                        (cl-weave:expect (second constructor-form)
+                                         :to-be
+                                         'make-cpu-core-value)
+                        (cl-weave:expect (car (fourth constructor-form))
+                                         :to-be
+                                         'ntop.shared.domain::validate-typed-slots)
+                        (cl-weave:expect (car (fifth constructor-form))
+                                         :to-be
+                                         'make-cpu-core-value-raw))))
                    (cl-weave:it "includes the shared record in a sample type"
                                 (let ((expansion
                                        (macroexpand-1
@@ -20,11 +44,38 @@
                                           (average-usage-percent nil)))))
                                   (cl-weave:expect (car expansion)
                                                    :to-be
-                                                   'defstruct)
-                                  (cl-weave:expect (second (second expansion))
-                                                   :to-equal
-                                                   '(:include
-                                                     ntop.shared.domain:sample-record))))
+                                                   'progn)
+                                  (let ((defstruct-form (second expansion))
+                                        (constructor-form (third expansion))
+                                        (struct-spec (second (second expansion))))
+                                    (cl-weave:expect (car defstruct-form)
+                                                     :to-be
+                                                     'defstruct)
+                                    (cl-weave:expect (second struct-spec)
+                                                     :to-equal
+                                                     '(:include
+                                                       ntop.shared.domain:sample-record))
+                                    (cl-weave:expect (third struct-spec)
+                                                     :to-equal
+                                                     '(:constructor make-cpu-sample-raw))
+                                    (cl-weave:expect (fourth struct-spec)
+                                                     :to-equal
+                                                     '(:copier nil))
+                                    (cl-weave:expect (third defstruct-form)
+                                                     :to-equal
+                                                     '(average-usage-percent nil :read-only t))
+                                    (cl-weave:expect (car constructor-form)
+                                                     :to-be
+                                                     'defun)
+                                    (cl-weave:expect (second constructor-form)
+                                                     :to-be
+                                                     'make-cpu-sample)
+                                    (cl-weave:expect (car (fourth constructor-form))
+                                                     :to-be
+                                                     'ntop.shared.domain::validate-typed-slots)
+                                    (cl-weave:expect (car (fifth constructor-form))
+                                                     :to-be
+                                                     'make-cpu-sample-raw))))
                    (cl-weave:it
                     "constructs a sample with core values and its timestamp"
                     (let* ((core

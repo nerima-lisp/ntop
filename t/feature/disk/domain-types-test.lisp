@@ -5,13 +5,37 @@
                     "expands a value type into a copier-free defstruct"
                     (let ((expansion
                            (macroexpand-1
-                            '(ntop.shared.domain:define-value-type disk-mount
-                                                                   (device-name
-                                                                    nil)))))
-                      (cl-weave:expect (car expansion) :to-be 'defstruct)
-                      (cl-weave:expect (second (second expansion))
-                                       :to-equal
-                                       '(:copier nil))))
+                            '(ntop.shared.domain:define-value-type
+                              disk-mount
+                              (device-name nil)))))
+                      (cl-weave:expect (car expansion) :to-be 'progn)
+                      (let ((defstruct-form (second expansion))
+                            (constructor-form (third expansion))
+                            (struct-spec (second (second expansion))))
+                        (cl-weave:expect (car defstruct-form)
+                                         :to-be
+                                         'defstruct)
+                        (cl-weave:expect (second struct-spec)
+                                         :to-equal
+                                         '(:constructor make-disk-mount-raw))
+                        (cl-weave:expect (third struct-spec)
+                                         :to-equal
+                                         '(:copier nil))
+                        (cl-weave:expect (third defstruct-form)
+                                         :to-equal
+                                         '(device-name nil :read-only t))
+                        (cl-weave:expect (car constructor-form)
+                                         :to-be
+                                         'defun)
+                        (cl-weave:expect (second constructor-form)
+                                         :to-be
+                                         'make-disk-mount)
+                        (cl-weave:expect (car (fourth constructor-form))
+                                         :to-be
+                                         'ntop.shared.domain::validate-typed-slots)
+                        (cl-weave:expect (car (fifth constructor-form))
+                                         :to-be
+                                         'make-disk-mount-raw))))
                    (cl-weave:it "includes the shared record in a sample type"
                                 (let ((expansion
                                        (macroexpand-1
@@ -20,11 +44,38 @@
                                           (mounts nil)))))
                                   (cl-weave:expect (car expansion)
                                                    :to-be
-                                                   'defstruct)
-                                  (cl-weave:expect (second (second expansion))
-                                                   :to-equal
-                                                   '(:include
-                                                     ntop.shared.domain:sample-record))))
+                                                   'progn)
+                                  (let ((defstruct-form (second expansion))
+                                        (constructor-form (third expansion))
+                                        (struct-spec (second (second expansion))))
+                                    (cl-weave:expect (car defstruct-form)
+                                                     :to-be
+                                                     'defstruct)
+                                    (cl-weave:expect (second struct-spec)
+                                                     :to-equal
+                                                     '(:include
+                                                       ntop.shared.domain:sample-record))
+                                    (cl-weave:expect (third struct-spec)
+                                                     :to-equal
+                                                     '(:constructor make-disk-sample-raw))
+                                    (cl-weave:expect (fourth struct-spec)
+                                                     :to-equal
+                                                     '(:copier nil))
+                                    (cl-weave:expect (third defstruct-form)
+                                                     :to-equal
+                                                     '(mounts nil :read-only t))
+                                    (cl-weave:expect (car constructor-form)
+                                                     :to-be
+                                                     'defun)
+                                    (cl-weave:expect (second constructor-form)
+                                                     :to-be
+                                                     'make-disk-sample)
+                                    (cl-weave:expect (car (fourth constructor-form))
+                                                     :to-be
+                                                     'ntop.shared.domain::validate-typed-slots)
+                                    (cl-weave:expect (car (fifth constructor-form))
+                                                     :to-be
+                                                     'make-disk-sample-raw))))
                    (cl-weave:it "constructs a sample with a mount and device"
                                 (let* ((mount
                                         (ntop.disk.domain:make-disk-mount

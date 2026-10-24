@@ -1,13 +1,5 @@
 (in-package #:ntop.app.domain)
 
-(defun validate-typed-slots (instance specifications)
-  (dolist (specification specifications instance)
-    (destructuring-bind (accessor expected-type) specification
-      (let ((value (funcall (symbol-function accessor) instance)))
-        (if (typep value expected-type)
-            nil
-            (error (quote type-error) :datum value :expected-type expected-type))))))
-
 (progn
   (defstruct (app-state (:constructor make-app-state-raw))
     selected-widget
@@ -75,39 +67,23 @@
                 :process-terminate
                 :quit))
 
-(progn
-  (defstruct
-      (collection-snapshot (:constructor make-collection-snapshot-raw)
-                           (:copier nil))
-    (sampled-at (error "Snapshot timestamp is required.") :read-only t)
-    (cpu-sample nil :read-only t)
-    (memory-sample nil :read-only t)
-    (gpu-sample nil :read-only t)
-    (network-sample nil :read-only t)
-    (disk-sample nil :read-only t)
-    (temperature-sample nil :read-only t)
-    (battery-sample nil :read-only t)
-    (process-sample nil :read-only t))
-  (defun make-collection-snapshot (&rest initargs)
-    (let ((instance (apply #'make-collection-snapshot-raw initargs)))
-      (validate-typed-slots instance
-                            '((collection-snapshot-sampled-at
-                               ntop.shared.domain:monotonic-seconds)
-                              (collection-snapshot-cpu-sample
-                               (or null ntop.cpu.domain:cpu-sample))
-                              (collection-snapshot-memory-sample
-                               (or null ntop.memory.domain:memory-sample))
-                              (collection-snapshot-gpu-sample
-                               (or null ntop.gpu.domain:gpu-sample))
-                              (collection-snapshot-network-sample
-                               (or null ntop.network.domain:network-sample))
-                              (collection-snapshot-disk-sample
-                               (or null ntop.disk.domain:disk-sample))
-                              (collection-snapshot-temperature-sample
-                               (or null
-                                   ntop.temperature.domain:temperature-sample))
-                              (collection-snapshot-battery-sample
-                               (or null ntop.battery.domain:battery-sample))
-                              (collection-snapshot-process-sample
-                               (or null ntop.process.domain:process-sample))))
-      instance)))
+(ntop.shared.domain:define-value-type collection-snapshot
+  (sampled-at (error "Snapshot timestamp is required.")
+              :type ntop.shared.domain:monotonic-seconds)
+  (cpu-sample nil
+              :type (or null ntop.cpu.domain:cpu-sample))
+  (memory-sample nil
+                  :type (or null ntop.memory.domain:memory-sample))
+  (gpu-sample nil
+              :type (or null ntop.gpu.domain:gpu-sample))
+  (network-sample nil
+                  :type (or null ntop.network.domain:network-sample))
+  (disk-sample nil
+               :type (or null ntop.disk.domain:disk-sample))
+  (temperature-sample nil
+                      :type (or null
+                                ntop.temperature.domain:temperature-sample))
+  (battery-sample nil
+                  :type (or null ntop.battery.domain:battery-sample))
+  (process-sample nil
+                  :type (or null ntop.process.domain:process-sample)))

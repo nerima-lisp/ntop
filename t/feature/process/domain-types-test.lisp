@@ -8,23 +8,53 @@
                             '(ntop.shared.domain:define-value-type
                               process-record
                               (pid nil)))))
-                      (cl-weave:expect (car expansion) :to-be 'defstruct)
-                      (cl-weave:expect (second (second expansion))
-                                       :to-equal
-                                       '(:copier nil))))
-                   (cl-weave:it "includes the shared record in a sample type"
-                                (let ((expansion
-                                       (macroexpand-1
-                                        '(ntop.shared.domain:define-sample-type
-                                          process-sample
-                                          (processes nil)))))
-                                  (cl-weave:expect (car expansion)
-                                                   :to-be
-                                                   'defstruct)
-                                  (cl-weave:expect (second (second expansion))
-                                                   :to-equal
-                                                   '(:include
-                                                     ntop.shared.domain:sample-record))))
+                      (cl-weave:expect (car expansion) :to-be 'progn)
+                      (cl-weave:expect (car (second expansion))
+                                       :to-be 'defstruct)
+                      (cl-weave:expect
+                       (second (second (second expansion)))
+                       :to-equal
+                       '(:constructor make-process-record-raw))
+                      (cl-weave:expect
+                       (third (second (second expansion)))
+                       :to-equal
+                       '(:copier nil))
+                      (cl-weave:expect (car (third expansion)) :to-be 'defun)
+                      (cl-weave:expect (second (third expansion))
+                                       :to-be
+                                       'make-process-record)
+                      (cl-weave:expect (car (fourth (third expansion)))
+                                       :to-be
+                                       'ntop.shared.domain::validate-typed-slots)))
+                   (cl-weave:it
+                    "includes the shared record in a sample type"
+                    (let ((expansion
+                           (macroexpand-1
+                            '(ntop.shared.domain:define-sample-type
+                              process-sample
+                              (processes nil)))))
+                      (cl-weave:expect (car expansion) :to-be 'progn)
+                      (cl-weave:expect (car (second expansion))
+                                       :to-be 'defstruct)
+                      (cl-weave:expect
+                       (second (second (second expansion)))
+                       :to-equal
+                       '(:include ntop.shared.domain:sample-record))
+                      (cl-weave:expect
+                       (third (second (second expansion)))
+                       :to-equal
+                       '(:constructor make-process-sample-raw))
+                      (cl-weave:expect
+                       (fourth (second (second expansion)))
+                       :to-equal
+                       '(:copier nil))
+                      (cl-weave:expect (car (third expansion)) :to-be 'defun)
+                      (cl-weave:expect (second (third expansion))
+                                       :to-be
+                                       'make-process-sample)
+                      (cl-weave:expect (car (fourth (third expansion)))
+                                       :to-be
+                                       'ntop.shared.domain::validate-typed-slots)))
                    (cl-weave:it
                     "constructs a process sample with threads and a timestamp"
                     (let* ((thread

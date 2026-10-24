@@ -1,19 +1,35 @@
 (in-package #:ntop.test)
 
 (cl-weave:describe "memory domain types"
-                   (cl-weave:it "includes the shared record in a sample type"
-                                (let ((expansion
-                                       (macroexpand-1
-                                        '(ntop.shared.domain:define-sample-type
-                                          memory-sample
-                                          (ram-used-bytes nil)))))
-                                  (cl-weave:expect (car expansion)
-                                                   :to-be
-                                                   'defstruct)
-                                  (cl-weave:expect (second (second expansion))
-                                                   :to-equal
-                                                   '(:include
-                                                     ntop.shared.domain:sample-record))))
+                   (cl-weave:it
+                    "includes the shared record in a sample type"
+                    (let ((expansion
+                           (macroexpand-1
+                            '(ntop.shared.domain:define-sample-type
+                              memory-sample
+                              (ram-used-bytes nil)))))
+                      (cl-weave:expect (car expansion) :to-be 'progn)
+                      (cl-weave:expect (car (second expansion))
+                                       :to-be 'defstruct)
+                      (cl-weave:expect
+                       (second (second (second expansion)))
+                       :to-equal
+                       '(:include ntop.shared.domain:sample-record))
+                      (cl-weave:expect
+                       (third (second (second expansion)))
+                       :to-equal
+                       '(:constructor make-memory-sample-raw))
+                      (cl-weave:expect
+                       (fourth (second (second expansion)))
+                       :to-equal
+                       '(:copier nil))
+                      (cl-weave:expect (car (third expansion)) :to-be 'defun)
+                      (cl-weave:expect (second (third expansion))
+                                       :to-be
+                                       'make-memory-sample)
+                      (cl-weave:expect (car (fourth (third expansion)))
+                                       :to-be
+                                       'ntop.shared.domain::validate-typed-slots)))
                    (cl-weave:it
                     "constructs a sample with its timestamp and unavailable ARC"
                     (let ((sample

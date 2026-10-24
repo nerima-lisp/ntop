@@ -1,5 +1,8 @@
 (in-package #:ntop.test)
 
+(defun temperature-sensor-reading (sensor)
+  (ntop.temperature.domain:temperature-sensor-temperature-celsius sensor))
+
 (cl-weave:describe "temperature domain types"
                    (cl-weave:it
                     "expands a value type into a copier-free defstruct"
@@ -8,23 +11,53 @@
                             '(ntop.shared.domain:define-value-type
                               temperature-sensor
                               (name nil)))))
-                      (cl-weave:expect (car expansion) :to-be 'defstruct)
-                      (cl-weave:expect (second (second expansion))
-                                       :to-equal
-                                       '(:copier nil))))
-                   (cl-weave:it "includes the shared record in a sample type"
-                                (let ((expansion
-                                       (macroexpand-1
-                                        '(ntop.shared.domain:define-sample-type
-                                          temperature-sample
-                                          (sensors nil)))))
-                                  (cl-weave:expect (car expansion)
-                                                   :to-be
-                                                   'defstruct)
-                                  (cl-weave:expect (second (second expansion))
-                                                   :to-equal
-                                                   '(:include
-                                                     ntop.shared.domain:sample-record))))
+                      (cl-weave:expect (car expansion) :to-be 'progn)
+                      (cl-weave:expect (car (second expansion))
+                                       :to-be 'defstruct)
+                      (cl-weave:expect
+                       (second (second (second expansion)))
+                       :to-equal
+                       '(:constructor make-temperature-sensor-raw))
+                      (cl-weave:expect
+                       (third (second (second expansion)))
+                       :to-equal
+                       '(:copier nil))
+                      (cl-weave:expect (car (third expansion)) :to-be 'defun)
+                      (cl-weave:expect (second (third expansion))
+                                       :to-be
+                                       'make-temperature-sensor)
+                      (cl-weave:expect (car (fourth (third expansion)))
+                                       :to-be
+                                       'ntop.shared.domain::validate-typed-slots)))
+                   (cl-weave:it
+                    "includes the shared record in a sample type"
+                    (let ((expansion
+                           (macroexpand-1
+                            '(ntop.shared.domain:define-sample-type
+                              temperature-sample
+                              (sensors nil)))))
+                      (cl-weave:expect (car expansion) :to-be 'progn)
+                      (cl-weave:expect (car (second expansion))
+                                       :to-be 'defstruct)
+                      (cl-weave:expect
+                       (second (second (second expansion)))
+                       :to-equal
+                       '(:include ntop.shared.domain:sample-record))
+                      (cl-weave:expect
+                       (third (second (second expansion)))
+                       :to-equal
+                       '(:constructor make-temperature-sample-raw))
+                      (cl-weave:expect
+                       (fourth (second (second expansion)))
+                       :to-equal
+                       '(:copier nil))
+                      (cl-weave:expect (car (third expansion)) :to-be 'defun)
+                      (cl-weave:expect (second (third expansion))
+                                       :to-be
+                                       'make-temperature-sample)
+                      (cl-weave:expect (car (fourth (third expansion)))
+                                       :to-be
+                                       'ntop.shared.domain::validate-typed-slots)))
                    (cl-weave:it
                     "constructs a sample with a sensor and timestamp"
                     (let* ((sensor
@@ -58,8 +91,7 @@
                                              :temperature-celsius
                                              value)))
                                        (cl-weave:expect
-                                        (ntop.temperature.domain:temperature-sensor-temperature-celsius
-                                         sensor)
+                                        (temperature-sensor-reading sensor)
                                         :to-be
                                         expected))))
 
