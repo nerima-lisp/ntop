@@ -5,7 +5,7 @@
  #:clickable-area #:make-clickable-area #:clickable-area-rectangle #:clickable-area-action
  #:clickable-area-value #:draw-widget #:define-widget #:translate-input
  ;; WP1: formatting and themes.
- #:format-cpu-basic-percent #:format-cpu-title #:format-percent-value
+ #:format-cpu-basic-percent #:format-cpu-title #:format-percent-value #:format-fixed
  #:format-memory-percentage #:format-memory-fraction
  #:format-memory-legend #:format-process-binary-bytes #:format-process-decimal-bytes
  #:format-disk-capacity #:format-disk-io-rate #:format-process-io-rate #:format-network-rate

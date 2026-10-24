@@ -190,6 +190,7 @@
   :components
   (;; WP0-1: test package, smoke tests, and architecture policy.
    (:file "t/package")
+   (:file "t/shared/infrastructure-test-support")
    (:file "t/smoke-test")
    (:file "t/architecture/checker")
    (:file "t/architecture/checker-test")
