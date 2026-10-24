@@ -237,7 +237,7 @@
              (list sb-posix:sigint (list :terminate sb-posix:sigint)))
             expected-signals)))))))
   (cl-weave:it "runs its callback in a PTY terminal session"
-  (let ((pty (cl-tty-kit:make-pty :program "/bin/cat"))
+  (let ((pty (cl-tty-kit:make-pty :program "cat"))
         (installed-signals nil)
         (defaults-restored nil)
         (callback-event :unset)

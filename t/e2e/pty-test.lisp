@@ -158,7 +158,7 @@
                            (caught nil))
                       (handler-case
                           (ntop.e2e::%read-command-output
-                           "/bin/sleep" (list "2") 10d0)
+                           "sleep" (list "2") 10d0)
                         (error (condition)
                           (setf caught condition)))
                       (cl-weave:expect
@@ -170,7 +170,7 @@
                     "waits for the child process during session close"
                     (let* ((session
                             (ntop.e2e::launch-e2e-process
-                             "/bin/sleep" (list "30") 24 80
+                             "sleep" (list "30") 24 80
                              :timeout-seconds 5d0))
                            (process
                             (ntop.e2e::e2e-session-process session)))

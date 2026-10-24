@@ -132,7 +132,7 @@
                        "printf '\\033[?25$p'~%"
                        "reply=$(dd bs=1 count=9 2>/dev/null | od -An -tx1)~%"
                        "printf '%s%s\\n' '__NTOP_N6_QUERY_REPLY__' \"$reply\"~%"
-                       "exec /bin/sleep 3600~%")))
+                       "exec sleep 3600~%")))
 
 (defun %collect-n6-query-exchange (session combined timeout)
   (pty-send-input session
@@ -166,7 +166,7 @@
 (defun %run-n6-once (directory btm rows columns rate timeout run)
   (let* ((config (%write-btm-config directory run rate))
          (session
-          (launch-e2e-process "/bin/sh"
+          (launch-e2e-process "sh"
                               (list "-c"
                                     (%n6-script)
                                     "ntop-e2e-n6"

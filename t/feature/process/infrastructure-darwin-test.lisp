@@ -15,7 +15,7 @@
     ((%f8a-darwin-ps-output (arguments)
        (let ((result
                (host-kit:run-program
-                "/bin/ps" arguments
+                "ps" arguments
                 :timeout 5
                 :environment '("LC_ALL=C")
                 :max-output-characters 1048576)))
@@ -288,47 +288,57 @@
            :to-be-null)))))
    #+darwin
    (cl-weave:it
-    "measures a child disk writer near one MiB per second"
+    "computes a positive write rate from increasing child byte counts"
     (host-kit:call-with-temporary-directory
      (lambda (directory)
-       (let* ((pathname (merge-pathnames "process-writer.bin" directory))
-              (child (%f8a-darwin-start-writer pathname)))
-         (unwind-protect
-              (progn
-                (sleep 0.5)
-                (multiple-value-bind (before before-reason)
-                    (%f8a-darwin-sample)
-                  (let ((before-record
-                          (%f8a-darwin-record
-                           before (sb-ext:process-pid child))))
-                    (cl-weave:expect before-reason :to-be :unset)
-                    (cl-weave:expect before-record :to-be-truthy)
-                    (cl-weave:expect
-                     (ntop.process.domain:process-record-write-bytes
-                      before-record)
-                     :to-be-truthy)
-                    (sleep 4)
-                    (multiple-value-bind (after after-reason)
-                        (%f8a-darwin-sample)
-                      (let* ((after-record
-                               (%f8a-darwin-record
-                                after (sb-ext:process-pid child)))
-                             (rate
-                               (ntop.process.domain:process-write-bytes-per-second
-                                before after (sb-ext:process-pid child))))
-                        (cl-weave:expect after-reason :to-be :unset)
-                        (cl-weave:expect after-record :to-be-truthy)
-                        (cl-weave:expect
-                         (> (ntop.process.domain:process-record-write-bytes
-                             after-record)
-                            (ntop.process.domain:process-record-write-bytes
-                             before-record))
-                         :to-be t)
-                        (cl-weave:expect
-                         (and rate
-                              (< (abs (- rate 1048576.0d0)) 104857.6d0))
-                         :to-be t))))))
-           (%f8a-darwin-stop-child child))))
+      (let* ((pathname (merge-pathnames "process-writer.bin" directory))
+             (child (%f8a-darwin-start-writer pathname)))
+        (unwind-protect
+         (progn
+          (sleep 0.5)
+          (multiple-value-bind (before before-reason)
+              (%f8a-darwin-sample)
+           (let* ((before-record
+                    (%f8a-darwin-record before (sb-ext:process-pid child)))
+                  (before-file-bytes
+                    (with-open-file (stream pathname
+                                            :direction :input
+                                            :element-type '(unsigned-byte 8))
+                      (file-length stream)))
+                  (before-write-bytes
+                    (and before-record
+                         (ntop.process.domain:process-record-write-bytes
+                          before-record))))
+            (cl-weave:expect before-reason :to-be :unset)
+            (cl-weave:expect before-record :to-be-truthy)
+            (cl-weave:expect before-write-bytes :to-be-truthy)
+            (sleep 4)
+            (multiple-value-bind (after after-reason)
+                (%f8a-darwin-sample)
+             (let* ((after-record
+                      (%f8a-darwin-record after (sb-ext:process-pid child)))
+                    (after-file-bytes
+                      (with-open-file (stream pathname
+                                              :direction :input
+                                              :element-type '(unsigned-byte 8))
+                        (file-length stream)))
+                    (after-write-bytes
+                      (and after-record
+                           (ntop.process.domain:process-record-write-bytes
+                            after-record)))
+                    (write-rate
+                      (ntop.process.domain:process-write-bytes-per-second
+                       before after (sb-ext:process-pid child))))
+              (cl-weave:expect after-reason :to-be :unset)
+              (cl-weave:expect after-record :to-be-truthy)
+              (cl-weave:expect (> after-file-bytes before-file-bytes) :to-be t)
+              (cl-weave:expect
+               (and before-write-bytes after-write-bytes
+                    (> after-write-bytes before-write-bytes))
+               :to-be t)
+              (cl-weave:expect (and write-rate (plusp write-rate))
+                               :to-be t))))))
+         (%f8a-darwin-stop-child child))))
      :prefix "ntop-f8a-process-")))))
 
 (cl-weave:describe

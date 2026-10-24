@@ -46,6 +46,7 @@
             ((search "not charging" output :test #'char-equal) :unknown)
             ((search "discharging" output :test #'char-equal) :discharging)
             ((search "charging" output :test #'char-equal) :charging)
+            ((search "finishing charge" output :test #'char-equal) :charging)
             ((search "charged" output :test #'char-equal) :full)
             (t nil))))
       (unless status

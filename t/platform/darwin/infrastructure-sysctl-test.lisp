@@ -6,7 +6,7 @@
 
 (defun %sysctl-command-count ()
   (let ((result
-         (host-kit:run-program "/usr/sbin/sysctl"
+         (host-kit:run-program "sysctl"
                                (list "-n" "hw.ncpu")
                                :timeout
                                5
@@ -237,7 +237,7 @@
                                               (setf reason failure)))
                                            (let* ((command
                                                    (host-kit:run-program
-                                                    "/usr/sbin/sysctl"
+                                                    "sysctl"
                                                     (list "-n" "hw.model")
                                                     :timeout
                                                     5

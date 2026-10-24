@@ -23,7 +23,7 @@
 
 (defun %darwin-memory-reference-vm-stat ()
   (let* ((output
-           (%darwin-memory-reference-command-output "/usr/bin/vm_stat" nil))
+           (%darwin-memory-reference-command-output "vm_stat" nil))
          (marker (search "page size of " output)))
     (unless marker
       (error "vm_stat did not report its page size."))
@@ -64,7 +64,7 @@
   (parse-integer
    (string-trim '(#\Space #\Tab #\Return #\Newline)
                 (%darwin-memory-reference-command-output
-                 "/usr/sbin/sysctl" (list "-n" name)))))
+                 "sysctl" (list "-n" name)))))
 
 (defun %darwin-memory-total-pages (memory-bytes page-size)
   (unless (and (plusp page-size) (zerop (mod memory-bytes page-size)))

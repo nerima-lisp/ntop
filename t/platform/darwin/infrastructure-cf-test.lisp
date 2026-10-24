@@ -215,7 +215,7 @@
 
 (defun %read-ioreg-model ()
   (let ((result
-         (host-kit:run-program "/usr/sbin/ioreg"
+         (host-kit:run-program "ioreg"
                                (list "-rd1" "-l" "-c" "IOPlatformExpertDevice")
                                :timeout
                                5

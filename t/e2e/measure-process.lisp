@@ -113,7 +113,7 @@
 (defun %process-group-id (session timeout)
   (let ((ids (%integer-lines
               (%read-command-output
-               "/bin/ps"
+               "ps"
                (list "-o" "pgid=" "-p"
                      (write-to-string (e2e-session-pid session)))
                timeout)
@@ -126,7 +126,7 @@
   (let ((times
           (with-input-from-string
               (stream (%read-command-output
-                       "/bin/ps"
+                       "ps"
                        (list "-o" "time=" "-g" (write-to-string group-id))
                        timeout))
             (loop for line = (read-line stream nil nil)
@@ -140,13 +140,13 @@
     (values (reduce #'+ times) (length times))))
 (defun %process-group-rss (group-id timeout)
   (let* ((text (%read-command-output
-                "/bin/ps" (list "-o" "rss=" "-g" (write-to-string group-id))
+                "ps" (list "-o" "rss=" "-g" (write-to-string group-id))
                 timeout))
          (rss (%integer-lines text "RSS")))
     (values (reduce #'+ rss) (length rss))))
 (defun %system-load-average (timeout)
   (%parse-load-average
-   (%read-command-output "/usr/sbin/sysctl" '("-n" "vm.loadavg") timeout)))
+   (%read-command-output "sysctl" '("-n" "vm.loadavg") timeout)))
 (defun %session-elapsed (session)
   (/ (- (get-internal-real-time) (e2e-session-started-at session))
      internal-time-units-per-second))

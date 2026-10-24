@@ -41,7 +41,7 @@
 (defun %darwin-reference-load-average ()
   (let ((fields (%darwin-reference-fields
                  (%darwin-reference-command-output
-                  "/usr/sbin/sysctl" '("-n" "vm.loadavg")))))
+                  "sysctl" '("-n" "vm.loadavg")))))
     (unless (= (length fields) 3)
       (error "Expected three sysctl load averages, got ~S." fields))
     (mapcar
@@ -57,7 +57,7 @@
   (parse-integer
    (string-trim '(#\Space #\Tab #\Return #\Newline)
                 (%darwin-reference-command-output
-                 "/usr/sbin/sysctl" '("-n" "hw.ncpu")))))
+                 "sysctl" '("-n" "hw.ncpu")))))
 
 (defun %darwin-core-frequency-table (core-index tables)
   (let ((key (cond ((<= 0 core-index 3) "voltage-states1-sram")

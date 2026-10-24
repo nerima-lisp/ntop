@@ -328,7 +328,7 @@ printf "
     (unwind-protect
         (progn
           (setf pty (cl-tty-kit:make-pty :program
-                                         "/bin/sh"
+                                         "sh"
                                          :args
                                          (%terminal-test-child-arguments kind
                                                                          signal)
