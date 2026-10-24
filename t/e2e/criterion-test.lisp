@@ -17,7 +17,8 @@
      (error condition))))
 
 (defun criterion-test-grid (rows columns process-name
-                            &optional (process-header-sgr "1;38;5;2;49"))
+                            &optional (process-header-sgr "1;38;5;2;49")
+                              (process-header-text "Count Name(n) CPU%(c)"))
   (let* ((grid (ntop.e2e:make-terminal-grid :rows rows :cols columns))
          (process-frame-top (- rows 4))
          (process-header-row (- rows 3))
@@ -41,7 +42,7 @@
                           process-header-row
                           2
                           process-header-sgr
-                          "Count Name(n) CPU%(c)")
+                          process-header-text)
     (criterion-test-write grid process-header-row (1- columns) "38;5;7;49" "│")
     (criterion-test-write grid process-data-row 1 "38;5;7;49" "│")
     (criterion-test-write grid process-data-row 2 "38;5;1;49" process-name)
@@ -282,53 +283,71 @@
                       :to-be
                       expected)))
   (cl-weave:it
-   "normalizes variable CPU load-average width without losing frame corners"
-   (labels ((draw-panel (grid left right)
-              (criterion-test-write grid 0 left "38;5;7;49" "┌")
-              (loop for column from (1+ left) below right
-                    do (criterion-test-write grid 0 column "38;5;7;49" "─"))
-              (criterion-test-write grid 0 right "38;5;7;49" "┐")
-              (loop for row from 1 below 11
-                    do (criterion-test-write grid row left "38;5;7;49" "│")
-                       (criterion-test-write grid row right "38;5;7;49" "│"))
-              (criterion-test-write grid 11 left "38;5;7;49" "└")
-              (loop for column from (1+ left) below right
-                    do (criterion-test-write grid 11 column "38;5;7;49" "─"))
-              (criterion-test-write grid 11 right "38;5;7;49" "┘"))
-            (make-cpu-grid (load-averages)
-              (let ((grid (ntop.e2e:make-terminal-grid :rows 12 :cols 50)))
-                (draw-panel grid 0 32)
-                (draw-panel grid 33 49)
-                (criterion-test-write grid
-                                      0
-                                      2
-                                      "1;38;5;3;49"
-                                      (concatenate 'string
-                                                   "CPU ─ "
-                                                   load-averages))
-                (criterion-test-write grid 0 35 "38;5;8;49" "Memory")
-                grid)))
-     (let* ((baseline
-              (ntop.e2e:project-criterion-grid
-               (make-cpu-grid "68.24 51.07 50.54")))
-            (candidate
-              (ntop.e2e:project-criterion-grid
-               (make-cpu-grid "104.04 89.32 78.24"))))
-       (cl-weave:expect (equalp baseline candidate) :to-be t)
-       (cl-weave:expect
-        (and
-         (loop for projection in (list baseline candidate)
-               always
-               (loop for column in (quote (27 31))
-                     always
-                     (criterion-test-has-entry-p
-                      projection
-                      (vector "border" 0 column "─"
-                              #("indexed" 7)
-                              #("default" nil)
-                              0))))
-         (criterion-test-has-entry-p
-          baseline
-          #("border" 0 32 "┐" #("indexed" 7) #("default" nil) 0)))
-        :to-be
-        t)))))
+ "excludes CPU load averages and adjacent border fill while preserving frame geometry"
+ (labels ((draw-panel (grid left right)
+            (criterion-test-write grid 0 left "38;5;7;49" "┌")
+            (loop for column from (1+ left) below right
+                  do (criterion-test-write grid 0 column "38;5;7;49" "─"))
+            (criterion-test-write grid 0 right "38;5;7;49" "┐")
+            (loop for row from 1 below 11
+                  do (criterion-test-write grid row left "38;5;7;49" "│")
+                     (criterion-test-write grid row right "38;5;7;49" "│"))
+            (criterion-test-write grid 11 left "38;5;7;49" "└")
+            (loop for column from (1+ left) below right
+                  do (criterion-test-write grid 11 column "38;5;7;49" "─"))
+            (criterion-test-write grid 11 right "38;5;7;49" "┘"))
+          (make-cpu-grid (load-averages cpu-right)
+            (let* ((grid (ntop.e2e:make-terminal-grid :rows 12 :cols 50))
+                   (memory-left (1+ cpu-right)))
+              (draw-panel grid 0 cpu-right)
+              (draw-panel grid memory-left 49)
+              (criterion-test-write grid
+                                    0
+                                    2
+                                    "1;38;5;3;49"
+                                    (concatenate 'string "CPU ─ " load-averages))
+              (criterion-test-write grid 0 (+ memory-left 2) "38;5;8;49" "Memory")
+              grid)))
+   (let* ((baseline
+            (ntop.e2e:project-criterion-grid
+             (make-cpu-grid "68.24 51.07 50.54" 32)))
+          (unavailable
+            (ntop.e2e:project-criterion-grid
+             (make-cpu-grid "N/A N/A N/A" 32)))
+          (shifted-frame
+            (ntop.e2e:project-criterion-grid
+             (make-cpu-grid "68.24 51.07 50.54" 31))))
+     (cl-weave:expect
+      (ntop.e2e::criterion-projections-equal-p baseline unavailable)
+      :to-be
+      t)
+     (cl-weave:expect
+      (ntop.e2e::criterion-projections-equal-p baseline shifted-frame)
+      :to-be
+      nil)
+     (dolist (projection (list baseline unavailable))
+       (dolist (expected
+                (list #("border" 0 0 "┌" #("indexed" 7) #("default" nil) 0)
+                      #("border" 0 32 "┐" #("indexed" 7) #("default" nil) 0)
+                      #("border" 1 0 "│" #("indexed" 7) #("default" nil) 0)
+                      #("border" 1 32 "│" #("indexed" 7) #("default" nil) 0)
+                      #("border" 11 0 "└" #("indexed" 7) #("default" nil) 0)
+                      #("border" 11 32 "┘" #("indexed" 7) #("default" nil) 0)
+                      #("border" 0 6 "─" #("indexed" 3) #("default" nil) 1)))
+         (cl-weave:expect (criterion-test-has-entry-p projection expected)
+                          :to-be
+                          t))
+       (loop for column from 8 below 32
+             do (cl-weave:expect
+                 (loop for entry across (aref projection 2)
+                       never (and (string= (aref entry 0) "border")
+                                  (= (aref entry 1) 0)
+                                  (= (aref entry 2) column)))
+                 :to-be
+                 t)))
+     (cl-weave:expect
+      (criterion-test-has-entry-p
+       shifted-frame
+       #("border" 0 31 "┐" #("indexed" 7) #("default" nil) 0))
+      :to-be
+      t)))))

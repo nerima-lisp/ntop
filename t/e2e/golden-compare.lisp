@@ -73,6 +73,112 @@
           (%valid-projection-cell-p cell width height))
         (aref projection 2))))
 
+(progn
+  (defun %projection-fixed-cells (projection)
+    (remove-if
+     (lambda (cell)
+       (string= (aref cell 0) "process-header"))
+     (aref projection 2)))
+  (defun %process-header-field-attributes (column-id role cells)
+    (let* ((attributes
+            (mapcar (lambda (cell)
+                      (and cell
+                           (vector (aref cell 4)
+                                   (aref cell 5)
+                                   (aref cell 6))))
+                    cells))
+           (unique-attributes
+            (remove-duplicates attributes :test #'equalp)))
+      (if (and (= (length unique-attributes) 1)
+               (first unique-attributes))
+          (let ((attribute (first unique-attributes)))
+            (vector column-id role
+                    (aref attribute 0)
+                    (aref attribute 1)
+                    (aref attribute 2)))
+        (vector column-id :invalid))))
+  (defun %process-header-attribute-cells (projection)
+    (let* ((entries (aref projection 2))
+           (rows
+            (sort
+             (remove-duplicates
+              (loop for entry across entries
+                    when (string= (aref entry 0) "process-header")
+                    collect (aref entry 1))
+              :test #'=)
+             #'<))
+           (column-ids
+            (criterion-rule-values :process-header-column-ids))
+           (sort-markers
+            (first (criterion-rule-values :process-header-sort-markers))))
+      (loop for row in rows
+            append
+            (let* ((cells
+                    (sort
+                     (loop for entry across entries
+                           when (and (string= (aref entry 0) "process-header")
+                                     (= (aref entry 1) row))
+                           collect entry)
+                     #'<
+                     :key (lambda (cell) (aref cell 2))))
+                   (first-column
+                    (reduce #'min cells :key (lambda (cell) (aref cell 2))))
+                   (last-column
+                    (reduce #'max cells :key (lambda (cell) (aref cell 2))))
+                   (text
+                    (make-string (1+ (- last-column first-column))
+                                 :initial-element #\Space)))
+              (dolist (cell cells)
+                (setf (char text (- (aref cell 2) first-column))
+                      (char (aref cell 3) 0)))
+              (loop for (label column-id) in column-ids
+                    append
+                    (loop for span in (criterion-label-spans text label)
+                          append
+                          (let* ((label-cells
+                                  (loop for column from (+ first-column (car span))
+                                        below (+ first-column (cdr span))
+                                        collect
+                                        (find column cells
+                                              :key (lambda (entry) (aref entry 2))
+                                              :test #'=)))
+                                 (marker-position (cdr span))
+                                 (marker-cell
+                                  (and (< marker-position (length text))
+                                       (find (char text marker-position)
+                                             sort-markers
+                                             :test #'char=)
+                                       (find (+ first-column marker-position)
+                                             cells
+                                             :key (lambda (entry) (aref entry 2))
+                                             :test #'=)))
+                                 (marker-cells
+                                  (when marker-cell (list marker-cell))))
+                            (append
+                             (list (%process-header-field-attributes
+                                    column-id :label label-cells))
+                             (when marker-cell
+                               (list (%process-header-field-attributes
+                                      column-id :sort-marker marker-cells)))))))))))
+  (defun %same-process-header-attribute-key-p (left right)
+    (and (= (length left) 5)
+         (= (length right) 5)
+         (eq (aref left 0) (aref right 0))
+         (eq (aref left 1) (aref right 1))))
+  (defun %shared-process-header-attribute-cells (left right)
+    (loop for left-cell in left
+          for right-cell = (find left-cell right
+                                 :test #'%same-process-header-attribute-key-p)
+          when right-cell
+          collect (cons left-cell right-cell)))
+  (defun %process-header-attributes-equal-p (left right)
+    (and (notany (lambda (cell) (eq (aref cell 1) :invalid)) left)
+         (notany (lambda (cell) (eq (aref cell 1) :invalid)) right)
+         (every (lambda (pair)
+                  (equalp (subseq (car pair) 2)
+                          (subseq (cdr pair) 2)))
+                (%shared-process-header-attribute-cells left right)))))
+
 (defun criterion-projections-equal-p (left right)
   (and (vectorp left)
        (>= (length left) 2)
@@ -86,7 +192,11 @@
               (plusp height)
               (%valid-criterion-projection-p left width height)
               (%valid-criterion-projection-p right width height)
-              (equalp left right)))))
+              (equalp (%projection-fixed-cells left)
+                      (%projection-fixed-cells right))
+              (%process-header-attributes-equal-p
+               (%process-header-attribute-cells left)
+               (%process-header-attribute-cells right))))))
 
 (defun %golden-pathname (directory width height)
   (merge-pathnames (format nil "~d-~d.json" width height)

@@ -16,7 +16,15 @@
                                 ("PID" "Name(n)"))
   (:process-header-labels "Count" "PID" "Name(n)" "CPU%(c)"
                           "Mem%(m)" "R/s" "W/s" "T.Read" "T.Write"
-                          "User" "State" "Time" "Priority"))
+                          "User" "State" "Time" "Priority")
+  (:process-header-column-ids
+   ("Count" :pid-or-count) ("PID" :pid-or-count)
+   ("Name(n)" :name) ("CPU%(c)" :cpu) ("Mem%(m)" :memory)
+   ("R/s" :read-per-second) ("W/s" :write-per-second)
+   ("T.Read" :total-read) ("T.Write" :total-write)
+   ("User" :user) ("State" :state) ("Time" :time)
+   ("Priority" :priority))
+  (:process-header-sort-markers "▲▼"))
 
 (defun criterion-rule-values (key)
   (cdr (assoc key *criterion-vocabulary*)))
@@ -73,29 +81,30 @@
             do (incf position))
       (and (< start position) (cons start position)))))
 
-(defun criterion-numeric-token-p (token)
-  (and (plusp (length token))
-       (some (lambda (character) (char<= #\0 character #\9)) token)
-       (every (lambda (character)
-                (or (char<= #\0 character #\9)
-                    (find character ".+-")))
-              token)))
+(defun criterion-dynamic-title-token-p (token)
+  (or (string= token "N/A")
+      (and (plusp (length token))
+           (some (lambda (character) (char<= #\0 character #\9)) token)
+           (every (lambda (character)
+                    (or (char<= #\0 character #\9)
+                        (find character ".+-")))
+                  token))))
 
 (defun criterion-title-exclusion-spans (text)
   (loop for (rule-name label count)
-          in (criterion-rule-values :dynamic-title-exclusions)
+        in (criterion-rule-values :dynamic-title-exclusions)
         when (eq rule-name :cpu-load-averages)
-          append
-          (loop for label-span in (criterion-label-spans text label)
-                append
-                (loop with position = (cdr label-span)
-                      repeat count
-                      for span = (criterion-next-word-span text position)
-                      while (and span
-                                 (criterion-numeric-token-p
-                                  (subseq text (car span) (cdr span))))
-                      collect span
-                      do (setf position (cdr span))))))
+        append
+        (loop for label-span in (criterion-label-spans text label)
+              append
+              (loop with position = (cdr label-span)
+                    repeat count
+                    for span = (criterion-next-word-span text position)
+                    while (and span
+                               (criterion-dynamic-title-token-p
+                                (subseq text (car span) (cdr span))))
+                    collect span
+                    do (setf position (cdr span))))))
 
 (defun criterion-span-excluded-p (span exclusions)
   (some (lambda (excluded)
@@ -123,16 +132,29 @@
 
 (defun criterion-process-header-span (text eligible-p)
   (when eligible-p
-    (let ((spans
-           (loop for label in (criterion-rule-values :process-header-labels)
-                 append (criterion-label-spans text label))))
+    (let* ((spans
+            (loop for label in (criterion-rule-values :process-header-labels)
+                  append (criterion-label-spans text label)))
+           (label-end (apply #'max (mapcar #'cdr spans)))
+           (marker-ends
+            (loop for span in spans
+                  for position = (cdr span)
+                  when (and (< position (length text))
+                            (criterion-character-in-p
+                             (char text position)
+                             (first
+                              (criterion-rule-values
+                               :process-header-sort-markers))))
+                    collect (1+ position)))
+           (end (if marker-ends
+                    (max label-end (apply #'max marker-ends))
+                    label-end)))
       (when (some (lambda (pair)
                     (every (lambda (label)
                              (criterion-label-spans text label))
                            pair))
                   (criterion-rule-values :process-header-anchor-pairs))
-        (cons (apply #'min (mapcar #'car spans))
-              (apply #'max (mapcar #'cdr spans)))))))
+        (cons (apply #'min (mapcar #'car spans)) end)))))
 
 (defun criterion-row-text (grid row)
   (let ((text (make-string (grid-width grid))))
@@ -254,39 +276,39 @@
 (progn
   (defun criterion-cpu-title-border-span (text row frames)
     (let* ((rule
-             (find :cpu-load-averages
-                   (criterion-rule-values :dynamic-title-exclusions)
-                   :key #'first
-                   :test #'eq))
+            (find :cpu-load-averages
+                  (criterion-rule-values :dynamic-title-exclusions)
+                  :key #'first
+                  :test #'eq))
            (label (second rule))
            (value-count (third rule))
            (label-spans (and label (criterion-label-spans text label)))
            (value-spans (criterion-title-exclusion-spans text)))
       (when (and rule (= (length value-spans) value-count))
         (let ((frame
-                (reduce
-                 (lambda (left right)
-                   (if (or (null left)
-                           (< (- (fourth right) (third right))
-                              (- (fourth left) (third left))))
-                       right
-                       left))
-                 (remove-if-not
-                  (lambda (frame)
-                    (and (= row (first frame))
-                         (some (lambda (span)
+               (reduce
+                (lambda (left right)
+                  (if (or (null left)
+                          (< (- (fourth right) (third right))
+                             (- (fourth left) (third left))))
+                      right
+                    left))
+                (remove-if-not
+                 (lambda (frame)
+                   (and (= row (first frame))
+                        (some (lambda (span)
+                                (and (> (car span) (third frame))
+                                     (<= (cdr span) (fourth frame))))
+                              label-spans)
+                        (every (lambda (span)
                                  (and (> (car span) (third frame))
                                       (<= (cdr span) (fourth frame))))
-                               label-spans)
-                         (every (lambda (span)
-                                  (and (> (car span) (third frame))
-                                       (<= (cdr span) (fourth frame))))
-                                value-spans)))
-                  frames)
-                 :initial-value nil)))
+                               value-spans)))
+                 frames)
+                :initial-value nil)))
           (when frame
-            (let ((padding-column (cdr (car (last value-spans)))))
-              (cons padding-column (1+ padding-column))))))))
+            (cons (car (first value-spans))
+                  (fourth frame)))))))
   (defun project-criterion-grid (grid)
     (let ((entries nil)
           (frames (criterion-projection-frames grid)))
