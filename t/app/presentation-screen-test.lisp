@@ -282,6 +282,29 @@
 (defun %wp12b-screen-bytes (string)
   (coerce (sb-ext:string-to-octets string :external-format :utf-8) 'list))
 
+(cl-weave:describe "application composition terminal output"
+  (cl-weave:it "emits CRLF row separators on the first composition render"
+    (let* ((config (%wp12b-screen-config))
+           (composition
+             (ntop.app.application:make-application-composition config))
+           (state (ntop.app.domain:make-app-state))
+           (output
+             (with-output-to-string (stream)
+               (let ((*standard-output* stream))
+                 (funcall
+                  (ntop.app.application:application-composition-render composition)
+                  state config (%wp12b-screen-fixture-snapshot) 80 24 nil)))))
+      (cl-weave:expect (plusp (count #\Newline output)) :to-be t)
+      (cl-weave:expect
+       (loop for index from 0 below (length output)
+             always
+               (or (not (char= (char output index) #\Newline))
+                   (and (plusp index)
+                        (char= (char output (1- index)) #\Return)
+                        (or (< index 2)
+                            (not (char= (char output (- index 2)) #\Return))))))
+       :to-be t))))
+
 (defun %wp12b-screen-golden-bytes (name)
   (with-open-file
       (stream

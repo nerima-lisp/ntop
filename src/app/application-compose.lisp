@@ -284,10 +284,20 @@
                                             columns
                                             rows))))
     (setf (application-composition-clickable-areas composition) areas)
-    (cl-tty-kit:render-diff screen
-                              (application-composition-previous-screen composition)
-                              *standard-output*)
-      (finish-output)
+    (let ((diff
+           (with-output-to-string (output)
+             (cl-tty-kit:render-diff
+              screen
+              (application-composition-previous-screen composition)
+              output))))
+      (loop for index from 0 below (length diff)
+            for character = (char diff index)
+            do (when (and (char= character #\Newline)
+                          (or (zerop index)
+                              (not (char= (char diff (1- index)) #\Return))))
+                 (write-char #\Return *standard-output*))
+               (write-char character *standard-output*)))
+    (finish-output)
     (setf (application-composition-previous-screen composition)
           (cl-tty-kit:screen-copy screen))
     areas))
