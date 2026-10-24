@@ -440,4 +440,14 @@
                               (cl-tty-kit:screen-cell screen x y))
                              :to-equal
                              (ntop.ui:presentation-theme-style
-                              :default (second case)))))))))
+                              :default (second case))))))))
+                   (cl-weave:it
+                    "uses the text theme for unknown table roles"
+                    (let ((screen (cl-tty-kit:make-screen 4 1)))
+                      (let ((ntop.app.presentation::*screen-table-theme* :gruvbox))
+                        (ntop.ui:draw-table-text screen 0 0 "x" :custom)
+                        (cl-weave:expect
+                         (cl-tty-kit:cell-style
+                          (cl-tty-kit:screen-cell screen 0 0))
+                         :to-equal
+                         (ntop.ui:presentation-theme-style :gruvbox :text))))))

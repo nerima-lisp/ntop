@@ -77,4 +77,158 @@
                                                 *wp12b-screen-widget-calls*
                                                 :key #'first :test #'eq))
                                    :unavailability-reason)
-                             :to-equal :not-present)))))))
+                             :to-equal :not-present))))))
+                   (cl-weave:it
+                    "uses expanded layout from state and config and preserves table state"
+                    (dolist (case (list (list t nil) (list nil t)))
+                      (destructuring-bind (state-expanded config-expanded)
+                          case
+                        (let* ((state
+                                (ntop.app.domain:make-app-state
+                                 :selected-widget :cpu
+                                 :expanded-p state-expanded))
+                               (config (%wp12b-screen-config))
+                               (stored
+                                 (ntop.ui:make-table-state :selected-index 3))
+                               (states
+                                 (ntop.app.domain:app-state-widget-v-states state))
+                               (*wp12b-screen-widget-calls* nil)
+                               (*wp12b-screen-recording-p* t))
+                          (setf
+                           (ntop.shared.application:application-config-expanded-p
+                            config)
+                           config-expanded
+                           (gethash :cpu states)
+                           stored)
+                          (cl-weave:expect
+                           (ntop.app.presentation::%screen-layout-mode state config)
+                           :to-be :expanded)
+                          (%wp12b-screen-render 80 24 :state state :config config)
+                          (let ((call
+                                 (find :cpu *wp12b-screen-widget-calls*
+                                       :key (function first)
+                                       :test (function eq))))
+                            (cl-weave:expect (fourth call) :to-be stored))))))
+                   (cl-weave:it
+                    "applies saved process, memory, GPU, command grouping, and tree modes"
+                    (let* ((fixture (%wp12b-screen-fixture-snapshot))
+                           (records
+                            (ntop.process.domain:process-sample-processes
+                             (ntop.app.domain:collection-snapshot-process-sample fixture)))
+                           (worker
+                            (ntop.process.domain:make-process-record :pid
+                                                                     101
+                                                                     :ppid
+                                                                     1
+                                                                     :name
+                                                                     "worker"
+                                                                     :command
+                                                                     "alpha --serve"
+                                                                     :ps-fallback-cpu-percent
+                                                                     9d0))
+                           (snapshot
+                             (ntop.app.domain:make-collection-snapshot
+                              :sampled-at 3d0
+                              :gpu-sample
+                              (ntop.gpu.domain:make-gpu-sample
+                               :sampled-at 3d0
+                               :devices
+                               (list
+                                (ntop.gpu.domain:make-gpu-device
+                                 :name "GPU"
+                                 :memory-total-bytes 500)
+                                (ntop.gpu.domain:make-gpu-device :name "Unknown")))
+                              :process-sample
+                              (ntop.process.domain:make-process-sample
+                               :sampled-at 3d0
+                               :processes (append records (list worker)))))
+                           (config
+                            (ntop.shared.application:make-application-config
+                             :process-default-memory-value-p
+                             t
+                             :process-default-grouped-p
+                             t
+                             :process-show-command-p
+                             t
+                             :process-sort-column
+                             :pid
+                             :process-sort-order
+                             :ascending))
+                           (state (ntop.app.domain:make-app-state :selected-widget :process))
+                           (states (ntop.app.domain:app-state-widget-v-states state))
+                           (table (ntop.ui:make-table-state :selected-index 0))
+                           (sort-state
+                            (ntop.process.domain:make-process-sort-state :key
+                                                                         :pid
+                                                                         :order
+                                                                         :ascending
+                                                                         :memory-mode
+                                                                         :bytes)))
+                      (setf (gethash :process states) table
+                            (gethash :process-sort-state states) sort-state)
+                      (cl-weave:expect
+                       (ntop.app.presentation::%screen-process-sort-state config state)
+                       :to-be
+                       sort-state)
+                      (multiple-value-bind (saved-state table-config)
+                          (ntop.app.presentation::%screen-process-widget-config snapshot
+                                                                                state
+                                                                                config
+                                                                                t
+                                                                                sort-state)
+                        (cl-weave:expect saved-state :to-be table)
+                        (cl-weave:expect
+                         (ntop.process.presentation:process-table-config-memory-mode table-config)
+                         :to-be
+                         :bytes)
+                        (cl-weave:expect
+                         (ntop.process.presentation:process-table-config-gpu-available-p
+                          table-config)
+                         :to-be
+                         t))
+                      (multiple-value-bind (pids name)
+                          (ntop.app.presentation:resolve-selected-process-targets state
+                                                                                  config
+                                                                                  snapshot
+                                                                                  nil)
+                        (cl-weave:expect pids :to-equal (list 100 101))
+                        (cl-weave:expect name :to-equal "alpha"))
+                      (setf (ntop.shared.application:application-config-process-default-tree-p
+                             config) t)
+                      (multiple-value-bind (rows raw-rows)
+                          (ntop.app.presentation::%screen-process-rows snapshot
+                                                                       state
+                                                                       config
+                                                                       sort-state
+                                                                       nil)
+                        (declare (ignore raw-rows))
+                        (cl-weave:expect (ntop.process.domain:process-tree-entry-p (first rows))
+                                         :to-be
+                                         t))
+                      (multiple-value-bind (pids name)
+                          (ntop.app.presentation:resolve-selected-process-targets state
+                                                                                  config
+                                                                                  snapshot
+                                                                                  nil)
+                        (cl-weave:expect (length pids) :to-be 1)
+                        (cl-weave:expect (not (null name)) :to-be t))
+                      (setf (ntop.shared.application:application-config-disable-gpu-p config) t)
+                      (multiple-value-bind (saved-state table-config)
+                          (ntop.app.presentation::%screen-process-widget-config snapshot
+                                                                                state
+                                                                                config
+                                                                                t
+                                                                                sort-state)
+                        (declare (ignore saved-state))
+                        (cl-weave:expect
+                         (ntop.process.presentation:process-table-config-gpu-available-p
+                          table-config)
+                         :to-be
+                         nil))
+                      (cl-weave:expect
+                       (ntop.app.presentation::%screen-process-gpu-memory-total snapshot)
+                       :to-be
+                       500)
+                      (cl-weave:expect (ntop.app.presentation::%screen-process-gpu-memory-total nil)
+                                       :to-be
+                                       nil))))

@@ -43,8 +43,7 @@
     (:temperature-graph :temperature-graph)
     (:battery :battery)
     (:process :process-table)
-    (:basic-table-arrows :basic-table-arrows)
-    (otherwise nil)))
+    (:basic-table-arrows :basic-table-arrows)))
 
 (defun %screen-widget-base (widget)
   (case widget
@@ -379,5 +378,4 @@
                                             state)
                                            :process)
                                           sort-state)
-         (values table-state table-config rows))))
-    (otherwise (values nil config nil))))
+         (values table-state table-config rows))))))

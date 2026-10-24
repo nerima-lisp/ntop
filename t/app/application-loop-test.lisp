@@ -297,26 +297,28 @@
       (cl-weave:expect input-polls :to-be 0)))
 
   (progn
-  (cl-weave:it "uses 80 by 24 when initial dimensions are unavailable"
-    (let ((channel (cl-concurrent-kit:make-channel :buffer-size 1))
-          (signal-count 0)
-          (frames nil))
-      (cl-weave:expect
-       (%run-application-loop-with-fakes
-        channel
-        (lambda (state timeout)
-          (declare (ignore state timeout))
-          (values nil nil))
-        (lambda (state config snapshot columns rows)
-          (declare (ignore state config snapshot))
-          (push (list columns rows) frames))
-        :poll-signal
-        (lambda ()
-          (if (= (incf signal-count) 1)
-              nil
-              '(:terminate :test))))
-       :to-equal :signal)
-      (cl-weave:expect (nreverse frames) :to-equal '((80 24)))))
+  (cl-weave:it "uses 80 by 24 when initial dimensions are not positive integers"
+    (dolist (dimensions (list (list nil nil) (list 80 0) (list 0 24)))
+      (let ((channel (cl-concurrent-kit:make-channel :buffer-size 1))
+            (signal-count 0)
+            (frames nil))
+        (cl-weave:expect
+         (%run-application-loop-with-fakes
+          channel
+          (lambda (state timeout)
+            (declare (ignore state timeout))
+            (values (first dimensions) (second dimensions)))
+          (lambda (state config snapshot columns rows)
+            (declare (ignore state config snapshot))
+            (push (list columns rows) frames))
+          :poll-signal
+          (lambda ()
+            (if (= (incf signal-count) 1)
+                nil
+                (list :terminate :test))))
+         :to-equal
+         :signal)
+        (cl-weave:expect (nreverse frames) :to-equal (list (list 80 24))))))
 
   (cl-weave:it "preserves unrelated mode values and toggles widget view states"
     (let ((state (ntop.app.domain::make-app-state)))

@@ -3,9 +3,14 @@
 (defparameter *application-transition-test-cases*
   '((:navigation :left :process nil nil nil nil :same nil nil)
     (:select :cpu :cpu nil nil nil nil nil nil nil)
+    (:select (:widget :cpu) :cpu nil nil nil nil nil nil nil)
     (:toggle-widget-v :memory :process nil nil nil nil nil nil :gpu)
     (:expand nil :process t nil nil nil nil nil nil)
+    (:expand :toggle :process t nil nil nil nil nil nil)
     (:basic nil :process nil t nil nil nil nil nil)
+    (:basic t :process nil t nil nil nil nil nil)
+    (:basic :toggle :process nil t nil nil nil nil nil)
+    (:basic :unchanged :process nil nil nil nil :same nil nil)
     (:pause nil :process nil nil t nil nil (:pause t) nil)
     (:zoom :in :process nil nil nil nil nil (:history :zoom :in) nil)
     (:history-scroll :backward :process nil nil nil nil nil
@@ -15,6 +20,7 @@
     (:help nil :process nil nil nil :help nil nil nil)
     (:search :help :process nil nil nil :help-search nil nil nil)
     (:dialog :process-kill :process nil nil nil :process-kill nil nil nil)
+    (:dialog (:close :help) :process nil nil nil nil nil nil nil)
     (:toggle-process-grouping :probe :process nil nil nil nil :same nil nil)
     (:sort-processes :probe :process nil nil nil nil :same nil nil)
     (:reverse-process-sort :probe :process nil nil nil nil :same nil nil)
@@ -182,4 +188,244 @@
         (cl-weave:expect forwarded :to-be nil)
         (cl-weave:expect history :to-equal '(:pause t))
         (cl-weave:expect (ntop.app.domain:app-state-paused-p state)
-                         :to-be nil)))))
+                         :to-be nil))))
+  (cl-weave:describe "application composition state branches"
+                   (cl-weave:it
+                    "navigates by visible layout and rejects inapplicable actions"
+                    (let ((config
+                           (ntop.shared.application:make-application-config)))
+                      (dolist
+                          (case '((:disks :left :network) (:process :up :disks)))
+                        (destructuring-bind (selected direction expected) case
+                          (let ((state
+                                 (ntop.app.domain:make-app-state
+                                  :selected-widget
+                                  selected)))
+                            (ntop.app.application::%select-layout-neighbor state
+                                                                           config
+                                                                           80
+                                                                           24
+                                                                           direction)
+                            (cl-weave:expect
+                             (ntop.app.domain:app-state-selected-widget state)
+                             :to-be
+                             expected))))
+                      (cl-weave:expect
+                       (ntop.app.application::%navigation-score-before-p '(0 20)
+                                                                         '(0 30))
+                       :to-be
+                       t)
+                      (dolist
+                          (case '((:help nil nil :navigation :right)
+                                  (nil t nil :navigation :right)
+                                  (nil nil t :navigation :right)
+                                  (nil nil nil :select :right)
+                                  (nil nil nil :navigation :page-down)))
+                        (destructuring-bind (dialog basic
+                                                    config-basic
+                                                    kind
+                                                    direction) case
+                          (let ((state
+                                 (ntop.app.domain:make-app-state
+                                  :selected-widget
+                                  :cpu
+                                  :active-dialog
+                                  dialog
+                                  :basic-mode-p
+                                  basic))
+                                (config
+                                 (ntop.shared.application:make-application-config)))
+                            (setf (ntop.shared.application:application-config-basic-p
+                                   config) config-basic)
+                            (ntop.app.application::%apply-layout-navigation
+                             state
+                             (ntop.app.domain:make-app-action :kind
+                                                              kind
+                                                              :value
+                                                              direction)
+                             config
+                             80
+                             24)
+                            (cl-weave:expect
+                             (ntop.app.domain:app-state-selected-widget state)
+                             :to-be
+                             :cpu))))
+                      (let ((state
+                             (ntop.app.domain:make-app-state :selected-widget
+                                                             :cpu)))
+                        (ntop.app.application::%apply-layout-navigation
+                         state
+                         (ntop.app.domain:make-app-action
+                          :kind :navigation
+                          :value :right)
+                         config
+                         80
+                         24)
+                        (cl-weave:expect
+                         (ntop.app.domain:app-state-selected-widget state)
+                         :to-be
+                         :memory))))
+                   (cl-weave:it
+                    "pauses new history stores and trims the retention boundary"
+                    (let* ((composition
+                            (ntop.app.application:make-application-composition
+                             (ntop.shared.application:make-application-config)))
+                           (key '(:cpu :usage :average))
+                           (record
+                            (ntop.shared.domain:make-sample-record :sampled-at
+                                                                   1d0)))
+                      (setf (ntop.app.application::application-composition-paused-p
+                             composition) t)
+                      (ntop.app.application::%append-composition-history
+                       composition
+                       key
+                       "AVG"
+                       record
+                       1d0)
+                      (cl-weave:expect
+                       (ntop.shared.domain:history-paused-p
+                        (gethash key
+                                 (ntop.app.application::application-composition-history-index
+                                  composition)))
+                       :to-be
+                       t))
+                    (let* ((composition
+                            (ntop.app.application:make-application-composition
+                             (ntop.shared.application:make-application-config
+                              :retention-seconds
+                              5d0)))
+                           (samples
+                            (ntop.app.application::application-composition-network-samples
+                             composition)))
+                      (loop for sampled-at in '(4d0 5d0 6d0)
+                            do (vector-push-extend
+                                (ntop.shared.domain:make-sample-record
+                                 :sampled-at
+                                 sampled-at)
+                                samples))
+                      (ntop.app.application::%trim-network-samples composition
+                                                                   10d0)
+                      (cl-weave:expect
+                       (map 'list
+                            #'ntop.shared.domain:sample-record-sampled-at
+                            (ntop.app.application::application-composition-network-samples
+                             composition))
+                       :to-equal
+                       '(5d0 6d0))))
+                   (cl-weave:it
+                    "replaces equal-time network samples and rejects older samples"
+                    (let* ((composition
+                            (ntop.app.application:make-application-composition
+                             (ntop.shared.application:make-application-config)))
+                           (first-sample
+                            (ntop.network.domain:make-network-sample :sampled-at
+                                                                     10d0
+                                                                     :interfaces
+                                                                     nil))
+                           (replacement
+                            (ntop.network.domain:make-network-sample :sampled-at
+                                                                     10d0
+                                                                     :interfaces
+                                                                     nil))
+                           (samples
+                            (ntop.app.application::application-composition-network-samples
+                             composition)))
+                      (ntop.app.application::%record-network-history
+                       composition
+                       (ntop.shared.domain:make-sample-record :sampled-at 10d0)
+                       first-sample)
+                      (ntop.app.application::%record-network-history
+                       composition
+                       (ntop.shared.domain:make-sample-record :sampled-at 10d0)
+                       replacement)
+                      (cl-weave:expect (length samples) :to-be 1)
+                      (cl-weave:expect (aref samples 0) :to-be replacement))
+                    (let* ((composition
+                            (ntop.app.application:make-application-composition
+                             (ntop.shared.application:make-application-config)))
+                           (latest
+                            (ntop.network.domain:make-network-sample :sampled-at
+                                                                     10d0
+                                                                     :interfaces
+                                                                     nil))
+                           (older
+                            (ntop.network.domain:make-network-sample :sampled-at
+                                                                     9d0
+                                                                     :interfaces
+                                                                     nil))
+                           (error-text nil))
+                      (vector-push-extend
+                       latest
+                       (ntop.app.application::application-composition-network-samples
+                        composition))
+                      (handler-case (ntop.app.application::%record-network-history
+                                     composition
+                                     (ntop.shared.domain:make-sample-record
+                                      :sampled-at
+                                      9d0)
+                                     older)
+                        (error (condition)
+                          (setf error-text (princ-to-string condition))))
+                      (cl-weave:expect
+                       (not
+                        (null
+                         (and error-text
+                              (search
+                               "Network samples must arrive in chronological order."
+                               error-text))))
+                       :to-be
+                       t)
+                      (cl-weave:expect
+                       (aref
+                        (ntop.app.application::application-composition-network-samples
+                         composition)
+                        0)
+                       :to-be
+                       latest)))
+                   (cl-weave:it
+                    "omits expired GPU memory history from chart series"
+                    (let* ((config
+                            (ntop.shared.application:make-application-config
+                             :retention-seconds
+                             5d0))
+                           (composition
+                            (ntop.app.application:make-application-composition
+                             config))
+                           (snapshot
+                            (ntop.app.domain:make-collection-snapshot
+                             :sampled-at
+                             1d0
+                             :gpu-sample
+                             (ntop.gpu.domain:make-gpu-sample :sampled-at
+                                                              1d0
+                                                              :devices
+                                                              (list
+                                                               (ntop.gpu.domain:make-gpu-device
+                                                                :name
+                                                                "GPU"
+                                                                :usage-percent
+                                                                25d0
+                                                                :memory-used-bytes
+                                                                25
+                                                                :memory-total-bytes
+                                                                100)))))
+                           (key '(:gpu-memory :used ("GPU" 0))))
+                      (funcall
+                       (ntop.app.application:application-composition-on-snapshot
+                        composition)
+                       snapshot)
+                      (let ((store
+                             (gethash key
+                                      (ntop.app.application::application-composition-history-index
+                                       composition))))
+                        (cl-weave:expect (not (null store)) :to-be t)
+                        (ntop.shared.domain:history-prune store 10d0)
+                        (cl-weave:expect
+                         (length (ntop.shared.domain:history-slice store 0))
+                         :to-be
+                         0))
+                      (cl-weave:expect
+                       (ntop.app.application::%gpu-memory-series-data
+                        composition)
+                       :to-be
+                       nil)))))

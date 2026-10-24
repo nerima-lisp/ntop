@@ -102,9 +102,7 @@
               do (let* ((samples (%history-samples-for composition key))
                         (device-total (gethash (third key) device-totals)))
                    (when
-                       (and (plusp (length samples))
-                            (integerp device-total)
-                            (plusp device-total))
+                       (plusp (length samples))
                      (push
                       (ntop.ui:make-chart-series :name
                                                  (gethash key
