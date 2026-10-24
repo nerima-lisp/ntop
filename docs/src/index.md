@@ -1,11 +1,8 @@
 # ntop documentation
 
-`ntop` is a Common Lisp terminal system monitor. The project targets Linux and
-macOS, with macOS as the local runtime and Linux as the CI platform.
-
-- [Getting started](getting-started.md) describes local dependencies, tests,
-  executable builds, and coverage.
-- [Architecture](architecture.md) describes package boundaries and the layer
-  dependency checks.
-- [Development](development.md) describes local and CI verification.
-
+- [README](../../README.md) introduces the project and its quick start.
+- [Getting started](getting-started.md) covers installation and the first launch.
+- [Usage](usage.md) explains widgets, controls, command-line options, and process search.
+- [Differences from btm](differences.md) lists intentional differences and unsupported behavior.
+- [Architecture](architecture.md) describes package boundaries and layer dependencies.
+- [Development](development.md) documents local and CI verification.
