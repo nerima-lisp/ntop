@@ -72,18 +72,19 @@
                     ,@slot-declarations)
          (defun ,constructor-name (&key ,@constructor-parameters)
            (validate-typed-slots (list ,@validation-forms))
-           (,raw-constructor-name ,@constructor-arguments)))))
-  (defmacro define-value-type (name &body slots)
-    (expand-domain-type name slots nil)))
+           (,raw-constructor-name ,@constructor-arguments))))))
 
-(progn
-  (defun validate-typed-slots (typed-slots)
-    (dolist (typed-slot typed-slots)
-      (destructuring-bind (value expected-type) typed-slot
-        (unless (typep value expected-type)
-          (error 'type-error :datum value :expected-type expected-type)))))
-  (defmacro define-sample-type (name &body slots)
-    (expand-domain-type name slots t)))
+(defmacro define-value-type (name &body slots)
+  (expand-domain-type name slots nil))
+
+(defun validate-typed-slots (typed-slots)
+  (dolist (typed-slot typed-slots)
+    (destructuring-bind (value expected-type) typed-slot
+      (unless (typep value expected-type)
+        (error 'type-error :datum value :expected-type expected-type)))))
+
+(defmacro define-sample-type (name &body slots)
+  (expand-domain-type name slots t))
 
 
 (ntop.shared.domain:define-value-type sample-record
