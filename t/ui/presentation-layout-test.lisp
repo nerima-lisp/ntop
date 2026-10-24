@@ -21,9 +21,9 @@
     (220 147 73 88 88 44)))
 
 (defparameter *btm-layout-height-reference*
-  '((12 3 3 6) (18 5 4 9) (24 6 6 12) (30 8 7 15)
-    (36 9 9 18) (42 11 10 21) (48 12 12 24)
-    (54 14 13 27) (60 15 15 30)))
+  '((12 4 4 4) (18 6 6 6) (24 8 8 8)
+    (30 10 10 10) (36 12 12 12) (42 14 14 14)
+    (48 16 16 16) (54 18 18 18) (60 20 20 20)))
 
 (defun layout-test-rectangle (layout widget)
   (cdr (assoc widget layout)))
@@ -146,11 +146,11 @@
                                              temperature-width
                                              width))))
                    (cl-weave:it-each
-                    ((12 3 3 6) (18 5 4 9)
-                     (24 6 6 12) (30 8 7 15)
-                     (36 9 9 18) (42 11 10 21)
-                     (48 12 12 24) (54 14 13 27)
-                     (60 15 15 30))
+                    ((12 4 4 4) (18 6 6 6)
+                     (24 8 8 8) (30 10 10 10)
+                     (36 12 12 12) (42 14 14 14)
+                     (48 16 16 16) (54 18 18 18)
+                     (60 20 20 20))
                     "matches btm row spans at height ~A"
                     (height top-row-height middle-row-height process-height)
                     (let ((layout (ntop.ui:layout-widgets 80 height)))
@@ -169,6 +169,20 @@
                         (list 0 top-row-height 32 middle-row-height)
                         (list 0 (+ top-row-height middle-row-height)
                               80 process-height)))))
+                   (cl-weave:it
+                    "matches the outer-frame split at 40x12"
+                    (let* ((layout (ntop.ui:layout-widgets 40 12))
+                           (cpu (layout-test-rectangle layout :cpu))
+                           (network (layout-test-rectangle layout :network))
+                           (process (layout-test-rectangle layout :process)))
+                      (cl-weave:expect
+                       (list (1- (ntop.ui:rectangle-height cpu))
+                             (ntop.ui:rectangle-y network)
+                             (ntop.ui:rectangle-height network)
+                             (ntop.ui:rectangle-y process)
+                             (ntop.ui:rectangle-height process))
+                       :to-equal
+                       (quote (3 4 4 8 4)))))
                    (cl-weave:it "matches the full 171-size btm rectangle grid"
                                 (let ((count 0)
                                       (differences nil))

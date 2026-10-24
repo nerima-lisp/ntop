@@ -6,11 +6,11 @@
 
 (define-layout *default-layout*
                (:split :vertical
-                       (((:fill 1)
+                       (((:fill 2)
                          (:split :horizontal
                                  (((:fill 2) (:widget :cpu-container))
                                   ((:fill 1) (:widget :memory)))))
-                        ((:fill 1)
+                        ((:fill 2)
                          (:split :horizontal
                                  (((:fill 2) (:widget :network))
                                   ((:fill 2) (:widget :disks))
