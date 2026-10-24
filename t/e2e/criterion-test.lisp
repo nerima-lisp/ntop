@@ -314,18 +314,22 @@
           (unavailable
             (ntop.e2e:project-criterion-grid
              (make-cpu-grid "N/A N/A N/A" 32)))
+          (no-values
+            (ntop.e2e:project-criterion-grid
+             (make-cpu-grid "" 32)))
           (shifted-frame
             (ntop.e2e:project-criterion-grid
              (make-cpu-grid "68.24 51.07 50.54" 31))))
      (cl-weave:expect
-      (ntop.e2e::criterion-projections-equal-p baseline unavailable)
+      (and (ntop.e2e::criterion-projections-equal-p baseline unavailable)
+           (ntop.e2e::criterion-projections-equal-p baseline no-values))
       :to-be
       t)
      (cl-weave:expect
       (ntop.e2e::criterion-projections-equal-p baseline shifted-frame)
       :to-be
       nil)
-     (dolist (projection (list baseline unavailable))
+     (dolist (projection (list baseline unavailable no-values))
        (dolist (expected
                 (list #("border" 0 0 "┌" #("indexed" 7) #("default" nil) 0)
                       #("border" 0 32 "┐" #("indexed" 7) #("default" nil) 0)

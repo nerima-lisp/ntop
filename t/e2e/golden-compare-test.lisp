@@ -99,7 +99,60 @@
        (cl-weave:expect
         (ntop.e2e::criterion-projections-equal-p candidate btm)
         :to-be
-        nil)))))
+        nil))))
+  (cl-weave:it
+   "routes complete golden comparisons through condition A semantics"
+   (let* ((golden-directory
+            (asdf:system-relative-pathname "ntop/e2e" "t/e2e/goldens/"))
+          (candidate-directory
+            (ntop.e2e::%make-e2e-temporary-directory))
+          (target-path
+            (ntop.e2e::%golden-pathname candidate-directory 120 54)))
+     (unwind-protect
+          (progn
+            (dolist (dimension (ntop.e2e::golden-dimensions))
+              (destructuring-bind (width height) dimension
+                (let ((source
+                        (ntop.e2e::%golden-pathname
+                         golden-directory width height))
+                      (target
+                        (ntop.e2e::%golden-pathname
+                         candidate-directory width height)))
+                  (ensure-directories-exist target)
+                  (uiop:copy-file source target))))
+            (let* ((projection
+                     (ntop.e2e::%read-criterion-golden target-path 120 54))
+                   (header-cells
+                     (remove-if-not
+                      (lambda (cell)
+                        (string= (aref cell 0) "process-header"))
+                      (coerce (aref projection 2) 'list))))
+              (cl-weave:expect (not (null header-cells)) :to-be t)
+              (let* ((minimum
+                       (reduce #'min header-cells
+                               :key (lambda (cell) (aref cell 2))))
+                     (maximum
+                       (reduce #'max header-cells
+                               :key (lambda (cell) (aref cell 2))))
+                     (shift (cond
+                              ((plusp minimum) -1)
+                              ((< maximum 119) 1)
+                              (t (error "Cannot shift the process header fixture.")))))
+                (dolist (cell header-cells)
+                  (incf (aref cell 2) shift)))
+              (with-open-file (stream target-path
+                                      :direction :output
+                                      :if-exists :supersede
+                                      :if-does-not-exist :create
+                                      :external-format :utf-8)
+                (json-kit:write-json projection stream)
+                (terpri stream)))
+            (cl-weave:expect
+             (ntop.e2e::compare-goldens
+              :left golden-directory :right candidate-directory)
+             :to-equal
+             0))
+       (uiop:delete-directory-tree candidate-directory :validate t)))))
 
 (cl-weave:describe "FR-001 condition A golden reader"
                    (cl-weave:it

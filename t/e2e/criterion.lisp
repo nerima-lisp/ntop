@@ -281,10 +281,10 @@
                   :key #'first
                   :test #'eq))
            (label (second rule))
-           (value-count (third rule))
            (label-spans (and label (criterion-label-spans text label)))
-           (value-spans (criterion-title-exclusion-spans text)))
-      (when (and rule (= (length value-spans) value-count))
+           (border-characters
+            (first (criterion-rule-values :border-characters))))
+      (when rule
         (let ((frame
                (reduce
                 (lambda (left right)
@@ -294,21 +294,35 @@
                       right
                     left))
                 (remove-if-not
-                 (lambda (frame)
-                   (and (= row (first frame))
+                 (lambda (candidate-frame)
+                   (and (= row (first candidate-frame))
                         (some (lambda (span)
-                                (and (> (car span) (third frame))
-                                     (<= (cdr span) (fourth frame))))
-                              label-spans)
-                        (every (lambda (span)
-                                 (and (> (car span) (third frame))
-                                      (<= (cdr span) (fourth frame))))
-                               value-spans)))
+                                (and (> (car span) (third candidate-frame))
+                                     (<= (cdr span) (fourth candidate-frame))))
+                              label-spans)))
                  frames)
                 :initial-value nil)))
           (when frame
-            (cons (car (first value-spans))
-                  (fourth frame)))))))
+            (let* ((label-span
+                    (find-if
+                     (lambda (span)
+                       (and (> (car span) (third frame))
+                            (<= (cdr span) (fourth frame))))
+                     label-spans))
+                   (position (cdr label-span)))
+              (loop while (and (< position (length text))
+                               (char= (char text position) #\Space))
+                    do (incf position))
+              (when (and (< position (length text))
+                         (criterion-character-in-p
+                          (char text position)
+                          border-characters))
+                (incf position)
+                (loop while (and (< position (length text))
+                                 (char= (char text position) #\Space))
+                      do (incf position)))
+              (when (< position (fourth frame))
+                (cons position (fourth frame)))))))))
   (defun project-criterion-grid (grid)
     (let ((entries nil)
           (frames (criterion-projection-frames grid)))

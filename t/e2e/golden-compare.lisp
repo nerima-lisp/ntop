@@ -232,7 +232,7 @@
                                        width
                                        height)))
           (incf compared)
-          (unless (equalp left-projection right-projection)
+          (unless (criterion-projections-equal-p left-projection right-projection)
             (push (format nil "~dx~d" width height) mismatches)))))
     (when mismatches
       (error "Criterion-A golden sets differ at ~{~a~^, ~}."
