@@ -6,8 +6,8 @@ ntop uses [bottom (`btm`) 0.14.9](https://github.com/ClementTsang/bottom/tree/0.
 |---|---|---|
 | D1 | Passes sysinfo's process disk read and write values to its read/write rate columns on macOS. | Calculates process read and write rates from byte-counter deltas and actual elapsed sample time. |
 | D2 | On Linux, divides process I/O counter deltas by whole elapsed seconds; failed division yields zero. | On Linux, divides process I/O counter deltas by fractional elapsed seconds. |
-| D4 | Uses the process user ID and runtime reported by its system-information library to derive a user name and elapsed time. | Derives user names from real UIDs and elapsed time from each process's start time. |
-| D5 | Uses numeric fields for process memory, CPU, and I/O; an unavailable user name displays as `N/A`. | Displays unavailable process fields as `N/A`, including memory percentage. |
+| D4 | Uses the process user ID and runtime reported by its system-information library to derive a user name and elapsed time. | On macOS, reads the real UID and start time for processes owned by other users, so their user name and elapsed time remain available when other fields are unavailable. |
+| D5 | Formats process memory, CPU, and I/O as numeric values; an unavailable user name displays as `N/A`. | Displays unavailable process values as `N/A`. On macOS, this can include memory percentage for processes owned by other users. |
 | D6 | Gets disk usage from each physical partition and calculates used space as total minus available space. | On macOS, reports APFS used space per volume. |
 | D7 | Uses sysinfo component labels unchanged and does not deduplicate repeated sensor names. | Shows every named temperature sensor and adds numeric suffixes such as `(1)` and `(2)` to duplicate names. |
 | D8 | Discards an initial collection, waits 5 ms, then publishes the next collection. | Collects a baseline CPU sample first, then calculates the first displayed CPU usage value from the following interval. |
