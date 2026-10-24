@@ -3,3 +3,5 @@
 /result
 /result-*
 __pycache__/
+.agent-*.json
+/ntop

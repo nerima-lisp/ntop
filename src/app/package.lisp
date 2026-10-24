@@ -48,7 +48,7 @@
    #:application-unavailability-reasons #:application-unavailability-reasons-p
    #:application-unavailability-reason
    #:run-fixed-rate-sampler
-   #:apply-application-action #:run-application-loop
+   #:run-application-loop
    ;; WP12b: application composition.
    #:make-application-composition
    #:application-composition-history-stores
