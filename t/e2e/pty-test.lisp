@@ -1,5 +1,4 @@
 (in-package #:ntop.e2e.test)
-
 (defmacro define-frame-cases (&body cases)
   `(cl-weave:it-each ,cases
                      "frame readiness for ~A"
@@ -312,40 +311,95 @@
      :to-be
      t)))
  (cl-weave:it
-  "waits for the visible frame after terminal setup output"
-  (let* ((command
+ "waits for the visible frame after terminal setup output"
+ (let* ((command
           (concatenate
-           'string
-           "import os,time; "
-           "os.write(1,bytes([27,91,63,49,48,52,57,104,"
-           "27,91,63,50,48,48,52,104])); "
-           "time.sleep(0.8); "
-           "os.write(1,bytes([27,91,50,74,86,105,115,105,98,108,101,"
-           "32,115,99,114,101,101,110])); "
-           "time.sleep(0.2)"))
-         (session
+           (quote string)
+           "printf \"%b\" \"\\033[?1049h\\033[?2004h\"; "
+           "sleep 0.8; "
+           "printf \"%b\" \"\\033[2JVisible screen\"; "
+           "sleep 0.2"))
+        (session
           (ntop.e2e::launch-e2e-process
-           "python3" (list "-c" command) 24 80 :timeout-seconds 3d0))
-         (output nil)
-         (last-output-at nil))
-    (unwind-protect
-         (progn
-           (multiple-value-bind (frame last)
-               (ntop.e2e::pty-read-until-idle
-                session
-                :quiet-seconds 0.1d0
-                :first-frame-not-before 0.2d0
-                :timeout-seconds 2d0)
-             (setf output frame last-output-at last))
-           (cl-weave:expect
-            (ntop.e2e::%pty-visible-screen-output-p output)
-            :to-be
-            t)
-           (cl-weave:expect (> last-output-at 0.6d0) :to-be t)
-           (cl-weave:expect
- (not (null
-       (search "Visible screen"
-               (ntop.e2e::%octets-to-text output))))
- :to-be
- t))
-      (ntop.e2e::close-e2e-session session)))))
+           "/bin/sh" (list "-c" command) 24 80 :timeout-seconds 3d0))
+        (output nil)
+        (last-output-at nil))
+   (unwind-protect
+        (progn
+          (multiple-value-bind (frame last)
+              (ntop.e2e::pty-read-until-idle
+               session
+               :quiet-seconds 0.1d0
+               :first-frame-not-before 0.2d0
+               :timeout-seconds 2d0)
+            (setf output frame last-output-at last))
+          (cl-weave:expect
+           (ntop.e2e::%pty-visible-screen-output-p output)
+           :to-be
+           t)
+          (cl-weave:expect (> last-output-at 0.6d0) :to-be t)
+          (cl-weave:expect
+           (not
+            (null
+             (search "Visible screen"
+                     (ntop.e2e::%octets-to-text output))))
+           :to-be
+           t))
+     (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
+ "retains PTY bytes received before a later timeout"
+ (let* ((session
+          (ntop.e2e::launch-e2e-process
+           "sleep" (list "30") 24 80 :timeout-seconds 3d0))
+        (output
+          (map (quote (vector (unsigned-byte 8)))
+               (function char-code) "PARTIAL_ROUTE_OUTPUT"))
+        (delivered-p nil)
+        (original-wait (symbol-function (quote cl-tty-kit:fd-wait)))
+        (original-read (symbol-function (quote cl-tty-kit:fd-read-octets)))
+        (timed-out nil)
+        (captured-text nil))
+   (unwind-protect
+        (progn
+          (unwind-protect
+               (progn
+                 (setf (symbol-function (quote cl-tty-kit:fd-wait))
+                       (lambda (fd direction wait-seconds)
+                         (declare (ignore fd direction))
+                         (if delivered-p
+                             (progn (sleep wait-seconds) nil)
+                           t)))
+                 (setf (symbol-function (quote cl-tty-kit:fd-read-octets))
+                       (lambda (fd buffer)
+                         (declare (ignore fd))
+                         (if delivered-p
+                             nil
+                           (progn
+                             (setf delivered-p t)
+                             (replace buffer output)
+                             (length output)))))
+                 (handler-case
+                     (ntop.e2e::pty-read-until-idle
+                      session :quiet-seconds 1d0 :timeout-seconds 0.5d0)
+                   (ntop.e2e::e2e-timeout () (setf timed-out t)))
+                 (setf captured-text
+                       (ntop.e2e::%octets-to-text
+                        (ntop.e2e::e2e-session-output session)))
+                 (cl-weave:expect timed-out :to-be t)
+                 (cl-weave:expect
+                  (not (null (search "PARTIAL_ROUTE_OUTPUT" captured-text)))
+                  :to-be
+                  t)
+                 (cl-weave:expect
+                  (realp
+                   (ntop.e2e::e2e-session-first-output-seconds session))
+                  :to-be
+                  t)
+                 (cl-weave:expect
+                  (realp
+                   (ntop.e2e::e2e-session-first-visible-output-seconds session))
+                  :to-be
+                  t))
+            (setf (symbol-function (quote cl-tty-kit:fd-wait)) original-wait
+                  (symbol-function (quote cl-tty-kit:fd-read-octets)) original-read)))
+     (ntop.e2e::close-e2e-session session)))))

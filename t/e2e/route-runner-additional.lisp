@@ -1,37 +1,9 @@
 (in-package #:ntop.e2e)
 
 (defun %route-wait-for-exit (session timeout-seconds)
-  (let ((deadline (+ (%now) (%seconds-to-ticks timeout-seconds)))
-        (process (e2e-session-process session)))
-    (loop while (sb-ext:process-alive-p process)
-          do (when (>= (%now) deadline)
-               (error "Route child ~d did not exit within ~,1f seconds."
-                      (e2e-session-pid session) timeout-seconds))
-             (sleep 0.05d0))
+  (let ((process (e2e-session-process session)))
+    (%e2e-drain-session-until-exit session timeout-seconds "child exit")
     (sb-ext:process-exit-code process)))
-
-(defun %route-drain-exited-session (session timeout-seconds)
-  (let* ((deadline (+ (%now) (%seconds-to-ticks timeout-seconds)))
-         (buffer (make-array 4096 :element-type '(unsigned-byte 8)))
-         (output (make-array 0 :element-type '(unsigned-byte 8)
-                             :adjustable t :fill-pointer 0)))
-    (loop
-      for alive = (sb-ext:process-alive-p (e2e-session-process session))
-      for ready = (cl-tty-kit:fd-wait (e2e-session-fd session) :input 0.05d0)
-      do (when (>= (%now) deadline)
-           (error "Route child ~d did not finish output within ~,1f seconds."
-                  (e2e-session-pid session) timeout-seconds))
-         (if ready
-             (let ((count (cl-tty-kit:fd-read-octets
-                           (e2e-session-fd session) buffer)))
-               (cond
-                 ((and (integerp count) (plusp count))
-                  (loop for index below count
-                        do (vector-push-extend (aref buffer index) output)))
-                 ((and (integerp count) (zerop count))
-                  (unless alive (return output)))
-                 ((and (null count) (not alive)) (return output))))
-             (unless alive (return output))))))
 
 (defun %route-parse-output (program arguments timeout-seconds)
   (let* ((result (host-kit:run-program program arguments
@@ -46,33 +18,69 @@
           :stdout stdout
           :stderr stderr)))
 
-(defun %route-read-through-quiet-period (session quiet-seconds timeout-seconds)
+(defun %route-read-through-quiet-period
+    (session quiet-seconds timeout-seconds
+             &optional (initial-quiet-seconds quiet-seconds))
+  (%validate-seconds quiet-seconds "QUIET-SECONDS")
+  (%validate-seconds initial-quiet-seconds "INITIAL-QUIET-SECONDS")
   (multiple-value-bind (deadline deadline-seconds)
       (%deadline-for-call session "read" timeout-seconds)
-    (let ((quiet-deadline (+ (%now) (%seconds-to-ticks quiet-seconds)))
+    (let ((quiet-deadline
+           (+ (%now) (%seconds-to-ticks initial-quiet-seconds)))
           (buffer (make-array 4096 :element-type '(unsigned-byte 8)))
           (output (make-array 0 :element-type '(unsigned-byte 8)
-                              :adjustable t :fill-pointer 0)))
+                              :adjustable t :fill-pointer 0))
+          (query-scan-index 0))
       (loop for now = (%now)
             do (when (>= now deadline)
                  (%signal-timeout "read" deadline-seconds))
-               (when (>= now quiet-deadline)
-                 (return (values output (%elapsed-seconds session now))))
-               (let ((wait-until (min deadline quiet-deadline)))
-                 (when (cl-tty-kit:fd-wait
-                        (e2e-session-fd session) :input
-                        (%ticks-to-seconds (- wait-until now)))
-                   (let ((count (cl-tty-kit:fd-read-octets
-                                 (e2e-session-fd session) buffer)))
-                     (cond
-                       ((null count) nil)
-                       ((zerop count)
-                        (error "PTY closed before the quiet period completed."))
-                       (t
-                        (loop for index below count
-                              do (vector-push-extend (aref buffer index) output))
-                        (setf quiet-deadline
-                              (+ (%now) (%seconds-to-ticks quiet-seconds))))))))))))
+            (when (>= now quiet-deadline)
+              (return (values output (%elapsed-seconds session now))))
+            (let ((wait-until (min deadline quiet-deadline)))
+              (when (cl-tty-kit:fd-wait
+                     (e2e-session-fd session) :input
+                     (%ticks-to-seconds (- wait-until now)))
+                (let ((count (cl-tty-kit:fd-read-octets
+                              (e2e-session-fd session) buffer)))
+                  (cond
+                   ((null count) nil)
+                   ((zerop count)
+                    (error "PTY closed before the quiet period completed."))
+                   (t
+                    (loop for index below count
+                          do (vector-push-extend (aref buffer index) output))
+                    (%e2e-session-record-output session
+                                                (subseq buffer 0 count))
+                    (multiple-value-bind (next-index)
+                        (%pty-answer-cursor-query
+                         session output query-scan-index deadline)
+                      (setf query-scan-index next-index))
+                    (setf quiet-deadline
+                          (+ (%now) (%seconds-to-ticks quiet-seconds))))))))))))
+(defun %route-close-session-with-evidence (session evidence-prefix)
+  (let* ((ansi-path
+           (merge-pathnames (format nil "~a.ansi" evidence-prefix)))
+         (timing-path
+           (merge-pathnames (format nil "~a.timing" evidence-prefix)))
+         (output (e2e-session-output session))
+         (timing-text
+           (format nil
+                   "first-output-seconds: ~a~%first-visible-screen-output-seconds: ~a~%"
+                   (or (e2e-session-first-output-seconds session)
+                       "not observed")
+                   (or (e2e-session-first-visible-output-seconds session)
+                       "not observed"))))
+    (unwind-protect
+         (progn
+           (%route-write-ansi ansi-path output)
+           (when (plusp (length output))
+             (with-open-file (stream timing-path
+                                     :direction :output
+                                     :if-exists :supersede
+                                     :if-does-not-exist :create)
+               (write-string timing-text stream))))
+      (close-e2e-session session))
+    (namestring ansi-path)))
 
 (defun %route-read-initial-and-action (session rows columns rate timeout
                                                action-text context-text evidence-prefix
@@ -93,9 +101,11 @@
       (pty-send-input session (%route-octets context-text)
                       :timeout-seconds timeout)
       (multiple-value-bind (context-output)
-          (pty-read-until-idle session
-                               :quiet-seconds *route-frame-quiet-seconds*
-                               :timeout-seconds timeout)
+          (%route-read-through-quiet-period
+           session
+           *route-frame-quiet-seconds*
+           timeout
+           (* *route-first-frame-factor* (/ rate 1000d0)))
         (%append-octets raw context-output)
         (when (and (string= (route-id route) "mouse-69")
                    (string-equal (or (getf subcase :context) "") "help"))
@@ -106,9 +116,11 @@
             (pty-send-input session (%route-octets input)
                             :timeout-seconds timeout)
             (multiple-value-bind (preparation-output)
-                (pty-read-until-idle session
-                                     :quiet-seconds *route-frame-quiet-seconds*
-                                     :timeout-seconds timeout)
+                (%route-read-through-quiet-period
+                 session
+                 *route-frame-quiet-seconds*
+                 timeout
+                 (* *route-first-frame-factor* (/ rate 1000d0)))
               (%append-octets raw preparation-output))))))
     (let* ((before-grid
             (progn
@@ -122,9 +134,11 @@
                   (pty-send-input session (%route-octets input)
                                   :timeout-seconds timeout)
                   (multiple-value-bind (preparation-output)
-                      (pty-read-until-idle session
-                                           :quiet-seconds *route-frame-quiet-seconds*
-                                           :timeout-seconds timeout)
+                      (%route-read-through-quiet-period
+                       session
+                       *route-frame-quiet-seconds*
+                       timeout
+                       (* *route-first-frame-factor* (/ rate 1000d0)))
                     (%append-octets raw preparation-output))))
               (when (and (eq (route-kind route) :key)
                          (member (route-action route)
@@ -135,9 +149,11 @@
                 (pty-send-input session (%route-octets "+")
                                 :timeout-seconds timeout)
                 (multiple-value-bind (preparation-output)
-                    (pty-read-until-idle session
-                                         :quiet-seconds *route-frame-quiet-seconds*
-                                         :timeout-seconds timeout)
+                    (%route-read-through-quiet-period
+                     session
+                     *route-frame-quiet-seconds*
+                     timeout
+                     (* *route-first-frame-factor* (/ rate 1000d0)))
                   (%append-octets raw preparation-output)))
               (progn
                 (when (and (eq (route-kind route) :key)
@@ -147,9 +163,11 @@
                   (pty-send-input session (%route-octets "2")
                                   :timeout-seconds timeout)
                   (multiple-value-bind (preparation-output)
-                      (pty-read-until-idle session
-                                           :quiet-seconds *route-frame-quiet-seconds*
-                                           :timeout-seconds timeout)
+                      (%route-read-through-quiet-period
+                       session
+                       *route-frame-quiet-seconds*
+                       timeout
+                       (* *route-first-frame-factor* (/ rate 1000d0)))
                     (%append-octets raw preparation-output)))
                 (when (and (eq (route-kind route) :key)
                            (string= (route-action route) "Select help section")
@@ -158,9 +176,11 @@
                   (pty-send-input session (%route-octets "1")
                                   :timeout-seconds timeout)
                   (multiple-value-bind (preparation-output)
-                      (pty-read-until-idle session
-                                           :quiet-seconds *route-frame-quiet-seconds*
-                                           :timeout-seconds timeout)
+                      (%route-read-through-quiet-period
+                       session
+                       *route-frame-quiet-seconds*
+                       timeout
+                       (* *route-first-frame-factor* (/ rate 1000d0)))
                     (%append-octets raw preparation-output))))
               (%route-write-ansi
                (merge-pathnames (format nil "~a.ansi" evidence-prefix)) raw)
@@ -201,9 +221,11 @@
               (%route-read-through-quiet-period
                session *route-frame-quiet-seconds* timeout))
              (t
-              (pty-read-until-idle session
-                                   :quiet-seconds *route-frame-quiet-seconds*
-                                   :timeout-seconds timeout)))
+              (%route-read-through-quiet-period
+               session
+               *route-frame-quiet-seconds*
+               timeout
+               (* *route-first-frame-factor* (/ rate 1000d0)))))
           (%append-octets raw action-output))
         (push (%route-grid raw rows columns) action-grids))
       (let* ((ansi-path (merge-pathnames
@@ -238,7 +260,7 @@
                  :evidence evidence
                  :actual (format nil "captured a ~d by ~d terminal frame"
                                  columns rows)))
-      (close-e2e-session session))))
+      (%route-close-session-with-evidence session evidence-prefix))))
 (defun %route-run-exit-side (program route subcase evidence-prefix rows columns
                              rate timeout config-path evidence-directory)
   (let* ((args (%route-base-arguments program config-path route subcase
@@ -265,7 +287,7 @@
                                :timeout-seconds timeout)
                (setf exit-code (%route-wait-for-exit session timeout)))
            (error (condition) (setf error-value condition)))
-      (close-e2e-session session))
+      (%route-close-session-with-evidence session evidence-prefix))
     (list :passed (and (null error-value) (eql exit-code 0))
           :exit-code exit-code
           :actual (if error-value
@@ -273,39 +295,41 @@
                       (format nil "child exit status ~a" exit-code))
           :evidence path)))
 (defun %route-run-resize-side (program route subcase evidence-prefix rate timeout
-                               config-path evidence-directory)
+                                       config-path evidence-directory)
   (let* ((args (%route-base-arguments program config-path route subcase
                                       evidence-directory))
          (session (launch-e2e-process program args 24 80
                                       :environment (%route-environment)
                                       :timeout-seconds timeout))
          (raw (make-array 0 :element-type '(unsigned-byte 8)
-                         :adjustable t :fill-pointer 0))
+                          :adjustable t :fill-pointer 0))
          (path (merge-pathnames (format nil "~a.ansi" evidence-prefix))))
     (unwind-protect
-         (progn
-           (multiple-value-bind (initial)
-               (pty-read-until-idle
-                session :quiet-seconds *route-frame-quiet-seconds*
-                :first-frame-not-before (* *route-first-frame-factor*
-                                           (/ rate 1000d0))
-                :timeout-seconds timeout)
-             (%append-octets raw initial))
-           (let ((initial-grid (%route-grid raw 24 80)))
-           (pty-resize-session session 36 120 :timeout-seconds timeout)
-           (multiple-value-bind (resized)
-               (pty-read-until-idle session
-                                    :quiet-seconds *route-frame-quiet-seconds*
-                                    :timeout-seconds timeout)
-             (%append-octets raw resized))
-           (let ((grid (%route-grid raw 36 120)))
-             (%route-write-ansi path raw)
-             (list :grid grid :projection (project-criterion-grid grid)
-                   :initial-projection nil :initial-grid initial-grid
-                   :action-grids (list grid) :evidence (namestring path)
-                   :actual (format nil "terminal frame is ~d by ~d"
-                                   (grid-width grid) (grid-height grid))))))
-      (close-e2e-session session))))
+        (progn
+          (multiple-value-bind (initial)
+              (pty-read-until-idle
+               session :quiet-seconds *route-frame-quiet-seconds*
+               :first-frame-not-before (* *route-first-frame-factor*
+                                          (/ rate 1000d0))
+               :timeout-seconds timeout)
+            (%append-octets raw initial))
+          (let ((initial-grid (%route-grid raw 24 80)))
+            (pty-resize-session session 36 120 :timeout-seconds timeout)
+            (multiple-value-bind (resized)
+                (%route-read-through-quiet-period
+                 session
+                 *route-frame-quiet-seconds*
+                 timeout
+                 (* *route-first-frame-factor* (/ rate 1000d0)))
+              (%append-octets raw resized))
+            (let ((grid (%route-grid raw 36 120)))
+              (%route-write-ansi path raw)
+              (list :grid grid :projection (project-criterion-grid grid)
+                    :initial-projection nil :initial-grid initial-grid
+                    :action-grids (list grid) :evidence (namestring path)
+                    :actual (format nil "terminal frame is ~d by ~d"
+                                    (grid-width grid) (grid-height grid))))))
+      (%route-close-session-with-evidence session evidence-prefix))))
 
 (progn
   (defun %route-pid-line-p (text pid)
@@ -380,59 +404,15 @@
             (1+ (second point)))))
   )
 )
-  (defun %route-help-visible-sections (grid)
-    (loop for row below (grid-height grid)
-          for line = (criterion-row-text grid row)
-          for separator = (search " - " line)
-          for number =
-            (and separator
-                 (plusp separator)
-                 (digit-char-p (char line (1- separator))))
-          when number collect (cons number row)))
-  (defun %route-help-navigation-state-p (route subcase before-grid after-grid)
-    (when (and (string-equal (or (getf subcase :context) "") "help")
-               before-grid after-grid)
-      (let* ((action (route-action route))
-             (before (%route-help-visible-sections before-grid))
-             (after (%route-help-visible-sections after-grid))
-             (before-first (first before))
-             (before-last (car (last before)))
-             (after-last (car (last after))))
-        (cond
-          ((string= action "Go to first row")
-           (let ((before-two (assoc 2 before))
-                 (after-one (assoc 1 after))
-                 (after-two (assoc 2 after)))
-             (and before-two after-one after-two
-                  (> (cdr after-two) (cdr before-two)))))
-          ((string= action "Go to last row")
-           (let ((before-two (assoc 2 before))
-                 (before-nine (assoc 9 before))
-                 (after-nine (assoc 9 after)))
-             (and before-two after-nine
-                  (or (null before-nine)
-                      (/= (cdr before-nine) (cdr after-nine))))))
-          ((string= action "Move to previous row")
-           (let ((old (assoc 2 before)) (new (assoc 2 after)))
-             (and old new (= (cdr new) (1+ (cdr old))))))
-          ((string= action "Move to next row")
-           (let* ((old (assoc 1 before))
-                  (row (and old (cdr old)))
-                  (old-line (and row (criterion-row-text before-grid row)))
-                  (new-line (and row (criterion-row-text after-grid row))))
-             (and old-line new-line
-                  (search "1 - General" old-line)
-                  (search "q, Q, Ctrl-c" new-line)
-                  (not (string= old-line new-line)))))
-          ((member action '("Page up" "Half-page up") :test #'string=)
-           (and before-last after-last
-                (= (car before-last) 9)
-                (< (car after-last) (car before-last))))
-          ((member action '("Page down" "Half-page down") :test #'string=)
-           (and before-first before-last after-last
-                (= (car before-first) 1)
-                (> (car after-last) (car before-last))))
-          (t nil)))))
+(defun %route-help-navigation-state-p (route subcase before-grid after-grid)
+  (when (and (string-equal (or (getf subcase :context) "") "help")
+             before-grid after-grid
+             (member (route-action route)
+                     (list "Go to first row" "Go to last row"
+                           "Move to previous row" "Move to next row"
+                           "Page up" "Page down" "Half-page up" "Half-page down")
+                     :test (function string=)))
+    (%route-grid-first-difference before-grid after-grid)))
   (defun %route-modal-action-state-p (route subcase before-grid after-grid)
     (let* ((id (route-id route))
            (action (route-action route))

@@ -120,14 +120,14 @@
                       "(caught nil))"
                       "(handler-case"
                       "(ntop.app.infrastructure:call-with-terminal-session"
-                      "(lambda ()"
+                      "(lambda (poll-terminal-event) (declare (ignore poll-terminal-event))"
                       "(setf thunk-ran t"
                       "during (funcall signature (sb-posix:tcgetattr 0)))"
                       "(error \"route exception sentinel\")))"
                       "(error (condition)"
                       "(setf caught"
                       "(not (null (search \"route exception sentinel\""
-                      "(princ-to-string condition))))))"
+                      "(princ-to-string condition)))))))"
                       "(format t \"ROUTE-THUNK-RAN=~a~%\" thunk-ran)"
                       "(format t \"ROUTE-RAW=~a~%\""
                       "(and thunk-ran during (not (equalp before during))))"
@@ -148,7 +148,7 @@
          (handler-case
              (progn
                (setf exit-code (%route-wait-for-exit session (* 4 timeout)))
-               (setf output (%route-drain-exited-session session timeout)))
+               (setf output (e2e-session-output session)))
            (error (condition) (setf error-value condition)))
       (close-e2e-session session))
     (let* ((text (and output (%octets-to-text output)))

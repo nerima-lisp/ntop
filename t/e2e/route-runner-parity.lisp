@@ -1,4 +1,19 @@
 (in-package #:ntop.e2e)
+(defun %route-process-search-open-state-p (text initial-text)
+  (flet ((controls-visible-p (screen-text)
+           (and screen-text
+                (every (lambda (label) (search label screen-text))
+                       (list "Case" "Whole" "Regex")))))
+    (and (controls-visible-p text)
+         (search "> " text)
+         (not (and (controls-visible-p initial-text)
+                   (search "> " initial-text))))))
+(defun %route-help-search-open-state-p (text)
+  (and text
+       (not
+        (null
+         (or (search "Type to search, Esc to close" text :test #'char-equal)
+             (search "Search: |" text))))))
 
 (defun %route-extension-state-p (route subcase candidate)
   (let* ((action (route-action route)) (initial (getf candidate :initial-grid))
@@ -129,11 +144,9 @@
           (and text (search "1 - General" text)
                (not (search "1 - General" initial-text))))
          ((string= action "Open help search")
-          (and text initial-text (search "Esc to close" text)
-               (search "1 - General" initial-text)))
+          (%route-help-search-open-state-p text))
          ((string= action "Open process search")
-          (and text initial-text (search "Case(F1)" text) (search "> " text)
-               (not (search "Case(F1)" initial-text))))
+          (%route-process-search-open-state-p text initial-text))
          ((string= action "Enter search text")
           (if (string-equal (or (getf subcase :context) "") "help search")
               (and initial-text
@@ -182,68 +195,33 @@
            (t
             (%route-key-context-state route subcase initial grid stable)))))))
      ((eq (route-kind route) :mouse)
-      (cond
-       ((member action (quote ("Ignore other buttons" "Ignore pointer motion"))
-                :test (function string=))
-        stable)
-       ((and (string= (route-id route) "mouse-74")
-             (%route-widget-no-data-p initial "Processes")
-             (%route-widget-no-data-p grid "Processes"))
-        :manual) ((member (route-id route)
-                          (quote ("mouse-71" "mouse-72"))
-                          :test (function string=))
-                  :manual)
-       ((and (string-equal (or (getf subcase :context) "") "help")
-             (member (route-id route) '("mouse-69" "mouse-70") :test #'string=))
-        (let* ((before-top
-                (and initial
-                     (loop for row below (grid-height initial)
-                           when (search "Scroll to browse"
-                                        (criterion-row-text initial row)
-                                        :test #'char-equal)
-                           return row)))
-               (after-top
-                (and grid
-                     (loop for row below (grid-height grid)
-                           when (search "Scroll to browse"
-                                        (criterion-row-text grid row)
-                                        :test #'char-equal)
-                           return row)))
-               (before-general
-                (and initial
-                     (loop for row below (grid-height initial)
-                           when (search "1 - General"
-                                        (criterion-row-text initial row)
-                                        :test #'char-equal)
-                           return row)))
-               (after-general
-                (and grid
-                     (loop for row below (grid-height grid)
-                           when (search "1 - General"
-                                        (criterion-row-text grid row)
-                                        :test #'char-equal)
-                           return row)))
-               (raw-change (and initial grid
-                                (%route-grid-first-difference initial grid))))
-          (and raw-change
-               (if (string= (route-id route) "mouse-69")
-                   (and (null before-top) before-general after-top after-general
-                        (= before-general after-top)
-                        (= (1+ before-general) after-general))
-                 (and before-top before-general (null after-top) after-general
-                      (= (1+ before-top) before-general)
-                      (= before-top after-general))))))
-       ((%route-mouse-target-unavailable-p subcase initial) :manual)
-       (t
-        (if (and (string-equal (or (getf subcase :context) "") "graphs")
-                 (member (route-id route) '("mouse-69" "mouse-70")
-                         :test #'string=))
-            (%route-graph-window-transition-p route initial grid)
-          (if (and (member (route-id route) '("mouse-75" "mouse-77")
-                           :test #'string=)
-                   (not changed))
-              :manual
-            changed)))))
+  (cond
+   ((member action
+            (quote ("Ignore other buttons" "Ignore pointer motion"))
+            :test (function string=))
+    stable)
+   ((and (string= (route-id route) "mouse-74")
+         (%route-widget-no-data-p initial "Processes")
+         (%route-widget-no-data-p grid "Processes"))
+    :manual)
+   ((member (route-id route) (quote ("mouse-71" "mouse-72"))
+            :test (function string=))
+    :manual)
+   ((and (string-equal (or (getf subcase :context) "") "help")
+         (member (route-id route) (quote ("mouse-69" "mouse-70"))
+                 :test (function string=)))
+    (%route-grid-first-difference initial grid))
+   ((%route-mouse-target-unavailable-p subcase initial) :manual)
+   (t
+    (if (and (string-equal (or (getf subcase :context) "") "graphs")
+             (member (route-id route) (quote ("mouse-69" "mouse-70"))
+                     :test (function string=)))
+        (%route-graph-window-transition-p route initial grid)
+      (if (and (member (route-id route) (quote ("mouse-75" "mouse-77"))
+                       :test (function string=))
+               (not changed))
+          :manual
+        changed)))))
      ((and (eq (route-kind route) :flag)
            (member (ntop.app.domain:parity-flag-snake-case (route-entry route))
                    '("disable_keys" "disable_click" "free_arc") :test #'string=))

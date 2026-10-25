@@ -29,7 +29,11 @@
   started-at
   deadline
   timeout-seconds
-  (closed-p nil))
+  (closed-p nil)
+  (output (make-array 0 :element-type (quote (unsigned-byte 8))
+                      :adjustable t :fill-pointer 0))
+  (first-output-seconds nil)
+  (first-visible-output-seconds nil))
 
 (defun frame-ready-p (started-at last-output-at
                                  now
@@ -72,6 +76,42 @@
                 (setf state
                       (if (= byte 92) :text :string)))))
     nil))
+(defun %e2e-session-record-output (session octets)
+  (when (plusp (length octets))
+    (let ((output (e2e-session-output session))
+          (elapsed (%elapsed-seconds session (%now))))
+      (loop for index below (length octets)
+            do (vector-push-extend (aref octets index) output))
+      (unless (e2e-session-first-output-seconds session)
+        (setf (e2e-session-first-output-seconds session) elapsed))
+      (when (and (null (e2e-session-first-visible-output-seconds session))
+                 (%pty-visible-screen-output-p output))
+        (setf (e2e-session-first-visible-output-seconds session) elapsed)))))
+(defun %e2e-drain-session-until-exit
+    (session timeout-seconds &optional (operation "child exit"))
+  (let ((process (e2e-session-process session))
+        (deadline (+ (%now) (%seconds-to-ticks timeout-seconds)))
+        (buffer (make-array 4096 :element-type (quote (unsigned-byte 8)))))
+    (loop for now = (%now)
+          do (when (>= now deadline)
+               (%signal-timeout operation timeout-seconds))
+             (let ((alive (sb-ext:process-alive-p process)))
+               (if (cl-tty-kit:fd-wait
+                    (e2e-session-fd session)
+                    :input
+                    (min 0.05d0 (%ticks-to-seconds (- deadline now))))
+                   (let ((count (cl-tty-kit:fd-read-octets
+                                 (e2e-session-fd session) buffer)))
+                     (cond
+                       ((and (integerp count) (plusp count))
+                        (%e2e-session-record-output
+                         session (subseq buffer 0 count)))
+                       ((and (integerp count) (zerop count))
+                        (unless alive (return (e2e-session-output session))))
+                       ((and (null count) (not alive))
+                        (return (e2e-session-output session)))))
+                 (unless alive
+                   (return (e2e-session-output session))))))))
 
 (defun %validate-seconds (seconds name)
   (unless
@@ -263,14 +303,14 @@
                                           (when
                                               (and last-output-at (not awaiting-post-query-output-p)
                                                    (and
-                                                 (or (null first-frame-not-before-seconds)
-                                                     (%pty-visible-screen-output-p output))
-                                                 (frame-ready-p
-                                                  (%ticks-to-seconds started-at)
-                                                  (%ticks-to-seconds last-output-at)
-                                                  (%ticks-to-seconds now)
-                                                  (%ticks-to-seconds first-frame-at)
-                                                  quiet-ticks-seconds)))
+                                                    (or (null first-frame-not-before-seconds)
+                                                        (%pty-visible-screen-output-p output))
+                                                    (frame-ready-p
+                                                     (%ticks-to-seconds started-at)
+                                                     (%ticks-to-seconds last-output-at)
+                                                     (%ticks-to-seconds now)
+                                                     (%ticks-to-seconds first-frame-at)
+                                                     quiet-ticks-seconds)))
                                             (return
                                              (values
                                               (make-array (length output)
@@ -283,10 +323,12 @@
                                               (%elapsed-seconds session now))))
                                           (let* ((idle-deadline
                                                   (when (and last-output-at
-                                                (not awaiting-post-query-output-p)
-                                                (or (null first-frame-not-before-seconds)
-                                                    (%pty-visible-screen-output-p output)))
-                                               (+ last-output-at quiet-ticks)))
+                                                             (not awaiting-post-query-output-p)
+                                                             (or
+                                                              (null first-frame-not-before-seconds)
+                                                              (%pty-visible-screen-output-p
+                                                               output)))
+                                                    (+ last-output-at quiet-ticks)))
                                                  (wake-at
                                                   (if idle-deadline
                                                       (min deadline
@@ -320,14 +362,10 @@
                                                   (error
                                                    "PTY closed before a frame was complete."))
                                                  (t
-                                                  (loop for
-                                                        index
-                                                        below
-                                                        count
-                                                        do
-                                                        (vector-push-extend
-                                                         (aref buffer index)
-                                                         output))
+                                                  (progn
+  (loop for index below count
+        do (vector-push-extend (aref buffer index) output))
+  (%e2e-session-record-output session (subseq buffer 0 count)))
                                                   (setf awaiting-post-query-output-p nil)
                                                   (multiple-value-bind
                                                       (next-index answered-p output-after-query-p)
@@ -444,39 +482,3 @@
                                       rows))
                                     (%elapsed-seconds session resized-at))))))
 
-(progn
-  (defun %reap-e2e-process (process)
-    (let ((deadline (+ (%now) (%seconds-to-ticks 1d0))))
-      (when (sb-ext:process-alive-p process)
-        (sb-ext:process-kill process 9 :pid))
-      (with-e2e-operation-timeout ("child reap" deadline 1d0)
-                                  (sb-ext:process-wait process))
-      (when (sb-ext:process-alive-p process)
-        (%signal-timeout "child reap" 1d0))
-      (sb-ext:process-close process)))
-  (defun close-e2e-session (session)
-    (unless (e2e-session-closed-p session)
-      (let* ((process (e2e-session-process session))
-             (deadline (+ (%now) (%seconds-to-ticks 1d0)))
-             (close-error nil))
-        (handler-case (with-e2e-operation-timeout ("close" deadline 1d0)
-                                                  (cl-tty-kit:close-pty
-                                                   (e2e-session-pty session)))
-          (error (condition)
-            (setf close-error condition)))
-        (when (or close-error (sb-ext:process-alive-p process))
-          (%reap-e2e-process process)
-          (setf (e2e-session-closed-p session) t)
-          (if close-error
-              (warn "PTY close failed; child was reaped by fallback: ~a" close-error)
-              (error "PTY close returned while its child was still alive.")))
-        (setf (e2e-session-closed-p session) t)))
-    session))
-
-(defmacro with-e2e-session ((session program args rows cols &rest options) &body
-                            body)
-  `(let ((,session (launch-e2e-process ,program ,args ,rows ,cols ,@options)))
-     (unwind-protect
-         (progn
-           ,@body)
-       (close-e2e-session ,session))))
