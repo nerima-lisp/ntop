@@ -12,6 +12,7 @@ COLUMN_CATALOG = ROOT / "src/app/domain-parity-process.lisp"
 PTY_ROWS, PTY_COLUMNS = 24, 80
 PROCESS_TIMEOUT_SECONDS, PTY_Q_GRACE_SECONDS, PTY_OBSERVATION_SECONDS = 8.0, 5.0, 3.5
 MAX_RETAINED_OUTPUT_BYTES, READ_CHUNK_BYTES = 8192, 65536
+CONFIG_DIFFERENCE_REASON = "Configuration-file handling is outside the CLI parity specification."
 
 @dataclass
 class CliCase:
@@ -36,8 +37,7 @@ class CountingSink:
         return sum(cell != " " for row in screen.cells for cell in row)
     def flush(self) -> None: pass
 
-def _strings(text: str) -> list[str]:
-    return re.findall(r'"([^"]*)"', text)
+def _strings(text: str) -> list[str]: return re.findall(r'"([^"]*)"', text)
 _FLAG_RECORD = re.compile(
     r'\(\s*"([^"]+)"\s+"([^"]*)"\s+\(([^()]*)\)\s+"([^"]+)"'
     r'\s+\(([^()]*)\)\s+"[^"]*"\s+\([^()]*\)\s*\)',
@@ -52,16 +52,13 @@ def _flag_rows() -> list[list[Any]]:
     text = FLAG_CATALOG.read_text(encoding="utf-8")
     return [[name, short, _strings(aliases), value_type, _strings(values)]
             for name, short, aliases, value_type, values in _FLAG_RECORD.findall(text)]
-
 def _column_aliases() -> list[str]:
     text = COLUMN_CATALOG.read_text(encoding="utf-8")
-    aliases = [alias for match in _COLUMN_RECORD.finditer(text)
-               for alias in _strings(match.group(1))]
+    aliases = [a for m in _COLUMN_RECORD.finditer(text) for a in _strings(m.group(1))]
     result = _unique_case_insensitive(aliases)
     if not result:
         raise ValueError("the CLI sample rules require at least one column alias")
     return result
-
 def _case_spellings(row: list[Any]) -> list[str]:
     name, short, aliases = row[0], row[1], row[2]
     spellings = ["--" + name, "--" + name.replace("_", "-")]
@@ -76,7 +73,6 @@ def _case_spellings(row: list[Any]) -> list[str]:
             result.append(spelling)
             seen.add(folded)
     return result
-
 def _unique_case_insensitive(values: list[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
@@ -86,7 +82,6 @@ def _unique_case_insensitive(values: list[str]) -> list[str]:
             result.append(value)
             seen.add(folded)
     return result
-
 def _sample_values(row: list[Any], columns: list[str]) -> list[str | None]:
     name, value_type = row[0], row[3]
     if value_type in ("boolean", "control"):
@@ -99,13 +94,12 @@ def _sample_values(row: list[Any], columns: list[str]) -> list[str | None]:
     if value_type == "enum":
         return list(row[4])
     if value_type == "path":
-        return ["/tmp/ntop-config"]
+        return [os.devnull]
     if value_type == "column-name":
         if not columns:
             raise ValueError("the CLI sample rules require at least one column alias")
         return columns
     raise ValueError(f"unsupported parity flag value type: {value_type}")
-
 def _add_case(cases, index, argv, expected_status, execution, group, source):
     key = (argv, execution)
     case = index.get(key)
@@ -118,17 +112,17 @@ def _add_case(cases, index, argv, expected_status, execution, group, source):
     case.groups.add(group)
     if source not in case.sources:
         case.sources.append(source)
-
 def _generated_valid_case(row: list[Any]) -> tuple[int, str]:
     name, value_type = row[0], row[3]
     if value_type == "control":
         return 0, "capture"
-    if value_type == "path" or name == "default_widget_count":
+    if value_type == "path":
+        return 2, "config_difference"
+    if name == "default_widget_count":
         return 2, "capture"
     if name == "hide_k_threads" and not sys.platform.startswith("linux"):
         return 2, "capture"
     return 0, "tui"
-
 def _build_cases() -> list[CliCase]:
     rows = _flag_rows()
     if len(rows) != 52 or len({row[0] for row in rows}) != 52:
@@ -199,8 +193,7 @@ def _select_cases(cases: list[CliCase], all_cases: bool) -> list[CliCase]:
     }
     return [case for case in cases
             if "invalid" in case.groups or "explicit" in case.groups
-            or case.argv in focused_tui]
-
+            or case.argv in focused_tui or case.execution == "config_difference"]
 def _run_captured(binary: str, argv: tuple[str, ...]) -> dict[str, Any]:
     result: dict[str, Any] = {"exit_status": None, "timed_out": False,
                               "execution_error": None, "output_channels": {}}
@@ -272,7 +265,6 @@ def _run_captured(binary: str, argv: tuple[str, ...]) -> dict[str, Any]:
         "retained_bytes": retained[name], "truncated": totals[name] > retained[name]}
         for name in ("stdout", "stderr")}
     return result
-
 def _run_tui(binary: str, argv: tuple[str, ...]) -> dict[str, Any]:
     sink = CountingSink()
     session: PtySession | None = None
@@ -314,11 +306,11 @@ def _run_tui(binary: str, argv: tuple[str, ...]) -> dict[str, Any]:
         "screen_drawn": screen_drawn,
         "cleanup_verified": bool(cleanup.get("verified")),
     }
-
 def _run_case(case: CliCase, ntop: str, btm: str) -> dict[str, Any]:
-    runner = _run_tui if case.execution == "tui" else _run_captured
-    ntop_result = runner(ntop, case.argv)
-    btm_result = runner(btm, case.argv)
+    ntop_runner = _run_tui if case.execution == "tui" else _run_captured
+    btm_runner = _run_tui if case.execution == "config_difference" else ntop_runner
+    ntop_result = ntop_runner(ntop, case.argv)
+    btm_result = btm_runner(btm, case.argv)
     ntop_status = ntop_result["exit_status"]
     btm_status = btm_result["exit_status"]
     status_match = None if None in (ntop_status, btm_status) else ntop_status == btm_status
@@ -331,15 +323,21 @@ def _run_case(case: CliCase, ntop: str, btm: str) -> dict[str, Any]:
             for name in ("stdout", "stderr")
         )
     unexpected: list[str] = []
+    expected_btm_status = 0 if case.execution == "config_difference" else case.expected_status
     for name, result in (("ntop", ntop_result), ("btm", btm_result)):
         if result["execution_error"] is not None:
             unexpected.append(f"{name} execution error")
         if result["timed_out"]:
             unexpected.append(f"{name} timed out")
         status = result["exit_status"]
-        if status is not None and status != case.expected_status:
-            unexpected.append(f"{name} expected status {case.expected_status}")
-        if case.execution == "capture":
+        expected_status = case.expected_status if name == "ntop" else expected_btm_status
+        if status != expected_status:
+            detail = "exit status was not observed" if status is None else (
+                f"expected status {expected_status}")
+            unexpected.append(f"{name} {detail}")
+        is_tui = case.execution == "tui" or (
+            case.execution == "config_difference" and name == "btm")
+        if not is_tui:
             channels = result["output_channels"]
             if not channels["stdout"]["nonempty"] and not channels["stderr"]["nonempty"]:
                 unexpected.append(f"{name} produced no captured output")
@@ -350,10 +348,11 @@ def _run_case(case: CliCase, ntop: str, btm: str) -> dict[str, Any]:
                 unexpected.append(f"{name} TUI screen draw was not observed")
             if not result["cleanup_verified"]:
                 unexpected.append(f"{name} cleanup was not verified")
-    passed = status_match is True and channels_match is not False and not unexpected
+    passed = channels_match is not False and not unexpected
     return {
         "argv": list(case.argv),
         "expected_status": case.expected_status,
+        "btm_expected_status": expected_btm_status,
         "execution": case.execution,
         "groups": sorted(case.groups),
         "sources": case.sources,
@@ -373,7 +372,8 @@ def _summary(available_cases: list[CliCase], planned_cases: list[CliCase],
         "planned_cases": len(planned_cases),
         "planned_invalid_cases": sum("invalid" in case.groups for case in planned_cases),
         "planned_explicit_cases": sum("explicit" in case.groups for case in planned_cases),
-        "planned_tui_cases": sum(case.execution == "tui" for case in planned_cases),
+        "planned_tui_cases": sum(case.execution in ("tui", "config_difference")
+                                 for case in planned_cases),
         "completed_cases": len(results),
         "passed_cases": sum(result["pass"] for result in results),
         "mismatched_statuses": sum(result["status_match"] is False for result in results),
@@ -382,7 +382,6 @@ def _summary(available_cases: list[CliCase], planned_cases: list[CliCase],
             result["output_channels_match"] is False for result in results),
         "unexpected_cases": sum(bool(result["unexpected"]) for result in results),
     }
-
 def _markdown(report: dict[str, Any]) -> str:
     summary = report["summary"]
     lines = [
@@ -394,39 +393,43 @@ def _markdown(report: dict[str, Any]) -> str:
         "",
         "## Summary",
         "",
-        f"- Catalog flags: {summary['catalog_flags']}",
-        f"- Available cases: {summary['available_cases']}",
-        f"- Planned cases: {summary['planned_cases']}",
-        f"- Planned invalid cases: {summary['planned_invalid_cases']}",
-        f"- Planned explicit cases: {summary['planned_explicit_cases']}",
-        f"- Planned TUI cases: {summary['planned_tui_cases']}",
-        f"- Passed cases: {summary['passed_cases']}",
-        f"- Status mismatches: {summary['mismatched_statuses']}",
-        f"- Unobserved statuses: {summary['unobserved_statuses']}",
-        f"- Output channel mismatches: {summary['mismatched_output_channels']}",
-        f"- Unexpected cases: {summary['unexpected_cases']}",
+        f"- Catalog: {summary['catalog_flags']} flags, {summary['available_cases']} available, "
+        f"{summary['planned_cases']} planned",
+        f"- Cases: {summary['planned_invalid_cases']} invalid, "
+        f"{summary['planned_explicit_cases']} explicit, {summary['planned_tui_cases']} TUI",
+        f"- Results: {summary['passed_cases']} passed, "
+        f"{summary['mismatched_statuses']} status differences, "
+        f"{summary['unobserved_statuses']} unobserved, "
+        f"{summary['mismatched_output_channels']} channel mismatches, "
+        f"{summary['unexpected_cases']} unexpected",
         "",
         "## Cases",
         "",
-        "| Case | Arguments | Expected | ntop | btm | Draw | Channels | Result |",
-        "|---|---|---:|---:|---:|---|---|---|",
+        "| # | Args | ntop exp | btm exp | ntop | btm | Draw | Channels | Difference | Result |",
+        "|---|---|---:|---:|---:|---:|---|---|---|---|",
     ]
     for number, case in enumerate(report["results"], start=1):
         ntop_status = case["ntop"]["exit_status"]
         btm_status = case["btm"]["exit_status"]
         channels = case["output_channels_match"]
         draw = "n/a"
-        if case["execution"] == "tui":
-            drawn = [name for name in ("ntop", "btm") if case[name]["screen_drawn"]]
-            draw = "both" if len(drawn) == 2 else drawn[0] if drawn else "none"
+        if case["execution"] in ("tui", "config_difference"):
+            sides = ("ntop", "btm") if case["execution"] == "tui" else ("btm",)
+            drawn = [name for name in sides if case[name]["screen_drawn"]]
+            draw = "both" if drawn == ["ntop", "btm"] else drawn[0] if drawn else "none"
         args = json.dumps(case["argv"], ensure_ascii=False)
+        difference_reason = (CONFIG_DIFFERENCE_REASON
+                             if case["execution"] == "config_difference" else "n/a")
+        result_label = ("expected difference" if difference_reason != "n/a" and case["pass"]
+                        else "pass" if case["pass"] else "fail")
         lines.append(
             f"| {number:03d} | `{args}` | {case['expected_status']} | "
+            f"{case['btm_expected_status']} | "
             f"{ntop_status if ntop_status is not None else 'n/a'} | "
             f"{btm_status if btm_status is not None else 'n/a'} | "
             f"{draw} | "
             f"{'match' if channels is True else 'mismatch' if channels is False else 'n/a'} | "
-            f"{'pass' if case['pass'] else 'fail'} |"
+            f"{difference_reason} | {result_label} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -435,7 +438,6 @@ def _binary_path(value: str, label: str) -> str:
     if not path.is_file() or not os.access(path, os.X_OK):
         raise ValueError(f"{label} must name an executable file")
     return str(path)
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ntop", help="path to the built ntop executable")
@@ -474,8 +476,7 @@ def main() -> int:
     summary = _summary(available, selected, results)
     passed = summary["completed_cases"] == summary["passed_cases"] == summary["planned_cases"]
     report = {
-        "requirement": "WP13 / §9.4",
-        "status": "success" if passed else "error",
+        "requirement": "WP13 / §9.4", "status": "success" if passed else "error",
         "case_set": "all" if args.all_cases else "focused",
         "platform": platform.system().lower(),
         "case_generation": "src/app/domain-parity-flags.lisp and CLI test sample rules",
