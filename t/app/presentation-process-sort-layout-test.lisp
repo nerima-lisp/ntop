@@ -134,11 +134,13 @@
                            (let* ((basic-process-call
                             (find :process-table *wp12b-screen-widget-calls*
                               :key (function first)
-                              :test (function eq)))
+                              :test (function eq)
+                              :from-end t))
                              (basic-menu-call
                               (find :process-sort-menu *wp12b-screen-widget-calls*
                                 :key (function first)
-                                :test (function eq)))
+                                :test (function eq)
+                                :from-end t))
                              (basic-menu-rectangle (second basic-menu-call))
                              (basic-config
                               (ntop.shared.application:make-application-config :basic-p t))

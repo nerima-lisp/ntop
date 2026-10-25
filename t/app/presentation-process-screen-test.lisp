@@ -23,7 +23,7 @@
              (ntop.app.domain:make-app-action :kind :search :value "alpha"))
     (multiple-value-bind (areas screen)
         (%wp12b-screen-render 80 48 :state state :config config)
-      (declare (ignore screen))
+      (declare (ignorable screen))
       (setf *wp12b-screen-widget-calls*
             (nreverse *wp12b-screen-widget-calls*))
       (let* ((search-call

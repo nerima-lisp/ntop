@@ -2,7 +2,7 @@
 
 (cl-weave:describe "application screen composition"
                    (cl-weave:it
-                    "matches the default btm layout at each required terminal size"
+                    "matches the specified FR-001 layout at each required terminal size"
                     (dolist
                         (case '((80 24 "application-80x24.txt")
                                 (160 48 "application-160x48.txt")
@@ -17,7 +17,7 @@
                           (cl-weave:expect (%wp12b-screen-bytes output) :to-equal
                                            (%wp12b-screen-golden-bytes golden))))))
                    (cl-weave:it
-                    "renders the BTM Memory legend at its supported sizes"
+                    "renders the Memory legend within its configured pane"
                     (multiple-value-bind (areas screen output)
                         (%wp12b-screen-render 80 24)
                       (declare (ignore areas output))
@@ -156,14 +156,15 @@
                           (%wp12b-screen-render 80 24 :state state)
                         (declare (ignore areas screen))
                         (cl-weave:expect
-                         (and (search "PID(p)" output)
+                         (and (search "Count" output)
                               (not (search "Processes" output)))
                          :to-be
                          t))))
                    (cl-weave:it
                     "computes process CPU and I/O rates from the previous sample"
                     (let ((*wp12b-screen-widget-calls* nil) (*wp12b-screen-recording-p* t))
-                      (%wp12b-screen-render 80 24)
+                      (%wp12b-screen-render 80 24
+                                            :config (%wp12b-screen-config))
                       (let* ((process-call
                               (find :process-table
                                     *wp12b-screen-widget-calls*

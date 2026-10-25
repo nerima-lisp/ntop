@@ -26,13 +26,13 @@
 (cl-weave:describe
  "FR-001 condition C fixture screen layout"
  (cl-weave:it-each
-  ((40 12 "application-40x12.txt" 7 8 ((1 8 "PID(p)" "100") (10 9 "Name(n)" "alpha")
-     (20 9 "CPU%(c)▼" "5.0%") (30 9 "Mem%(m)" "6.3%")))
-   (80 24 "application-80x24.txt" 13 14 ((1 18 "PID(p)" "100") (20 19 "Name(n)" "alpha")
-     (40 19 "CPU%(c)▼" "5.0%") (60 19 "Mem%(m)" "6.3%")))
-   (160 48 "application-160x48.txt" 25 26 ((1 38 "PID(p)" "100") (40 39 "Name(n)" "alpha")
-     (80 39 "CPU%(c)▼" "5.0%") (120 39 "Mem%(m)" "6.3%"))))
-  "~D×~D process columns match the fixed golden's BTM layout"
+  ((40 12 "application-40x12.txt" 7 8 ((1 7 "Count" "1") (9 9 "Name(n)" "alpha")
+     (19 9 "CPU%(c)▼" "5.0%") (29 9 "Mem%(m)" "6.3%")))
+   (80 24 "application-80x24.txt" 13 14 ((1 17 "Count" "1") (19 19 "Name(n)" "alpha")
+     (39 19 "CPU%(c)▼" "5.0%") (59 19 "Mem%(m)" "6.3%")))
+   (160 48 "application-160x48.txt" 25 26 ((1 37 "Count" "1") (39 39 "Name(n)" "alpha")
+     (79 39 "CPU%(c)▼" "5.0%") (119 39 "Mem%(m)" "6.3%"))))
+  "~D×~D process columns match the fixed golden's specified layout"
   (width height golden header-row first-process-row fields)
   (let ((screen (%wp12c-golden-screen width height golden)))
     (cl-weave:expect (cl-tty-kit:screen-width screen) :to-equal width)

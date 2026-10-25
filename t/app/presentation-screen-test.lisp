@@ -248,6 +248,12 @@
                                                      :name-or-command
                                                      :cpu
                                                      :memory)))
+(defun %wp12b-screen-default-config ()
+  (let ((config (%wp12b-screen-config)))
+    (setf (ntop.shared.application:application-config-process-default-grouped-p
+           config)
+          t)
+    config))
 (defun %wp12b-screen-render (columns rows
                              &key
                              state
@@ -255,7 +261,7 @@
                              series                             unavailability-reasons)
   (let* ((screen (cl-tty-kit:make-screen columns rows))
          (state (or state (ntop.app.domain:make-app-state)))
-         (config (or config (%wp12b-screen-config)))
+         (config (or config (%wp12b-screen-default-config)))
          (snapshot (%wp12b-screen-fixture-snapshot)))
     (values
      (ntop.app.presentation:draw-application-screen screen
