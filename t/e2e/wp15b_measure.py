@@ -5,7 +5,6 @@ from pathlib import Path
 ROWS, COLUMNS, RATE_MS = 48, 160, 700
 N1_RUNS, N1_SECONDS = 5, 60
 N2_SECONDS, N2_CADENCE, RSS_LIMIT_KIB = 1800, 30, 200 * 1024
-N2_LOAD_LIMIT_1M = 40
 def write_json(path, value): path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
 def executable(value):
     path = Path(shutil.which(value) or value).resolve(strict=True)
@@ -238,30 +237,28 @@ def run_n2(ntop, raw_dir):
                 if delay > 0: session.read_for(delay, sink)
                 result["samples"].append(sample_rss(session, group, target, started))
                 write_json(output, result)
-        eligible = [sample for sample in result["samples"]
-                    if sample["one_minute_load_average"] < N2_LOAD_LIMIT_1M]
+        samples = result["samples"]
         values = {sample["target_seconds"]: sample["rss_kib"]
-                  for sample in eligible}
+                  for sample in samples}
         at_two, at_end = values.get(120), values.get(N2_SECONDS)
         maximum = max(values.values()) if values else None
         growth = (100 * (at_end - at_two) / at_two
                   if at_two not in (None, 0) and at_end is not None else None)
-        endpoints_qualified = at_two is not None and at_end is not None
-        passed = (endpoints_qualified
+        endpoints_present = at_two is not None and at_end is not None
+        passed = (endpoints_present
                   and maximum is not None and maximum <= RSS_LIMIT_KIB
                   and growth is not None and growth <= 5)
-        result.update({"status": "complete" if endpoints_qualified else "incomplete",
+        result.update({"status": "complete" if endpoints_present else "incomplete",
             "rss_at_2_minutes_kib": at_two,
             "rss_at_30_minutes_kib": at_end,
             "maximum_rss_kib": maximum,
             "growth_from_2_to_30_minutes_percent": growth,
-            "incomplete_reason": (None if endpoints_qualified else
-                "No load-qualified RSS sample at exactly 2 or 30 minutes."),
-            "acceptance": {"load_limit_1_minute": N2_LOAD_LIMIT_1M,
-            "sample_selection": f"one-minute load < {N2_LOAD_LIMIT_1M}",
-            "qualified_samples": len(eligible),
-            "excluded_high_load_samples": len(result["samples"]) - len(eligible),
-            "endpoints_qualified": endpoints_qualified,
+            "incomplete_reason": (None if endpoints_present else
+                "Missing RSS sample at exactly 2 or 30 minutes."),
+            "acceptance": {"sample_selection": (
+                "all RSS samples, regardless of one-minute load"),
+            "sample_count": len(samples),
+            "endpoints_present": endpoints_present,
             "rss_limit_kib": RSS_LIMIT_KIB,
             "rss_always_at_or_below_limit": (maximum is not None
                 and maximum <= RSS_LIMIT_KIB),
