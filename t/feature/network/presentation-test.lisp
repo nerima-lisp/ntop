@@ -270,6 +270,45 @@
                                                                          :invalid
                                                                          config
                                                                          samples))))
+                   (cl-weave:it "does not render a chart legend for none"
+                                ;; BTM 0.14.9: src/canvas/components/time_series/
+                                ;; vendored.rs:535-549, 604-640 and 1475-1488
+                                ;; skip legend layout and drawing for None.
+                                (let* ((screen (cl-tty-kit:make-screen 80 20))
+                                       (rectangle
+                                        (ntop.ui:make-rectangle :x 0 :y 0
+                                                               :width 80
+                                                               :height 20))
+                                       (config
+                                        (ntop.shared.application:make-application-config
+                                         :network-legend-position :none))
+                                       (samples
+                                        (%f4-network-presentation-samples))
+                                       (chart-config
+                                        (ntop.network.presentation::%network-chart-config
+                                         rectangle
+                                         (aref samples 1)
+                                         16000d0
+                                         config)))
+                                  (cl-weave:expect
+                                   (ntop.ui:chart-config-legend-position
+                                    chart-config)
+                                   :to-be
+                                   nil)
+                                  (ntop.ui:draw-widget :network
+                                                       screen
+                                                       rectangle
+                                                       nil
+                                                       config
+                                                       samples)
+                                  (let ((rendered
+                                          (cl-tty-kit:screen-to-string screen)))
+                                    (cl-weave:expect (search "RX" rendered)
+                                                     :to-be
+                                                     nil)
+                                    (cl-weave:expect (search "TX" rendered)
+                                                     :to-be
+                                                     nil))))
                    (cl-weave:it "captures the first sample as the zero-based display baseline"
                                 (let* ((screen (cl-tty-kit:make-screen 80 8))
                                        (rectangle

@@ -35,7 +35,8 @@
                                    (ntop.shared.application:application-config-theme
                                     config)))
                                  :legend-position
-                                 (unless old-legend-p legend-position)
+                                 (unless (or old-legend-p (eq legend-position :none))
+                                   legend-position)
                                  :legend-width-ratio (if old-legend-p 0 9/10)
                                  :legend-height-ratio (if old-legend-p 0 3/4)
                                  :dot-marker-p

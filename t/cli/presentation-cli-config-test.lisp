@@ -184,6 +184,20 @@
                                    status)
                                  :to-equal
                                  2))
+                   (cl-weave:it "accepts none as the network legend value"
+                                ;; BTM 0.14.9: src/options.rs:1332-1343 and
+                                ;; 1479-1489 accept None.
+                                (multiple-value-bind (key value status)
+                                    (ntop.cli::%config-binding
+                                     "network_legend"
+                                     "none"
+                                     (cli-test-parse
+                                      '("--network_legend" "none")))
+                                  (cl-weave:expect key
+                                                   :to-equal
+                                                   :network-legend-position)
+                                  (cl-weave:expect value :to-equal :none)
+                                  (cl-weave:expect status :to-equal 0)))
                    (cl-weave:it
                     "passes platform collectors and composition callbacks"
                     (let* ((calls 0)
