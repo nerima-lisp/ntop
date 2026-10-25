@@ -51,6 +51,38 @@
                     (:output-before-start 10 9 12 12 0 nil)
                     (:no-output 10 nil 12 12 0 nil)
                     (:later-output-rests-briefly 10 119/10 12 11 1 nil)))
+(cl-weave:describe
+ "E2E PTY input writes"
+ (cl-weave:it
+  "passes a multi-byte logical input to fd-write-octets in one call"
+  (let* ((session
+          (ntop.e2e::launch-e2e-process
+           "sleep"
+           (list "30")
+           24
+           80
+           :timeout-seconds 5d0))
+         (input
+          (make-array 3
+                      :element-type '(unsigned-byte 8)
+                      :initial-contents '(27 79 82)))
+         (writes nil)
+         (original-write
+          (symbol-function 'cl-tty-kit:fd-write-octets)))
+    (unwind-protect
+         (progn
+           (unwind-protect
+                (progn
+                  (setf (symbol-function 'cl-tty-kit:fd-write-octets)
+                        (lambda (fd octets)
+                          (push (coerce octets 'list) writes)
+                          (funcall original-write fd octets)))
+                  (ntop.e2e::pty-send-input
+                   session input :timeout-seconds 3d0)
+                  (cl-weave:expect writes :to-equal '((27 79 82))))
+             (setf (symbol-function 'cl-tty-kit:fd-write-octets)
+                   original-write)))
+      (ntop.e2e::close-e2e-session session)))))
 
 (cl-weave:describe "E2E PTY operation deadlines"
                    (cl-weave:it "expands the operation timeout macro"

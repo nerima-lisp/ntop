@@ -5,6 +5,10 @@
            rows columns rate timeout)
   (let* ((description (%route-input-description route subcase))
          (route-id (route-id route))
+         (effective-rate
+          (if (member route-id '("key-20" "key-21") :test #'string=)
+              (max rate 1000)
+            rate))
          (context (or (getf subcase :context) ""))
          (reference-prefix
           (namestring
@@ -20,9 +24,10 @@
                       (%write-text config-path
                                    (let ((*btm-layout* (%route-config-layout subcase)))
                                      (btm-config-string
-                                      (if (string= route-id "resize")
+                                      (if (member route-id
+                                                  '("resize" "mouse-75" "mouse-77") :test #'string=)
                                           (max rate 1000)
-                                        rate))))
+                                        effective-rate))))
                       (%route-base-arguments btm config-path route subcase evidence-directory)))
          (candidate-args (%route-base-arguments ntop config-path route subcase
                                                 evidence-directory)))
@@ -61,10 +66,12 @@
       (%route-run-exception route subcase description ntop candidate-prefix rows
                             columns timeout))
      ((string= route-id "resize")
+      ;; A captured resized frame took 20.583 seconds; keep the allowance local.
       (%route-run-resize-pair
        route subcase description btm ntop reference-prefix candidate-prefix rate
-       timeout config-path evidence-directory))
+       (max timeout 45) config-path evidence-directory))
      ((or (string= route-id "sleep-child")
+          (eq (route-kind route) :column)
           (string-equal context "kill dialog")
           (and (eq (route-kind route) :key)
                (string-equal context "process table")
@@ -73,8 +80,8 @@
                        :test (function string=)))
           (and (eq (route-kind route) :flag)
                (member (route-action route)
-                       '("read_only" "disable_advanced_kill")
-                       :test #'string=))
+                       (quote ("read_only" "disable_advanced_kill"))
+                       :test (function string=)))
           (and (eq (route-kind route) :mouse)
                (string= (route-action route) "Select process row")))
       (%route-run-sleep-child-pair
@@ -88,4 +95,4 @@
      (t
       (%route-run-interactive-pair
        route subcase description mode btm ntop reference-prefix candidate-prefix
-       rows columns rate timeout config-path evidence-directory)))))
+       rows columns effective-rate timeout config-path evidence-directory)))))

@@ -26,6 +26,78 @@
             (criterion-projections-equal-p
              (project-criterion-grid initial) (car (last projections)))))
       (t t))))
+(progn
+  (defun %route-help-section-number (grid)
+    (loop for row below (grid-height grid)
+          for text = (criterion-row-text grid row)
+          for separator = (search " - " text)
+          when (and separator
+                    (plusp separator)
+                    (digit-char-p (char text (1- separator))))
+            return (digit-char-p (char text (1- separator)))))
+  (defun %route-help-section-transition-p (subcase before-grid after-grid)
+  (let* ((before (%route-help-section-number before-grid))
+         (after (%route-help-section-number after-grid))
+         (input (getf subcase :input))
+         (target (and input
+                      (= (length input) 1)
+                      (digit-char-p (char input 0))))
+         (heading (and target (format nil "~d - " target))))
+    (and before after target
+         (if (<= target 6)
+             (and (= after target) (/= before after))
+           (and (= before 1)
+                (= after 6)
+                (not (loop for row below (grid-height before-grid)
+                           thereis (search heading
+                                            (criterion-row-text before-grid row))))
+                (loop for row below (grid-height after-grid)
+                      thereis (search heading
+                                       (criterion-row-text after-grid row)))
+                (%route-grid-first-difference before-grid after-grid))))))
+  (defun %route-graph-window-transition-p (route before-grid after-grid)
+    (labels ((scale-position (text start)
+               (let ((sixty (search "60s" text :start2 start))
+                     (forty-five (search "45s" text :start2 start)))
+                 (cond ((and sixty forty-five) (min sixty forty-five))
+                       (sixty sixty)
+                       (forty-five forty-five))))
+             (scale-value (text position)
+               (if (eql position (search "60s" text :start2 position)) :60 :45))
+             (axis-state (grid)
+               (when (and grid
+                          (search "CPU" (%route-grid-text grid)
+                                  :test #'char-equal))
+                 (loop for row below (grid-height grid)
+                       for text = (criterion-row-text grid row)
+                       for start = (scale-position text 0)
+                       ;; Skip the 0s suffix inside 60s; the next 0s marks the axis end.
+                       for endpoint = (and start (search "0s" text :start2 (+ start 3)))
+                       for next-start = (and endpoint
+                                             (scale-position text (+ endpoint 2)))
+                       when endpoint
+                         return (list (scale-value text start)
+                                      (and next-start
+                                           (scale-value text next-start)))))))
+      (let* ((before (axis-state before-grid))
+             (after (axis-state after-grid))
+             (action (route-action route))
+             (id (route-id route)))
+        (and before after
+             (second before)
+             (eq (second before) (second after))
+             (cond
+               ((string= id "mouse-69")
+                (and (eq (first before) :60) (eq (first after) :45)))
+               ((string= id "mouse-70")
+                (and (eq (first before) :45) (eq (first after) :60)))
+               ((string= action "Zoom graph in")
+                (and (eq (first before) :60) (eq (first after) :45)))
+               ((member action '("Zoom graph out" "Reset graph zoom")
+                        :test #'string=)
+                (and (eq (first before) :45) (eq (first after) :60))))))))
+)
+
 
 (defun %route-action-state-p (route mode subcase side side-name)
   (let* ((action (route-action route))
@@ -36,122 +108,220 @@
          (changed (and before after (not (criterion-projections-equal-p before after))))
          (stable (and before after (criterion-projections-equal-p before after))))
     (cond
-      ((eq (route-kind route) :extension)
-       (or (and (string= mode "btm-self")
-                (not (route-comparable-p route)))
-           (%route-extension-state-p route subcase side)))
-      ((and (eq (route-kind route) :key)
-            (string= action "Documented horizontal movement"))
-       (if (string= mode "btm-self") stable
-           (if (eq side-name :candidate) changed stable)))
-      ((eq (route-kind route) :search-field)
-       (%route-search-token-visible-p (getf subcase :input) grid))
-      ((eq (route-kind route) :column)
- (if (%route-widget-no-data-p grid "Processes")
-     :manual
-     (and (%route-column-visible-p route initial)
-          (%route-column-visible-p route grid))))
-      ((eq (route-kind route) :key)
-       (let ((headers (%route-grid-headers grid)) (old (%route-grid-headers initial)))
-         (cond
-           ((string= action "Open help")
-            (and text (search "1 - General" text)
-                 (not (search "1 - General" initial-text))))
-           ((string= action "Open help search")
-            (and text initial-text (search "Esc to close" text)
-                 (search "1 - General" initial-text)))
-           ((string= action "Open process search")
-            (and text initial-text (search "Case(F1)" text) (search "> " text)
-                 (not (search "Case(F1)" initial-text))))
-           ((string= action "Enter search text")
- (if (string-equal (or (getf subcase :context) "") "help search")
-     (and initial-text
-          (search "Search:" initial-text)
-          text
-          (search (format nil "Search: ~a"
-                          (%route-search-query
-                           (%route-key-input (getf subcase :input))))
-                  text))
-     (and initial-text
-          (search "> " initial-text)
-          (%route-search-token-visible-p
-           (%route-key-input (getf subcase :input)) grid))))
-           ((string= action "Open process sort list")
- (and initial-text text
-      (not (search "Sort By" initial-text :test (function char-equal)))
-      (search "Sort By" text :test (function char-equal))))
-           ((string= action "Toggle process command display")
- (if (or (%route-widget-no-data-p initial "Processes")
-         (%route-widget-no-data-p grid "Processes"))
-     :manual
-     (and (some (lambda (row) (search "Name(n)" row)) old)
-          (notany (lambda (row) (search "Name(n)" row)) headers)
-          (some (lambda (row) (search "Command(n)" row)) headers))))
-           ((string= action "Toggle memory values")
- (if (or (%route-widget-no-data-p initial "Processes")
-         (%route-widget-no-data-p grid "Processes"))
-     :manual
-     (or (and (some (lambda (row) (search "Mem%(m)" row)) old)
-              (some (lambda (row) (search "Mem(m)" row)) headers))
-         (and (some (lambda (row) (search "Mem(m)" row)) old)
-              (some (lambda (row) (search "Mem%(m)" row)) headers)))))
-           ((and (string= action "Toggle kernel threads")
-      (not (member :linux *features*)))
- (if (or (%route-widget-no-data-p initial "Processes")
-         (%route-widget-no-data-p grid "Processes"))
-     :manual
-     (and stable headers)))
-           (t :manual))))
-      ((eq (route-kind route) :mouse)
- (cond
-   ((member action (quote ("Ignore other buttons" "Ignore pointer motion"))
-            :test (function string=))
-    stable)
-   ((member (route-id route) (quote ("mouse-71" "mouse-72"))
-            :test (function string=))
-    :manual)
-   ((%route-mouse-target-unavailable-p subcase initial) :manual)
-   (t changed)))
-      ((and (eq (route-kind route) :flag)
-            (member (ntop.app.domain:parity-flag-snake-case (route-entry route))
-                    '("disable_keys" "disable_click" "free_arc") :test #'string=))
-       stable)
-      ((or (and (eq (route-kind route) :flag)
-                (string= (ntop.app.domain:parity-flag-snake-case (route-entry route))
-                         "basic"))
-           (and (eq (route-kind route) :additional)
-                (string= (route-id route) "basic-mode")))
-       (and (%route-basic-mode-visible-p initial)
-            (%route-basic-mode-visible-p grid)))
-      ((eq (route-kind route) :flag)
-       (and grid (getf side :projection) (getf side :evidence)))
-      (t nil))))
+     ((eq (route-kind route) :extension)
+      (or (and (string= mode "btm-self")
+               (not (route-comparable-p route)))
+          (%route-extension-state-p route subcase side)))
+     ((and (eq (route-kind route) :key)
+           (string= action "Documented horizontal movement"))
+      (if (string= mode "btm-self") stable
+        (if (eq side-name :candidate) changed stable)))
+     ((eq (route-kind route) :search-field)
+      (%route-search-token-visible-p (getf subcase :input) grid))
+     ((eq (route-kind route) :column)
+      (if (%route-widget-no-data-p grid "Processes")
+          :manual
+        (and (%route-column-visible-p route initial)
+             (%route-column-visible-p route grid))))
+     ((eq (route-kind route) :key)
+      (let ((headers (%route-grid-headers grid)) (old (%route-grid-headers initial)))
+        (cond
+         ((string= action "Open help")
+          (and text (search "1 - General" text)
+               (not (search "1 - General" initial-text))))
+         ((string= action "Open help search")
+          (and text initial-text (search "Esc to close" text)
+               (search "1 - General" initial-text)))
+         ((string= action "Open process search")
+          (and text initial-text (search "Case(F1)" text) (search "> " text)
+               (not (search "Case(F1)" initial-text))))
+         ((string= action "Enter search text")
+          (if (string-equal (or (getf subcase :context) "") "help search")
+              (and initial-text
+                   (search "Search:" initial-text)
+                   text
+                   (search (format nil "Search: ~a"
+                                   (%route-search-query
+                                    (%route-key-input (getf subcase :input))))
+                           text))
+            (and initial-text
+                 (search "> " initial-text)
+                 (%route-search-token-visible-p
+                  (%route-key-input (getf subcase :input)) grid))))
+         ((string= action "Open process sort list")
+          (and initial-text text
+               (not (search "Sort By" initial-text :test (function char-equal)))
+               (search "Sort By" text :test (function char-equal))))
+         ((string= action "Toggle process command display")
+          (if (or (%route-widget-no-data-p initial "Processes")
+                  (%route-widget-no-data-p grid "Processes"))
+              :manual
+            (and (some (lambda (row) (search "Name(n)" row)) old)
+                 (notany (lambda (row) (search "Name(n)" row)) headers)
+                 (some (lambda (row) (search "Command(n)" row)) headers))))
+         ((string= action "Toggle memory values")
+          (if (or (%route-widget-no-data-p initial "Processes")
+                  (%route-widget-no-data-p grid "Processes"))
+              :manual
+            (or (and (some (lambda (row) (search "Mem%(m)" row)) old)
+                     (some (lambda (row) (search "Mem(m)" row)) headers))
+                (and (some (lambda (row) (search "Mem(m)" row)) old)
+                     (some (lambda (row) (search "Mem%(m)" row)) headers)))))
+         ((and (string= action "Toggle kernel threads")
+               (not (member :linux *features*)))
+          (if (or (%route-widget-no-data-p initial "Processes")
+                  (%route-widget-no-data-p grid "Processes"))
+              :manual
+            (and stable headers)))
+         (t
+          (cond
+           ((member action (list "Zoom graph in" "Zoom graph out" "Reset graph zoom")
+                    :test (function string=))
+            (%route-graph-window-transition-p route initial grid))
+           ((string= action "Select help section")
+            (%route-help-section-transition-p subcase initial grid))
+           (t
+            (%route-key-context-state route subcase initial grid stable)))))))
+     ((eq (route-kind route) :mouse)
+      (cond
+       ((member action (quote ("Ignore other buttons" "Ignore pointer motion"))
+                :test (function string=))
+        stable)
+       ((and (string= (route-id route) "mouse-74")
+             (%route-widget-no-data-p initial "Processes")
+             (%route-widget-no-data-p grid "Processes"))
+        :manual) ((member (route-id route)
+                          (quote ("mouse-71" "mouse-72"))
+                          :test (function string=))
+                  :manual)
+       ((and (string-equal (or (getf subcase :context) "") "help")
+             (member (route-id route) '("mouse-69" "mouse-70") :test #'string=))
+        (let* ((before-top
+                (and initial
+                     (loop for row below (grid-height initial)
+                           when (search "Scroll to browse"
+                                        (criterion-row-text initial row)
+                                        :test #'char-equal)
+                           return row)))
+               (after-top
+                (and grid
+                     (loop for row below (grid-height grid)
+                           when (search "Scroll to browse"
+                                        (criterion-row-text grid row)
+                                        :test #'char-equal)
+                           return row)))
+               (before-general
+                (and initial
+                     (loop for row below (grid-height initial)
+                           when (search "1 - General"
+                                        (criterion-row-text initial row)
+                                        :test #'char-equal)
+                           return row)))
+               (after-general
+                (and grid
+                     (loop for row below (grid-height grid)
+                           when (search "1 - General"
+                                        (criterion-row-text grid row)
+                                        :test #'char-equal)
+                           return row)))
+               (raw-change (and initial grid
+                                (%route-grid-first-difference initial grid))))
+          (and raw-change
+               (if (string= (route-id route) "mouse-69")
+                   (and (null before-top) before-general after-top after-general
+                        (= before-general after-top)
+                        (= (1+ before-general) after-general))
+                 (and before-top before-general (null after-top) after-general
+                      (= (1+ before-top) before-general)
+                      (= before-top after-general))))))
+       ((%route-mouse-target-unavailable-p subcase initial) :manual)
+       (t
+        (if (and (string-equal (or (getf subcase :context) "") "graphs")
+                 (member (route-id route) '("mouse-69" "mouse-70")
+                         :test #'string=))
+            (%route-graph-window-transition-p route initial grid)
+          (if (and (member (route-id route) '("mouse-75" "mouse-77")
+                           :test #'string=)
+                   (not changed))
+              :manual
+            changed)))))
+     ((and (eq (route-kind route) :flag)
+           (member (ntop.app.domain:parity-flag-snake-case (route-entry route))
+                   '("disable_keys" "disable_click" "free_arc") :test #'string=))
+      stable)
+     ((or (and (eq (route-kind route) :flag)
+               (string= (ntop.app.domain:parity-flag-snake-case (route-entry route))
+                        "basic"))
+          (and (eq (route-kind route) :additional)
+               (string= (route-id route) "basic-mode")))
+      (and (%route-basic-mode-visible-p initial)
+           (%route-basic-mode-visible-p grid)))
+     ((eq (route-kind route) :flag)
+      (and grid (getf side :projection) (getf side :evidence)))
+     (t nil))))
 
 (defun %route-all-expected-actual (route mode subcase reference candidate)
   (let* ((difference (%route-projection-first-difference
-                     (getf reference :projection) (getf candidate :projection)))
+                      (getf reference :projection) (getf candidate :projection)))
          (comparable-p (route-comparable-p route))
          (reference-state (%route-action-state-p route mode subcase reference :reference))
          (candidate-state (%route-action-state-p route mode subcase candidate :candidate)))
     (cond
-      ((and comparable-p difference)
-       (values nil difference
-               (if (string= mode "btm-self") "btm-self condition-A projections differ"
-                   "condition-A reference and candidate differ")))
-      ((and (eq reference-state :manual) (eq candidate-state :manual))
-       (values nil nil
-               (format nil "~a in ~a lacks a measurable starting state in this run."
-                       (route-action route) (or (getf subcase :context) "default"))
-               :manual))
-      ((or (eq reference-state :manual) (eq candidate-state :manual))
- (values nil difference "the expected route state is not measurable on at least one side"
-         :manual))
-      ((if (and (eq (route-kind route) :extension) (not comparable-p))
-           candidate-state (and reference-state candidate-state))
-       (values t difference
-               (if comparable-p "condition-A projections match"
-                   "approved §D extension deviation")))
-      (t (values nil difference
+     ((and comparable-p difference)
+      (values nil difference
+              (if (string= mode "btm-self") "btm-self condition-A projections differ"
+                "condition-A reference and candidate differ")))
+     ((and (eq reference-state :manual) (eq candidate-state :manual))
+      (values nil nil
+              (cond
+               ((string= (route-id route) "mouse-74")
+                (concatenate (quote string)
+                             "The Processes pane showed No data even with a live "
+                             "harness-owned child; no rows or selected sort marker "
+                             "were available to compare."))
+               ((string= (route-id route) "mouse-75")
+                (concatenate (quote string)
+                             "condition-A stayed equal after the BTM CPU click; verify "
+                             "the selected series manually."))
+               ((string= (route-id route) "mouse-77")
+                "The BTM screen had one Battery panel and no visible selection tabs.")
+               ((and (member (route-id route) '("key-9" "key-10" "key-11")
+                             :test #'string=)
+                     (search "Move widget selection" (route-action route)))
+                (if (string= (route-id route) "key-9")
+                    (format nil "~a ~a ~a ~a"
+                            "The default 60x220 BTM layout showed several widgets."
+                            "Ctrl+Right, Shift+Right, L, and D produced no captured character"
+                            "or ANSI-style change, and the cursor stayed hidden."
+                            "Selected-widget focus could not be observed.")
+                    (concatenate 'string
+                                 "Input reached BTM; condition-A cells and attributes did not "
+                                 "expose focus, and the cursor stayed hidden.")))
+
+               ((and (string= (route-id route) "key-38")
+                     (%route-widget-no-data-p
+                      (getf reference :initial-grid) "Processes")
+                     (%route-widget-no-data-p
+                      (getf candidate :initial-grid) "Processes")
+                     (null (%route-grid-headers
+                            (getf reference :initial-grid)))
+                     (null (%route-grid-headers
+                            (getf candidate :initial-grid))))
+                (format nil "~a ~a"
+                        "Both BTM Processes panes showed No data and no sort headers."
+                        "The c CPU-sort order could not be observed."))
+               (t
+                (%route-manual-reason route subcase reference candidate)))
+              :manual))
+     ((or (eq reference-state :manual) (eq candidate-state :manual))
+      (values nil difference "the expected route state is not measurable on at least one side"
+              :manual))
+     ((if (and (eq (route-kind route) :extension) (not comparable-p))
+          candidate-state (and reference-state candidate-state))
+      (values t difference
+              (if comparable-p "condition-A projections match"
+                "approved §D extension deviation")))
+     (t (values nil difference
                 "expected route state was not observed on the reference and candidate")))))
 (defun %route-basic-mode-visible-p (grid)
   (let ((text (and grid (%route-grid-text grid))))
@@ -288,84 +458,15 @@
               (1+ (second point))))))
 (defun %route-manual-result (route subcase directory
                                &optional reason prefix)
-  (let* ((id (route-id route)) (kind (route-kind route))
+  (let* ((id (route-id route))
          (input (%route-input-description route subcase))
          (context (or (getf subcase :context) "default"))
          (reason (or reason (route-manual-reason route) input))
-         (path (if prefix (pathname (format nil "~a-manual.md" prefix))
-                   (merge-pathnames (format nil "~a-manual.md" id) directory)))
-         (procedure
- (cond
-   ((string= id "mouse-71")
-    "Show at least two widgets; click an unselected widget and verify its selected border changes.")
-   ((string= id "mouse-72")
-    "Start basic mode, click the next-widget arrow, and verify the selected-widget marker moves.")
-   ((and (eq kind :mouse) (string-equal context "CPU legend"))
-    "Use a BTM screen with named CPU-series labels; click one visible series and verify selection.")
-   ((and (eq kind :mouse) (string-equal context "temperature table"))
-    (concatenate (quote string)
-                 "Use a host with temperature sensor rows; click the Sensor "
-                 "header or row and verify the result."))
-   ((and (eq kind :mouse) (string-equal context "disk table"))
-    "Use a host with mounted disks; click a Disk header or row and verify sorting or selection.")
-   ((and (eq kind :mouse) (string-equal context "battery widget"))
-    (concatenate (quote string)
-                 "Configure a Battery widget on a host with a detected "
-                 "battery; click each available tab and verify selection."))
-   ((and (eq kind :mouse) (member context (quote ("tables" "process table"))
-                                  :test (function string-equal)))
-    (concatenate (quote string)
-                 "Use a host where BTM shows live process rows; wheel over "
-                 "the table and verify its scroll position."))
-   ((and (eq kind :mouse) (string= id "mouse-73"))
-    (concatenate (quote string)
-                 "Use a host where BTM shows live process rows; select the "
-                 "harness-owned PID and verify its highlight changes."))
-   ((and (eq kind :flag)
-         (string= (ntop.app.domain:parity-flag-snake-case (route-entry route))
-                  "disable_advanced_kill"))
-    (concatenate (quote string)
-                 "Use visible process rows and a disposable child; verify the child "
-                 "stays alive and the dialog offers only Yes/No."))
-   ((and (eq kind :flag)
-         (string= (ntop.app.domain:parity-flag-snake-case (route-entry route))
-                  "read_only"))
-    (concatenate (quote string)
-                 "Use visible process rows and a disposable child; verify the child "
-                 "stays alive and no kill dialog opens."))
-   ((string= id "cpu-frequency")
-    (concatenate (quote string) "Run sudo powermetrics --samplers cpu_power "
-                 "-i 1000 -n 5 beside btm; compare each cluster average within 10%."))
-   ((string= id "basic-mode")
-    "Run btm --basic; verify RAM, RX/TX totals, Disks and Temperature; no processes.")
-   ((string= id "sleep-child")
-    (concatenate (quote string) "Run btm --default-widget-type proc; start sleep 120, "
-                 "select its PID, send SIGTERM, and verify only it exits."))
-   ((eq kind :key)
-    (format nil "~a: ~a; send input and inspect the result." input
-            (cond
-              ((search "search" input :test (function char-equal))
-               "open search, enter a nonempty query, set its cursor")
-              ((search "disk" input :test (function char-equal))
-               "show disk rows and record sort")
-              ((search "temperature" input :test (function char-equal))
-               "show readings and record sort")
-              ((search "process" input :test (function char-equal))
-               "show two live rows and choose a valid selection")
-              (t "record a visible, non-boundary start state"))))
-   ((eq kind :column)
-    (format nil (concatenate (quote string)
-                 "~a: run where BTM displays live process rows, then inspect "
-                 "header ~s and its condition.")
-            input (ntop.app.domain:parity-column-header (route-entry route))))
-   ((eq kind :search-field)
-    (format nil "~a: enter ~s in field ~a; check syntax errors."
-            input (getf subcase :input)
-            (ntop.app.domain:parity-search-field-field (route-entry route))))
-   ((eq kind :mouse)
-    (format nil "~a: record selection, perform the gesture once, inspect result."
-            input))
-   (t (format nil "Run ~a and inspect its documented state." input))))
+         (path (if prefix
+                   (pathname (format nil "~a-manual.md" prefix))
+                   (merge-pathnames (format nil "~a-manual.md" id)
+                                    directory)))
+         (procedure (%route-manual-procedure route subcase input context))
          (expected
            (cond
              ((string= id "basic-mode")
@@ -374,7 +475,8 @@
               "Only the selected disposable child exits after SIGTERM.")
              (t (format nil "~a; expected: ~a" input (route-expected route))))))
     (%write-text path
-                 (format nil "# ~a~%~%Procedure: ~a~%~%Expected: ~a~%~%Reason: ~a~%~%"
+                 (format nil
+                         "# ~a~%~%Procedure: ~a~%~%Expected: ~a~%~%Reason: ~a~%~%"
                          id procedure expected reason))
     (list :status :manual :expected expected :cause reason
           :evidence (list (namestring path)))))

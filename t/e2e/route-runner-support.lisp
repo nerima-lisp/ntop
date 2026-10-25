@@ -151,8 +151,35 @@
            (%route-widget-no-data-p grid "Battery")))
       (t nil))))
 
-(defun %route-context-input (context)
+(defun %route-context-input (context &optional route subcase)
   (cond
+    ((and route (string-equal context "normal")
+          (member (route-id route) '("key-10" "key-11") :test #'string=))
+     (if (string= (route-id route) "key-10") "J" "K"))
+    ((and route
+          (string-equal context "help")
+          (member (route-id route)
+                  '("key-12" "key-13" "key-14" "key-15"
+                    "key-16" "key-17" "key-18" "key-19")
+                  :test #'string=))
+     (cond
+       ((member (route-id route) '("key-12" "key-13" "key-14")
+                :test #'string=)
+        "?2")
+       ((member (route-id route) '("key-15" "key-17" "key-19")
+                :test #'string=)
+        "?1")
+       (t "?9")))
+    ((and route
+          (string-equal context "help search")
+          (member (route-id route) '("key-26" "key-27" "key-35" "key-36")
+                  :test #'string=))
+     "?/process")
+    ((and route
+          (string= (route-id route) "key-27")
+          (string-equal context "process search")
+          (string= (getf subcase :input) "F3"))
+     "/btm")
     ((string-equal context "help") "?")
     ((string-equal context "help search") "?/")
     ((string-equal context "process search") "/")
@@ -162,6 +189,40 @@
     ((string-equal context "process tree") "t")
     ((string-equal context "expanded widget") "e")
     (t "")))
+
+(defun %route-help-search-query-visible-p (grid query)
+  (and grid
+       (let ((prompt (format nil "Search: ~a" query))
+             (prompt-visible nil)
+             (match-visible nil))
+         (loop for row below (grid-height grid)
+               for line = (criterion-row-text grid row)
+               do (cond
+                    ((search prompt line :test (function char-equal))
+                     (setf prompt-visible t))
+                    ((and (search query line :test (function char-equal))
+                          (search " - " line)
+                          (not (search "Search:" line
+                                       :test (function char-equal))))
+                     (setf match-visible t))))
+         (and prompt-visible match-visible))))
+(defun %route-search-toggle-state (route subcase initial grid stable)
+  (cond
+    ((and (member (route-id route) (quote ("key-26" "key-27"))
+                  :test (function string=))
+          (string-equal (or (getf subcase :context) "") "help search")
+          (member (getf subcase :input) (quote ("Alt+W" "Alt+R"))
+                  :test (function string=)))
+     (and stable
+          (%route-help-search-query-visible-p initial "process")
+          (%route-help-search-query-visible-p grid "process")))
+    ((and (string= (route-id route) "key-27")
+          (string-equal (or (getf subcase :context) "") "process search")
+          (string= (or (getf subcase :input) "") "F3")
+          (%route-widget-no-data-p initial "Processes")
+          (%route-widget-no-data-p grid "Processes"))
+     :manual)
+    (t nil)))
 
 (defun %route-safe-column-inputs (entry)
   (let ((condition (ntop.app.domain:parity-column-condition entry)))

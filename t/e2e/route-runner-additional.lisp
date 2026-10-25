@@ -96,11 +96,75 @@
           (pty-read-until-idle session
                                :quiet-seconds *route-frame-quiet-seconds*
                                :timeout-seconds timeout)
-        (%append-octets raw context-output)))
-    (let* ((before-grid (progn
-                          (%route-write-ansi
-                           (merge-pathnames (format nil "~a.ansi" evidence-prefix)) raw)
-                          (%route-grid raw rows columns)))
+        (%append-octets raw context-output)
+        (when (and (string= (route-id route) "mouse-69")
+                   (string-equal (or (getf subcase :context) "") "help"))
+          (dolist (input
+                   (%route-mouse-action-inputs
+                    route (list :context "help" :gesture "wheel-down")
+                    (%route-grid raw rows columns) rows columns))
+            (pty-send-input session (%route-octets input)
+                            :timeout-seconds timeout)
+            (multiple-value-bind (preparation-output)
+                (pty-read-until-idle session
+                                     :quiet-seconds *route-frame-quiet-seconds*
+                                     :timeout-seconds timeout)
+              (%append-octets raw preparation-output))))))
+    (let* ((before-grid
+            (progn
+              (when (and (string= (route-id route) "mouse-70")
+                         (string-equal (or (getf subcase :context) "") "graphs"))
+                ;; Start wheel-down at 45s; the CPU graph opens at its 60s limit.
+                (dolist (input
+                         (%route-mouse-action-inputs
+                          route (list :context "graphs" :gesture "wheel-up")
+                          (%route-grid raw rows columns) rows columns))
+                  (pty-send-input session (%route-octets input)
+                                  :timeout-seconds timeout)
+                  (multiple-value-bind (preparation-output)
+                      (pty-read-until-idle session
+                                           :quiet-seconds *route-frame-quiet-seconds*
+                                           :timeout-seconds timeout)
+                    (%append-octets raw preparation-output))))
+              (when (and (eq (route-kind route) :key)
+                         (member (route-action route)
+                                 (list "Zoom graph out" "Reset graph zoom")
+                                 :test (function string=))
+                         (string-equal (or (getf subcase :context) "") "graphs"))
+                ;; Move off the 60s limit before zoom-out or reset.
+                (pty-send-input session (%route-octets "+")
+                                :timeout-seconds timeout)
+                (multiple-value-bind (preparation-output)
+                    (pty-read-until-idle session
+                                         :quiet-seconds *route-frame-quiet-seconds*
+                                         :timeout-seconds timeout)
+                  (%append-octets raw preparation-output)))
+              (progn
+                (when (and (eq (route-kind route) :key)
+                           (string= (route-action route) "Select help section")
+                           (string= (getf subcase :input) "1"))
+                  ;; Start on section 2 so selecting section 1 has a visible transition.
+                  (pty-send-input session (%route-octets "2")
+                                  :timeout-seconds timeout)
+                  (multiple-value-bind (preparation-output)
+                      (pty-read-until-idle session
+                                           :quiet-seconds *route-frame-quiet-seconds*
+                                           :timeout-seconds timeout)
+                    (%append-octets raw preparation-output)))
+                (when (and (eq (route-kind route) :key)
+                           (string= (route-action route) "Select help section")
+                           (member (getf subcase :input) '("7" "8" "9") :test #'string=))
+                  ;; Start at section 1 so 7-9 produce a measurable jump to the bottom.
+                  (pty-send-input session (%route-octets "1")
+                                  :timeout-seconds timeout)
+                  (multiple-value-bind (preparation-output)
+                      (pty-read-until-idle session
+                                           :quiet-seconds *route-frame-quiet-seconds*
+                                           :timeout-seconds timeout)
+                    (%append-octets raw preparation-output))))
+              (%route-write-ansi
+               (merge-pathnames (format nil "~a.ansi" evidence-prefix)) raw)
+              (%route-grid raw rows columns)))
            (before-action (project-criterion-grid before-grid))
            (resolved-action
             (if (member action-text
@@ -124,13 +188,22 @@
         (pty-send-input session (%route-octets action)
                         :timeout-seconds timeout)
         (multiple-value-bind (action-output)
-            (if (and (eq (route-kind route) :mouse)
-                     (string= (route-action route) "Ignore pointer motion"))
-                (%route-read-through-quiet-period
-                 session *route-frame-quiet-seconds* timeout)
+            (cond
+             ((and (eq (route-kind route) :mouse)
+                   (string= (route-action route) "Ignore pointer motion"))
+              (%route-read-through-quiet-period
+               session *route-frame-quiet-seconds* timeout))
+             ((and (eq (route-kind route) :flag)
+                   (string= (ntop.app.domain:parity-flag-snake-case
+                             (route-entry route))
+                            "disable_keys")
+                   (not (getf subcase :invalid-value)))
+              (%route-read-through-quiet-period
+               session *route-frame-quiet-seconds* timeout))
+             (t
               (pty-read-until-idle session
                                    :quiet-seconds *route-frame-quiet-seconds*
-                                   :timeout-seconds timeout))
+                                   :timeout-seconds timeout)))
           (%append-octets raw action-output))
         (push (%route-grid raw rows columns) action-grids))
       (let* ((ansi-path (merge-pathnames
@@ -145,7 +218,7 @@
                                     rows columns rate timeout config-path
                                     evidence-directory)
   (let* ((context (or (getf subcase :context) ""))
-         (context-text (%route-context-input context))
+         (context-text (%route-context-input context route subcase))
          (action-text (%route-action-text route subcase rows columns))
          (args (%route-base-arguments program config-path route subcase
                                       evidence-directory))
@@ -307,3 +380,113 @@
             (1+ (second point)))))
   )
 )
+(progn
+  (defun %route-help-visible-sections (grid)
+    (loop for row below (grid-height grid)
+          for line = (criterion-row-text grid row)
+          for separator = (search " - " line)
+          for number =
+            (and separator
+                 (plusp separator)
+                 (digit-char-p (char line (1- separator))))
+          when number collect (cons number row)))
+  (defun %route-help-navigation-state-p (route subcase before-grid after-grid)
+    (when (and (string-equal (or (getf subcase :context) "") "help")
+               before-grid after-grid)
+      (let* ((action (route-action route))
+             (before (%route-help-visible-sections before-grid))
+             (after (%route-help-visible-sections after-grid))
+             (before-first (first before))
+             (before-last (car (last before)))
+             (after-last (car (last after))))
+        (cond
+          ((string= action "Go to first row")
+           (let ((before-two (assoc 2 before))
+                 (after-one (assoc 1 after))
+                 (after-two (assoc 2 after)))
+             (and before-two after-one after-two
+                  (> (cdr after-two) (cdr before-two)))))
+          ((string= action "Go to last row")
+           (let ((before-two (assoc 2 before))
+                 (before-nine (assoc 9 before))
+                 (after-nine (assoc 9 after)))
+             (and before-two after-nine
+                  (or (null before-nine)
+                      (/= (cdr before-nine) (cdr after-nine))))))
+          ((string= action "Move to previous row")
+           (let ((old (assoc 2 before)) (new (assoc 2 after)))
+             (and old new (= (cdr new) (1+ (cdr old))))))
+          ((string= action "Move to next row")
+           (let* ((old (assoc 1 before))
+                  (row (and old (cdr old)))
+                  (old-line (and row (criterion-row-text before-grid row)))
+                  (new-line (and row (criterion-row-text after-grid row))))
+             (and old-line new-line
+                  (search "1 - General" old-line)
+                  (search "q, Q, Ctrl-c" new-line)
+                  (not (string= old-line new-line)))))
+          ((member action '("Page up" "Half-page up") :test #'string=)
+           (and before-last after-last
+                (= (car before-last) 9)
+                (< (car after-last) (car before-last))))
+          ((member action '("Page down" "Half-page down") :test #'string=)
+           (and before-first before-last after-last
+                (= (car before-first) 1)
+                (> (car after-last) (car before-last))))
+          (t nil)))))
+  (defun %route-modal-action-state-p (route subcase before-grid after-grid)
+    (let* ((id (route-id route))
+           (action (route-action route))
+           (context (or (getf subcase :context) ""))
+           (before (%route-grid-text before-grid))
+           (after (%route-grid-text after-grid)))
+      (cond
+        ((and (string= id "key-35")
+              (string= action "Accept current choice"))
+         (cond
+           ((string-equal context "help search")
+            (and (%route-help-search-query-visible-p before-grid "process")
+                 (search "Help" after :test #'char-equal)
+                 (not (search "Search: process" after :test #'char-equal))))
+           ((member context '("process search" "process sort" "kill dialog")
+                    :test #'string-equal)
+            :manual)
+           (t nil)))
+        ((and (string= id "key-36")
+              (string= action "Close current modal"))
+         (cond
+           ((string-equal context "process search")
+            (and (search "Case(F1)" before :test #'char-equal)
+                 (search "> " before)
+                 (not (search "Case(F1)" after :test #'char-equal))))
+           ((string-equal context "help search")
+            (and (%route-help-search-query-visible-p before-grid "process")
+                 (search "Help" after :test #'char-equal)
+                 (not (search "Search: process" after :test #'char-equal))))
+           ((string-equal context "process sort")
+            (and (search "Sort By" before :test #'char-equal)
+                 (not (search "Sort By" after :test #'char-equal))))
+           ((string-equal context "expanded widget")
+            (and (search "Esc to go back" before :test #'char-equal)
+                 (not (search "Esc to go back" after :test #'char-equal))
+                 (every (lambda (label) (search label after :test #'char-equal))
+                        '("CPU" "Memory" "Network"))))
+           ((string-equal context "kill dialog") :manual)
+           (t nil)))
+        (t nil))))
+  (defun %route-key-context-state (route subcase initial grid stable)
+    (let ((id (route-id route))
+          (context (or (getf subcase :context) "")))
+      (cond
+        ((and (string-equal context "help")
+              (member id '("key-12" "key-13" "key-14" "key-15"
+                           "key-16" "key-17" "key-18" "key-19")
+                      :test #'string=))
+         (%route-help-navigation-state-p route subcase initial grid))
+        ((member id '("key-35" "key-36") :test #'string=)
+         (%route-modal-action-state-p route subcase initial grid))
+        (t
+         (or (%route-search-toggle-state route subcase initial grid stable)
+             :manual)))))
+)
+

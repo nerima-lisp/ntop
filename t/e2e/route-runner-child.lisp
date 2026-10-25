@@ -37,9 +37,12 @@
          (screen-rows (if select-route (max rows 512) rows))
          (base-args (%route-base-arguments program config-path route subcase
                                            evidence-directory))
-         (args (append (remove "--process-command" base-args
-                               :test #'string=)
-                       (list "--process-command")))
+         (args
+          (if (eq (route-kind route) :column)
+              base-args
+            (append
+             (remove "--process-command" base-args :test (function string=))
+             (list "--process-command"))))
          (session nil)
          (raw (make-array 0 :element-type '(unsigned-byte 8)
                           :adjustable t :fill-pointer 0))
@@ -63,17 +66,73 @@
                    :timeout-seconds timeout)
                 (progn
                   (%append-octets raw initial)
+                  (when (and (eq (route-kind route) :column)
+                             (not (sb-ext:process-alive-p child)))
+                    (error "Harness-owned column fixture PID ~d exited before the frame." pid))
                   (when (%route-widget-no-data-p
                          (%route-grid raw screen-rows columns) "Processes")
                     (return-from %route-run-sleep-child-side
                                  (list :status :manual
                                        :passed nil
-                                       :actual (format nil (concatenate (quote string)
-                                                        "~a process widget shows No data;"
-                                                        " owned PID ~d cannot be verified.")
-                                                       (pathname-name (pathname program)) pid)
-                                       :cause "The process table has no rows on this host."
-                                       :evidence path)))))
+                                       :actual
+                                       (format nil
+                                               (concatenate
+                                                'string
+                                                "~a process widget shows No data; "
+                                                "owned child PID ~d alive ~a; PID and "
+                                                "ntop-owned marker cannot be verified.")
+                                               (pathname-name (pathname program)) pid
+                                               (if (sb-ext:process-alive-p child) "yes" "no"))
+                                       :cause
+                                       (format nil
+                                               (concatenate
+                                                'string
+                                                "The process widget had no rows while "
+                                                "harness-owned PID ~d remained alive: ~a.")
+                                               pid
+                                               (if (sb-ext:process-alive-p child) "yes" "no"))
+                                       :evidence path)))
+                  (when (eq (route-kind route) :column)
+                    (let ((grid (%route-grid raw screen-rows columns)))
+                      (unless (%route-owned-row-p grid pid)
+                        (return-from %route-run-sleep-child-side
+                                     (list :status :manual
+                                           :passed nil
+                                           :actual
+                                           (format nil
+                                                   (concatenate
+                                                    'string
+                                                    "process rows are visible, but PID ~d and "
+                                                    "ntop-owned are not on one row; "
+                                                    "owned child alive ~a")
+                                                   pid
+                                                   (if (sb-ext:process-alive-p child) "yes" "no"))
+                                           :cause
+                                           (concatenate
+                                            'string
+                                            "The process table did not show the "
+                                            "harness-owned PID and marker on one row.")
+                                           :evidence path)))
+                      (multiple-value-bind (header-ok expected-header-p)
+                          (%route-column-visible-p route grid)
+                        (let ((alive (sb-ext:process-alive-p child))
+                              (header (ntop.app.domain:parity-column-header
+                                       (route-entry route))))
+                          (setf passed (and alive header-ok)
+                                sent t
+                                actual
+                                (format nil
+                                        (concatenate
+                                         'string
+                                         "owned PID ~d and ntop-owned share one row; "
+                                         "header ~s is ~a, expected ~a; child alive ~a")
+                                        pid header (if header-ok "visible" "absent")
+                                        (if expected-header-p "visible" "absent")
+                                        (if alive "yes" "no")))
+                          (return-from %route-run-sleep-child-side
+                                       (list :passed (and passed sent)
+                                             :actual actual
+                                             :evidence path))))))))
               (if select-route
                   (let* ((before-grid (%route-grid raw screen-rows columns))
                          (before-style

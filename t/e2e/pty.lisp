@@ -318,56 +318,48 @@
                                       (typep octets '(vector (unsigned-byte 8)))
                                     (error
                                      "OCTETS must be a vector of unsigned bytes."))
-                                  (let* ((input
-                                          (make-array (length octets)
-                                                      :element-type
-                                                      '(unsigned-byte 8)
-                                                      :initial-contents
-                                                      octets))
-                                         (byte
-                                          (make-array 1
-                                                      :element-type
-                                                      '(unsigned-byte 8))))
-                                    (loop with
-                                      offset
-                                      =
-                                      0
-                                      while
-                                      (< offset (length input))
-                                      for
-                                      now
-                                      =
-                                      (%now)
-                                      do
-                                      (when (>= now deadline)
-                                        (%signal-timeout "write"
-                                                         deadline-seconds))
-                                      (unless
-                                          (with-e2e-operation-timeout
-                                           ("write wait" deadline
-                                                         deadline-seconds)
-                                           (cl-tty-kit:fd-wait
-                                            (e2e-session-fd session)
-                                            :output
-                                            (%ticks-to-seconds (- deadline now))))
-                                        (%signal-timeout "write"
-                                                         deadline-seconds))
-                                      (setf (aref byte 0) (aref input offset))
-                                      (let ((count
-                                             (with-e2e-operation-timeout
-                                              ("write" deadline
-                                                       deadline-seconds)
-                                              (cl-tty-kit:fd-write-octets
-                                               (e2e-session-fd session)
-                                               byte))))
+                                  (let ((input
+                                         (make-array (length octets)
+                                                     :element-type
+                                                     '(unsigned-byte 8)
+                                                     :initial-contents
+                                                     octets)))
+                                    (when (plusp (length input))
+                                      (let ((now (%now)))
+                                        (when (>= now deadline)
+                                          (%signal-timeout "write"
+                                                           deadline-seconds))
                                         (unless
-                                            (and (integerp count)
-                                                 (<= 0 count 1))
-                                          (error
-                                           "PTY returned an invalid write count."))
-                                        (incf offset count))
-                                      finally
-                                      (return (%elapsed-seconds session (%now)))))))))
+                                            (with-e2e-operation-timeout
+                                             ("write wait" deadline
+                                              deadline-seconds)
+                                             (cl-tty-kit:fd-wait
+                                              (e2e-session-fd session)
+                                              :output
+                                              (%ticks-to-seconds
+                                               (- deadline now))))
+                                          (%signal-timeout "write"
+                                                           deadline-seconds))
+                                        (let ((count
+                                               (with-e2e-operation-timeout
+                                                ("write" deadline
+                                                 deadline-seconds)
+                                                (cl-tty-kit:fd-write-octets
+                                                 (e2e-session-fd session)
+                                                 input))))
+                                          (unless
+                                              (and (integerp count)
+                                                   (<= 0 count (length input)))
+                                            (error "PTY write count ~S invalid for ~D octets."
+                                             count
+                                             (length input)))
+                                          (unless (= count (length input))
+                                            (error
+                                             "PTY wrote only ~D of ~D input octets in one write."
+                                             count
+                                             (length input)))))
+                                    (%elapsed-seconds session (%now))))))))
+
 (defun %pty-answer-cursor-query
     (session output start-index deadline)
   (loop with query-start = start-index
