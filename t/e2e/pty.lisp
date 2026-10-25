@@ -436,7 +436,7 @@
           (%reap-e2e-process process)
           (setf (e2e-session-closed-p session) t)
           (if close-error
-              (error close-error)
+              (warn "PTY close failed; child was reaped by fallback: ~a" close-error)
               (error "PTY close returned while its child was still alive.")))
         (setf (e2e-session-closed-p session) t)))
     session))

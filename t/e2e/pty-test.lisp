@@ -82,7 +82,46 @@
                   (cl-weave:expect writes :to-equal '((27 79 82))))
              (setf (symbol-function 'cl-tty-kit:fd-write-octets)
                    original-write)))
-      (ntop.e2e::close-e2e-session session)))))
+      (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
+  "preserves the route result when fallback reaping follows a close error"
+  (let* ((session
+          (ntop.e2e::launch-e2e-process
+           "sleep" (list "30") 24 80 :timeout-seconds 5d0))
+         (original-close (symbol-function 'cl-tty-kit:close-pty))
+         (warning-condition nil)
+         (actual nil))
+    (unwind-protect
+         (progn
+           (setf (symbol-function 'cl-tty-kit:close-pty)
+                 (lambda (pty)
+                   (declare (ignore pty))
+                   (error "forced close failure")))
+           (setf actual
+                 (handler-bind
+                     ((warning
+                        (lambda (condition)
+                          (setf warning-condition condition)
+                          (muffle-warning condition))))
+                   (handler-case
+                       (unwind-protect
+                            :route-result
+                         (ntop.e2e::close-e2e-session session))
+                     (error (condition) condition))))
+           (cl-weave:expect actual :to-equal :route-result)
+           (cl-weave:expect (typep warning-condition 'warning) :to-be t)
+           (cl-weave:expect
+            (not (null (search "forced close failure"
+                               (princ-to-string warning-condition))))
+            :to-be t)
+           (cl-weave:expect
+            (sb-ext:process-alive-p
+             (ntop.e2e::e2e-session-process session))
+            :to-be nil)
+           (cl-weave:expect (ntop.e2e::e2e-session-closed-p session) :to-be t))
+      (setf (symbol-function 'cl-tty-kit:close-pty) original-close)
+      (unless (ntop.e2e::e2e-session-closed-p session)
+        (ntop.e2e::close-e2e-session session))))))
 
 (cl-weave:describe "E2E PTY operation deadlines"
                    (cl-weave:it "expands the operation timeout macro"
