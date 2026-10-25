@@ -1,6 +1,6 @@
 # Differences from btm
 
-ntop uses [bottom (`btm`) 0.14.9](https://github.com/ClementTsang/bottom/tree/0.14.9) as its reference for screens, keys, mouse controls, and CLI flags. The D labels are ntop's project difference IDs. This page covers the defined entries D1, D2, D4-D9, and D11. D3 is a gap; no D10 behavior is defined.
+ntop uses [bottom (`btm`) 0.14.9](https://github.com/ClementTsang/bottom/tree/0.14.9) as its reference for screens, keys, mouse controls, and CLI flags. This page covers defined entries D1, D2, D4-D9, and D11; D3 and D10 have no defined behavior.
 
 | ID | btm 0.14.9 | ntop |
 |---|---|---|
@@ -16,11 +16,11 @@ ntop uses [bottom (`btm`) 0.14.9](https://github.com/ClementTsang/bottom/tree/0.
 
 ## Unsupported behavior
 
-ntop does not read or write configuration files. Passing `-C`, `--config`, `--config-location`, or `--config_location` exits with status 2. Configuration-file handling is outside the CLI parity specification.
+The project specification excludes configuration-file handling. ntop does not read or write configuration files. Passing `-C`, `--config`, `--config-location`, or `--config_location` exits with status 2.
 
 | Argument | btm 0.14.9 | ntop |
 |---|---|---|
-| `--config_location <path>` | Accepts the path and proceeds to TUI initialization. | Exits with status 2 without reading or writing the specified file. |
+| `-C`, `--config`, `--config-location`, `--config_location <path>` | Accepts the path and proceeds to TUI initialization. | Exits with status 2 without reading or writing the specified file. |
 
 ntop supports macOS and Linux. It exits with status 1 on other platforms, including Windows and FreeBSD.
 
