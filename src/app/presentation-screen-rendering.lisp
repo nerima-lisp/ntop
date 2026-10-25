@@ -116,6 +116,11 @@
                 (member widget
                         (list :disk :temperature :process-table)
                         :test (function eq))))
+         (old-network-legend-p
+           (and (eq widget :network)
+                (not basic-p)
+                (ntop.shared.application:application-config-network-use-old-legend-p
+                 config)))
          (process-search-p
            (and (eq widget :process-table)
                 (eq (ntop.app.domain:app-state-active-dialog state)
@@ -150,7 +155,9 @@
                       search-body-rectangle)))
              (process-sort-p (first sort-layout))
              ((or (not basic-p) basic-table-frame-p)
-              (%screen-inner-rectangle rectangle basic-table-frame-p))
+              (if old-network-legend-p
+                  rectangle
+                  (%screen-inner-rectangle rectangle basic-table-frame-p)))
              (t rectangle)))
          (frame-rectangles
            (cond
@@ -168,6 +175,15 @@
                   (list
                    (list (fourth sort-layout) selected-p)
                    (list (third sort-layout) nil))))
+             (old-network-legend-p
+              (list
+               (list
+                (ntop.ui:make-rectangle
+                 :x (ntop.ui:rectangle-x rectangle)
+                 :y (ntop.ui:rectangle-y rectangle)
+                 :width (ntop.ui:rectangle-width rectangle)
+                 :height (max 0 (- (ntop.ui:rectangle-height rectangle) 4)))
+                selected-p)))
              ((or (not basic-p) basic-table-frame-p)
               (list (list rectangle selected-p)))
              (t nil)))
