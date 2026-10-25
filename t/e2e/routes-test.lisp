@@ -105,4 +105,3 @@
       (cl-weave:expect (every (function %route-flag-spellings-p) flags)
                        :to-be t)
       (cl-weave:expect (%route-control-flags-p flags) :to-be t)))))
-
