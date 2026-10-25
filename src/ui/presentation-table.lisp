@@ -150,7 +150,10 @@
                 (not empty-message-p)))
          (header-height (if header-row-p 1 0))
          (table-gap-height
-           (if (and table-gap-p header-row-p (>= (rectangle-height rectangle) 7)) 1 0))
+           (if (and table-gap-p
+                header-row-p
+                (not title-row-p)
+                (>= (rectangle-height rectangle) 7)) 1 0))
          (body-y (+ (rectangle-y rectangle)
                     title-height
                     header-height
