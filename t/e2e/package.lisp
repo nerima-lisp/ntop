@@ -15,5 +15,7 @@
                      #:*e2e-app*
                      #:*criterion-vocabulary*
                      #:define-criterion-vocabulary
-                     #:project-criterion-grid))
+                     #:project-criterion-grid
+                     #:run-n7))
+
 (defpackage #:ntop.e2e.test (:use #:cl))

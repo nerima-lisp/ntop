@@ -117,7 +117,9 @@
  (cl-weave:it-each
   ((:ordinary "fixture-worker" ("fixture-worker"))
    (:path "runtime/fixture-worker" ("runtime/fixture-worker" "fixture-worker"))
-   (:probe "grep" nil))
+   (:probe "grep" nil)
+   (:lisp-runtime "sbcl" nil)
+   (:shell-runtime "bash" nil))
   "builds process patterns for the ~A command"
   (case-name line expected-patterns)
   (declare (ignore case-name))
@@ -125,3 +127,59 @@
    (ntop.e2e::%process-line-patterns line)
    :to-equal
    expected-patterns)))
+(cl-weave:describe
+ "N7 generic content patterns"
+ (cl-weave:it
+  "matches generic markers and skips Nix attribute references"
+  (let* ((user-path (format nil "~CUsers~Cfixture~CLibrary" #\/ #\/ #\/))
+         (local-hostname (concatenate 'string "workstation" "." "local"))
+         (multi-label-hostname
+           (concatenate 'string "api" "." "workstation" "." "local"))
+         (invalid-hostname
+           (concatenate 'string "bad.." "fixture" "." "local"))
+         (nix-attribute (format nil "~A.~A = {}" "checks" "local"))
+         (nested-nix-attribute
+           (format nil "~A.~A.~A = {}" "checks" "feature" "local")))
+    (cl-weave:expect (ntop.e2e::%n7-generic-line-p user-path) :to-be t)
+    (cl-weave:expect
+     (ntop.e2e::%n7-generic-line-p local-hostname)
+     :to-be
+     t)
+    (cl-weave:expect
+     (ntop.e2e::%n7-generic-line-p multi-label-hostname)
+     :to-be
+     t)
+    (cl-weave:expect
+     (ntop.e2e::%n7-generic-line-p invalid-hostname)
+     :to-be
+     nil)
+    (cl-weave:expect
+     (ntop.e2e::%n7-generic-line-p nix-attribute)
+     :to-be
+     nil)
+    (cl-weave:expect
+     (ntop.e2e::%n7-generic-line-p nested-nix-attribute)
+     :to-be
+     nil)
+    (cl-weave:expect
+     (lambda ()
+       (n7-test-with-root
+        user-path
+        (lambda (root)
+          (ntop.e2e::%n7-scan-root root (list "N7_UNMATCHED_TEST_MARKER")))))
+     :to-throw
+     (quote error))
+    (cl-weave:expect
+     (n7-test-with-root
+      nix-attribute
+      (lambda (root)
+        (ntop.e2e::%n7-scan-root root (list "N7_UNMATCHED_TEST_MARKER"))))
+     :to-equal
+     0)
+    (cl-weave:expect
+     (n7-test-with-root
+      nested-nix-attribute
+      (lambda (root)
+        (ntop.e2e::%n7-scan-root root (list "N7_UNMATCHED_TEST_MARKER"))))
+     :to-equal
+     0))))
