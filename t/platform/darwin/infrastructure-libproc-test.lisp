@@ -72,11 +72,10 @@
                          :to-be 1700000001.5d0))))
 
    (cl-weave:it
-    "decodes task, rusage, PID-list, and procargs buffers"
+    "decodes task, rusage, and PID-list buffers"
     (let ((task (%f8a-darwin-test-octets 232))
           (usage (%f8a-darwin-test-octets 160))
-          (pids (%f8a-darwin-test-octets 12))
-          (args (%f8a-darwin-test-octets 64)))
+          (pids (%f8a-darwin-test-octets 12)))
       (%f8a-darwin-test-write-integer task 136 8 8192)
       (%f8a-darwin-test-write-integer task 144 8 4096)
       (%f8a-darwin-test-write-integer task 152 8 77)
@@ -87,11 +86,6 @@
       (%f8a-darwin-test-write-integer pids 0 4 11)
       (%f8a-darwin-test-write-integer pids 4 4 0)
       (%f8a-darwin-test-write-integer pids 8 4 22)
-      (%f8a-darwin-test-write-integer args 0 4 3)
-      (%f8a-darwin-test-write-string args 4 15 "/usr/bin/worker")
-      (%f8a-darwin-test-write-string args 20 15 "/usr/bin/worker")
-      (%f8a-darwin-test-write-string args 36 7 "--label")
-      (%f8a-darwin-test-write-string args 44 9 "two words")
       (let ((task-row (ntop.platform.darwin::decode-darwin-taskallinfo task)))
         (cl-weave:expect (getf task-row :virtual-memory-bytes) :to-be 8192)
         (cl-weave:expect (getf task-row :resident-memory-bytes) :to-be 4096)
@@ -103,10 +97,7 @@
        :to-equal '(:read-bytes 1234 :write-bytes 5678))
       (cl-weave:expect
        (ntop.platform.darwin::decode-darwin-pid-buffer pids)
-       :to-equal '(11 22))
-      (cl-weave:expect
-       (ntop.platform.darwin::decode-darwin-procargs2 args)
-       :to-equal "/usr/bin/worker --label two words")))
+       :to-equal '(11 22))))
 
    (cl-weave:it
     "decodes proc_threadinfo with the requested thread id"
@@ -130,14 +121,7 @@
     (let ((short-bsd (%f8a-darwin-test-octets 135))
           (short-kinfo (%f8a-darwin-test-octets 647))
           (short-thread (%f8a-darwin-test-octets 111))
-          (misaligned-pids (%f8a-darwin-test-octets 5))
-          (negative-argc (%f8a-darwin-test-octets 8))
-          (truncated-args (%f8a-darwin-test-octets 9)))
-      (%f8a-darwin-test-write-integer negative-argc 0 4 -1)
-      (%f8a-darwin-test-write-integer truncated-args 0 4 2)
-      (%f8a-darwin-test-write-string truncated-args 4 1 "x")
-      (%f8a-darwin-test-write-string truncated-args 6 1 "a")
-      (%f8a-darwin-test-write-string truncated-args 8 1 "b")
+          (misaligned-pids (%f8a-darwin-test-octets 5)))
       (cl-weave:expect
        (lambda ()
          (ntop.platform.darwin::decode-darwin-proc-bsdinfo short-bsd))
@@ -153,20 +137,12 @@
       (cl-weave:expect
        (lambda ()
          (ntop.platform.darwin::decode-darwin-pid-buffer misaligned-pids))
-       :to-throw 'error)
-      (cl-weave:expect
-       (lambda ()
-         (ntop.platform.darwin::decode-darwin-procargs2 negative-argc))
-       :to-throw 'error)
-      (cl-weave:expect
-       (lambda ()
-         (ntop.platform.darwin::decode-darwin-procargs2 truncated-args))
        :to-throw 'error))))
 
 (cl-weave:describe
  "Darwin libproc failure paths"
  (cl-weave:it
-  "covers empty names, exact decoder sizes, and procargs boundaries"
+  "covers empty names and exact decoder sizes"
   (let ((bsd (%f8a-darwin-test-octets 136)))
     (%f8a-darwin-test-write-string bsd 48 16 "short-name")
     (cl-weave:expect
@@ -179,21 +155,7 @@
        (if (= (length octets) 231)
            (ntop.platform.darwin::decode-darwin-taskallinfo octets)
            (ntop.platform.darwin::decode-darwin-rusage-info octets)))
-     :to-throw 'error))
-  (let ((short (%f8a-darwin-test-octets 4))
-        (unterminated (%f8a-darwin-test-octets 5))
-        (empty-path (%f8a-darwin-test-octets 5)))
-    (%f8a-darwin-test-write-integer unterminated 4 1 120)
-    (cl-weave:expect
-     (lambda () (ntop.platform.darwin::decode-darwin-procargs2 short))
-     :to-throw 'error)
-    (cl-weave:expect
-     (lambda ()
-       (ntop.platform.darwin::decode-darwin-procargs2 unterminated))
-     :to-throw 'error)
-    (cl-weave:expect
-     (ntop.platform.darwin::decode-darwin-procargs2 empty-path)
-     :to-equal "")))
+     :to-throw 'error)))
  #+darwin
  (cl-weave:it
   "bounds native process buffers and catches decoder failures"

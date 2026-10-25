@@ -5,8 +5,7 @@
     :proc-pidinfo-bsdinfo 3 :proc-pidinfo-taskallinfo 2
     :proc-pidinfo-listthreads 6 :proc-pidinfo-threadinfo 5
     :proc-rusage-v2 2 :sysctl-kern 1 :sysctl-proc 14
-    :sysctl-proc-pid 1 :sysctl-procargs2 49
-    :initial-buffer-size 4096 :maximum-buffer-size 1048576
+    :sysctl-proc-pid 1 :initial-buffer-size 4096 :maximum-buffer-size 1048576
     :pid-width 4
     :bsdinfo-size 136 :bsdinfo-flags 0 :bsdinfo-pid 12 :bsdinfo-ppid 16
     :bsdinfo-uid 20 :bsdinfo-ruid 28 :bsdinfo-name 48
@@ -170,48 +169,6 @@
          when (plusp pid)
           collect pid))
 
-  (defun decode-darwin-procargs2 (octets)
-  (check-type octets (vector (unsigned-byte 8)))
-  (when (< (length octets) 5)
-    (error "A KERN_PROCARGS2 buffer must include argc and a path."))
-  (let* ((argc (%darwin-process-integer octets 0 4 t))
-         (path-end (position 0 octets :start 4)))
-    (when (minusp argc)
-      (error "KERN_PROCARGS2 argc cannot be negative."))
-    (unless path-end
-      (error "A KERN_PROCARGS2 path must be NUL-terminated."))
-    (let ((path (%darwin-process-string octets 4 (- path-end 4)))
-          (start (1+ path-end)))
-      (loop while (and (< start (length octets)) (zerop (aref octets start)))
-            do (incf start))
-      (if (zerop argc)
-          path
-          (let ((total-length (1- argc))
-                (cursor start))
-            (loop repeat argc
-                  for end = (or (position 0 octets :start cursor)
-                                (error "A KERN_PROCARGS2 argument is truncated."))
-                  do (incf total-length (- end cursor))
-                     (setf cursor (1+ end)))
-            (let ((arguments
-                    (make-array total-length
-                                :element-type '(unsigned-byte 8)))
-                  (output-index 0))
-              (setf cursor start)
-              (loop for argument-index below argc
-                    for end = (or (position 0 octets :start cursor)
-                                  (error "A KERN_PROCARGS2 argument is truncated."))
-                    do (when (plusp argument-index)
-                         (setf (aref arguments output-index) 32)
-                         (incf output-index))
-                       (replace arguments octets
-                                :start1 output-index
-                                :start2 cursor
-                                :end2 end)
-                       (incf output-index (- end cursor))
-                       (setf cursor (1+ end)))
-              (decode-c-string arguments))))))
-)
   #+darwin
   (eval-when (:load-toplevel :execute)
     (sb-alien:load-shared-object "/usr/lib/libproc.dylib"))
@@ -307,19 +264,6 @@
                 (%darwin-try
                  (lambda () (decode-darwin-kinfo-proc kernel-octets))))))
     (or bsd kernel)))
-  #+darwin
-(defun %darwin-command-line (pid)
-  (let* ((layout +darwin-process-layout+)
-         (octets
-           (handler-case
-               (%darwin-sysctl
-                (list (getf layout :sysctl-kern)
-                      (getf layout :sysctl-procargs2)
-                      pid))
-             (error () nil))))
-    (and octets
-         (handler-case (decode-darwin-procargs2 octets)
-           (error () nil)))))
   #+darwin
 (progn
   (defun %darwin-thread-ids (pid)
