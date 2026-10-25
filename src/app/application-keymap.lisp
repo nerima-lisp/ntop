@@ -97,6 +97,7 @@
                       :test (function eq))))
         ((string= name "basic-mode arrows")
          (and basic-p (normal-context-p)))
+        ((string= name "expanded widget") (normal-context-p))
         ((dialog-context-p) t)
         ((and (normal-context-p) widget (widget-context-p)) t)
         (t nil)))))
@@ -216,7 +217,11 @@
     (cond
       ((eq value :input-text) (input-meaning-text input))
       ((eq value :close-dialog)
-       (list :close (ntop.app.domain:input-context-active-dialog context)))
+       (if (or (ntop.app.domain:input-context-active-dialog context)
+               (ntop.app.domain:input-context-search-mode-p context))
+           (list :close
+                 (ntop.app.domain:input-context-active-dialog context))
+           :clear-expanded))
       ((eq value :help-section) (list :help-section binding))
       ((eq value :help-line-scroll)
        (if (string= binding (first (keymap-entry-bindings entry)))

@@ -121,6 +121,9 @@
 (defun %transition-dialog (state action)
   (let ((value (ntop.app.domain:app-action-value action)))
     (cond
+      ((eq value :clear-expanded)
+       (setf (ntop.app.domain:app-state-expanded-p state) nil)
+       (values state nil nil))
       ((and (consp value) (eq (first value) :close))
        (when (eq (second value)
                  (ntop.app.domain:app-state-active-dialog state))

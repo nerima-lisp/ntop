@@ -128,9 +128,8 @@
                             ("src/event.rs:70; src/app.rs:490-525"))
    ("Close current modal" ("Escape")
                           ("process search" "help search"
-                                            "process sort"
-                                            "kill dialog"
-                                            "expanded widget")
+                           "process sort" "kill dialog"
+                           "expanded widget" "help")
                           "Closes a modal or restores an expanded widget."
                           ("src/event.rs:69; src/app.rs:228-292"))
    ("Toggle process table tab" ("Tab")

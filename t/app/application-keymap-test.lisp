@@ -422,3 +422,58 @@
                                          (declare (ignore meaning)))
                                        :now
                                        nil))))
+
+(cl-weave:describe
+ "Escape priority (btm 0.14.9: src/event.rs:69; src/app.rs:228-291)"
+ (cl-weave:it
+  "clears expansion only when no dialog or search is active"
+  (let ((input (ntop.ui::make-input-meaning :kind :key :key "Escape"))
+        (cases '((nil nil :clear-expanded nil nil t)
+                 (:process-search t (:close :process-search) nil t t)
+                 (:process-sort nil (:close :process-sort) nil t t)
+                 (:help nil (:close :help) nil t t)
+                 (:help-search t (:close :help-search) nil t t)
+                 (nil t nil nil t nil))))
+    (dolist (case cases)
+      (destructuring-bind
+          (dialog search-p expected-value expected-dialog expected-expanded
+           handled-p)
+          case
+        (let ((state (ntop.app.domain:make-app-state
+                      :active-dialog dialog
+                      :expanded-p t))
+              (context (ntop.app.domain:make-input-context
+                        :selected-widget :process
+                        :active-dialog dialog
+                        :search-mode-p search-p)))
+          (multiple-value-bind (result actions unhandled)
+              (keymap-test-dispatch-once
+               (ntop.app.application:make-application-keymap-state)
+               input context 0d0)
+            (declare (ignore result))
+            (cl-weave:expect (length actions)
+                             :to-equal
+                             (if handled-p 1 0))
+            (cl-weave:expect (length unhandled)
+                             :to-equal
+                             (if handled-p 0 1))
+            (when handled-p
+              (cl-weave:expect
+               (ntop.app.domain:app-action-kind (first actions))
+               :to-equal
+               :dialog)
+              (cl-weave:expect
+               (ntop.app.domain:app-action-value (first actions))
+               :to-equal
+               expected-value)
+              (setf state
+                    (ntop.app.application::transition-application-state
+                     state (first actions))))
+            (cl-weave:expect
+             (ntop.app.domain:app-state-active-dialog state)
+             :to-equal
+             expected-dialog)
+            (cl-weave:expect
+             (ntop.app.domain:app-state-expanded-p state)
+             :to-equal
+             expected-expanded))))))))
