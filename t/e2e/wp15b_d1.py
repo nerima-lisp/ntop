@@ -205,21 +205,79 @@ def parse_rate(text):
     return float(match.group(1)) * scale[match.group(2).upper()]
 
 
-def displayed_writer_rate(grid):
-    lines = grid.signature()
-    if not any("W/s" in line for line in lines):
-        return None, "process-table-header-missing", None
-    rows = [line for line in lines if WRITER_TOKEN in line]
-    if len(rows) != 1:
-        return None, "writer-row-not-unique", rows
-    values = RATE_TOKEN.findall(rows[0])
+def displayed_writer_rate(grid, writer_pid):
+    lines = tuple(line.rstrip() for line in grid.signature())
+    header_index = next(
+        (index for index, line in enumerate(lines) if "W/s" in line), None
+    )
+    if header_index is None:
+        return None, "process-table-header-missing", {
+            "writer_pid": writer_pid,
+            "process_header": None,
+        }
+
+    header = lines[header_index]
+    grouped = "Count" in header
+    if "PID" not in header:
+        return None, "process-pid-column-missing", {
+            "writer_pid": writer_pid,
+            "process_header": header.strip(),
+            "grouped": grouped,
+        }
+    if "Command(n)" not in header:
+        return None, "process-command-column-missing", {
+            "writer_pid": writer_pid,
+            "process_header": header.strip(),
+            "visible_process_rows": [],
+        }
+
+    process_lines = []
+    visible_rows = []
+    table_lines = lines[header_index + 1:]
+    for line in table_lines:
+        if not line.strip():
+            continue
+        pid_match = re.match(r"\s*[^0-9]*?(\d+)(?=\s)", line)
+        if pid_match and len(RATE_TOKEN.findall(line)) >= 2:
+            pid = int(pid_match.group(1))
+            process_lines.append((pid, line))
+            visible_rows.append({
+                "pid": pid,
+                "writer_token_found": WRITER_TOKEN in line,
+            })
+
+    evidence = {
+        "writer_pid": writer_pid,
+        "process_header": header.strip(),
+        "visible_process_rows": visible_rows,
+    }
+    writer_rows = [line for pid, line in process_lines if pid == writer_pid]
+    if not writer_rows:
+        token_rows = [line for line in table_lines if WRITER_TOKEN in line]
+        if token_rows:
+            evidence["writer_token_rows"] = token_rows
+            return None, "writer-pid-unmatched", evidence
+        return None, "writer-row-absent", evidence
+    if len(writer_rows) != 1:
+        evidence["writer_rows"] = writer_rows
+        return None, "writer-pid-row-not-unique", evidence
+
+    writer_row = writer_rows[0]
+    evidence["writer_row"] = writer_row
+    evidence["writer_command_token_found"] = WRITER_TOKEN in writer_row
+    if not evidence["writer_command_token_found"]:
+        return None, "writer-command-unmatched", evidence
+
+    values = RATE_TOKEN.findall(writer_row)
+    evidence["rate_values"] = values
     if len(values) < 2:
-        return None, "read-write-rate-fields-missing", rows[0]
+        return None, "read-write-rate-fields-missing", evidence
     rate_text = values[1]
+    evidence["text"] = rate_text
     rate = parse_rate(rate_text)
     if rate is None:
-        return None, "writer-rate-unavailable", {"row": rows[0], "text": rate_text}
-    return rate, None, {"row": rows[0], "text": rate_text}
+        return None, "writer-rate-unavailable", evidence
+    return rate, None, evidence
 
 
 def start_ntop(ntop):
@@ -229,6 +287,7 @@ def start_ntop(ntop):
         "--default-widget-count", "1",
         "--process-default-sort", "w/s",
         "--process-command",
+        "--tree",
     ]
     return PtySession(argv, ROWS, COLUMNS)
 
@@ -239,6 +298,7 @@ def collect_samples(ntop_child, writer, raw_dir, started):
     last_output = None
     last_evaluated = None
     last_signature = None
+    pid_filter_sent = False
     deadline = started + MAX_SECONDS
     with (raw_dir / "ntop.ansi").open("wb") as raw:
         while len(samples) < SAMPLE_LIMIT and time.monotonic() < deadline:
@@ -277,6 +337,7 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                     "elapsed_seconds": now - started,
                     "valid": False,
                     "reason": "ansi-grid-invalid",
+                    "writer_pid": writer.pid,
                     "load_average": load_average(),
                 })
                 continue
@@ -284,17 +345,29 @@ def collect_samples(ntop_child, writer, raw_dir, started):
             if signature == last_signature:
                 continue
             last_signature = signature
-            rate, reason, detail = displayed_writer_rate(grid)
+            rate, reason, detail = displayed_writer_rate(grid, writer.pid)
             observation = {
                 "elapsed_seconds": now - started,
                 "valid": rate is not None,
-                "w_s_text": detail.get("text") if isinstance(detail, dict) else None,
+                "writer_pid": writer.pid,
+                "process_header": detail.get("process_header"),
+                "visible_process_rows": detail.get("visible_process_rows"),
+                "writer_command_token_found": detail.get(
+                    "writer_command_token_found"
+                ),
+                "writer_row": detail.get("writer_row"),
+                "w_s_text": detail.get("text"),
                 "w_s_bytes_per_second": rate,
                 "reason": reason,
-                "writer_row": detail.get("row") if isinstance(detail, dict) else detail,
                 "load_average": load_average(),
             }
             observations.append(observation)
+            if (not pid_filter_sent
+                    and detail.get("process_header")
+                    and "PID" in detail["process_header"]):
+                ntop_child.send(f"/pid = {writer.pid}\r".encode())
+                pid_filter_sent = True
+                observation["pid_filter_sent"] = True
             if rate is not None:
                 observation["sample"] = len(samples) + 1
                 observation["within_target_10_percent"] = (
@@ -311,6 +384,7 @@ def run_d1(ntop, raw_dir):
         "settings": {
             "rows": ROWS,
             "columns": COLUMNS,
+            "process_view": "tree",
             "rate_ms": RATE_MS,
             "target_bytes_per_second": TARGET_BPS,
             "samples_requested": SAMPLE_LIMIT,
