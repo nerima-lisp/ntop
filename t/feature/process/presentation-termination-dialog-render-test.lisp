@@ -184,6 +184,50 @@
         (ntop.process.presentation::%process-termination-message dialog)
         :to-equal
         "Kill 2 processes with the name 'process'? Press ENTER to confirm.")))
+  (cl-weave:it
+   "shows a failed grouped target without claiming every target failed"
+   (let* ((sample (%f8b-process-sample))
+          (config
+           (ntop.shared.application:make-application-config
+            :disable-advanced-kill-p t))
+          (dialog
+           (%f8b-opened-termination-dialog
+            '(123 124) "fixture-worker" sample config))
+          (target (%f8b-kill-target 120 8)))
+     (setf (ntop.process.presentation:process-termination-dialog-state-error-message
+            dialog)
+           (concatenate (quote string)
+                        "PID 124 failed after successfully signaling 1 of 2 targets. "
+                        "Error code 3 - the target process did not exist."))
+     (%f8b-draw-termination-dialog target 120 8 dialog config sample)
+     (let ((lines (%f8b-kill-lines target)))
+       (cl-weave:expect
+        (not (null
+              (some (lambda (line)
+                      (search
+                       "Signal delivery stopped while killing processes named fixture-worker:"
+                       line))
+                    lines)))
+        :to-be t)
+       (cl-weave:expect
+        (not (null
+              (some (lambda (line)
+                      (search "PID 124 failed after successfully signaling 1 of 2 targets."
+                              line))
+                    lines)))
+        :to-be t)
+       (cl-weave:expect
+        (not (some (lambda (line)
+                     (search "Failed to kill 2 processes" line))
+                   lines))
+        :to-be t)
+       (cl-weave:expect
+        (not (null
+              (some (lambda (line)
+                      (search "Please press ENTER or ESC to close this dialog."
+                              line))
+                    lines)))
+        :to-be t))))
   (cl-weave:it-each
     ((1 4 ("" "" "" "")) (1 2 ("" "")) (0 4 ("" "" "" "")))
     "draws safely in a ~D-by-~D rectangle"

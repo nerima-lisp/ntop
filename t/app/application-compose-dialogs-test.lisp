@@ -216,14 +216,19 @@
        0)
       (cl-weave:expect forwarded :to-be nil)))
 
-  (cl-weave:it "forwards kill confirmation with the transitioned state and original action"
+  (cl-weave:it "sends kill confirmation through the configured sender"
     (let* ((forwarded nil)
+           (sent nil)
            (config (ntop.shared.application:make-application-config))
            (composition
              (ntop.app.application:make-application-composition
               config
               :on-action (lambda (state action)
-                           (push (list state action) forwarded))))
+                           (push (list state action) forwarded))
+              :process-signal-sender
+              (lambda (target-pids signal-number)
+                (push (list target-pids signal-number) sent)
+                t)))
            (state (ntop.app.domain:make-app-state :selected-widget :process))
            (snapshot
              (ntop.app.domain:make-collection-snapshot
@@ -231,6 +236,10 @@
               :process-sample
               (ntop.process.domain:make-process-sample
                :sampled-at 1d0
+               :signals
+               (list
+                (ntop.process.domain:make-process-signal
+                 :name "SIGTERM" :number 15 :operating-system "fixture"))
                :processes
                (list (ntop.process.domain:make-process-record
                       :pid 42 :ppid 1 :name "worker" :command "worker"
@@ -253,13 +262,16 @@
                state
                (ntop.app.domain:make-app-action
                 :kind :dialog :value :process-kill))
+      (funcall on-action
+               state
+               (ntop.app.domain:make-app-action
+                :kind :dialog :value :choice-up))
       (funcall on-action state confirm)
       (cl-weave:expect
        (ntop.app.domain:app-state-active-dialog state)
-       :to-be
-       nil)
-      (cl-weave:expect (first (first forwarded)) :to-be state)
-      (cl-weave:expect (second (first forwarded)) :to-be confirm)))
+       :to-be nil)
+      (cl-weave:expect sent :to-equal (quote (((42) 15))))
+      (cl-weave:expect forwarded :to-be nil)))
 
   (cl-weave:it "copies nested kill selection for move and select transitions"
     (let* ((config (ntop.shared.application:make-application-config))
@@ -460,4 +472,8 @@
  (asdf:system-relative-pathname
   "ntop/test"
   "t/app/application-compose-dialogs-extra-test.lisp"))
+(load
+ (asdf:system-relative-pathname
+  "ntop/test"
+  "t/app/application-compose-kill-test.lisp"))
 

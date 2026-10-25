@@ -186,7 +186,7 @@
   :homepage "https://github.com/nerima-lisp/ntop"
   :bug-tracker "https://github.com/nerima-lisp/ntop/issues"
   :source-control (:git "https://github.com/nerima-lisp/ntop.git")
-  :depends-on ("ntop" "cl-weave" "cl-cli" "cl-host-kit" "cl-tty-kit")
+  :depends-on ("ntop" "cl-weave" "cl-cli" "cl-host-kit" "cl-tty-kit" "ntop/e2e/support")
   :pathname "."
   :serial t
   :components
@@ -340,6 +340,8 @@
 
    ;; WP13: CLI config conversion coverage.
    (:file "t/cli/presentation-cli-config-test")
+   #+darwin (:file "t/app/application-private-api-failure-test")
+   #+darwin (:file "t/e2e/unauthorized-kill-test")
    )
   :perform (asdf:test-op (operation system)
   (declare (ignore operation system))
@@ -351,20 +353,29 @@
                         :pass-with-no-tests nil)
     (error "ntop/test reported failed tests."))))
 
-(asdf:defsystem "ntop/e2e"
-  :description "End-to-end capture and measurement harness for btm."
+(asdf:defsystem "ntop/e2e/support"
+  :description "Shared terminal support for ntop test and e2e systems."
   :author "ntop contributors"
   :license "MIT"
-  :depends-on ("ntop" "cl-weave" "cl-cli" "cl-host-kit" "cl-tty-kit" "cl-json-kit")
+  :depends-on ("ntop" "cl-tty-kit")
   :pathname "."
   :serial t
   :components
   ((:file "t/e2e/package")
    (:file "t/e2e/ansi")
    (:file "t/e2e/ansi-parser")
-   (:file "t/e2e/btm-config")
+   (:file "t/e2e/pty")))
+(asdf:defsystem "ntop/e2e"
+  :description "End-to-end capture and measurement harness for btm."
+  :author "ntop contributors"
+  :license "MIT"
+  :depends-on ("ntop" "cl-weave" "cl-cli" "cl-host-kit" "cl-tty-kit"
+               "cl-json-kit" "ntop/e2e/support")
+  :pathname "."
+  :serial t
+  :components
+  ((:file "t/e2e/btm-config")
    (:file "t/e2e/criterion")
-   (:file "t/e2e/pty")
    (:file "t/e2e/golden-compare")
    (:file "t/e2e/golden")
    (:file "t/e2e/measurement-data")

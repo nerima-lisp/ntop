@@ -118,6 +118,23 @@
      :to-throw
      'error))
   (cl-weave:it
+   "stops at the first failed target and reports prior grouped signals"
+   (let* ((missing-pid 2147483647)
+          (message nil))
+     (handler-case
+         (ntop.process.infrastructure::send-process-signal
+          (list (sb-posix:getpid) missing-pid (sb-posix:getpid)) 0)
+       (error (condition)
+              (setf message (princ-to-string condition))))
+     (cl-weave:expect
+      message
+      :to-equal
+      (format nil
+              (concatenate (quote string)
+                           "PID ~D failed after successfully signaling 1 of 3 targets. "
+                           "Error code ~D - the target process did not exist.")
+              missing-pid sb-posix:esrch))))
+  (cl-weave:it
     "covers numeric and optional-value fallback inputs"
     (cl-weave:expect
      (ntop.process.infrastructure::%linux-process-status-uid '(("Uid" . 1000)))

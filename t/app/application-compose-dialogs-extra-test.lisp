@@ -20,9 +20,9 @@
      :sampled-at 1d0 :process-sample sample))
 
   (defun %d-composition (&key config snapshot sample areas rows)
-    (let ((composition
-            (ntop.app.application:make-application-composition
-             (or config (ntop.shared.application:make-application-config)))))
+    (let ((composition (ntop.app.application:make-application-composition
+                        (or config (ntop.shared.application:make-application-config))
+                        :process-signal-sender (constantly t))))
       (setf
        (ntop.app.application::application-composition-latest-snapshot composition)
        snapshot
@@ -385,15 +385,15 @@
                              (list :pointer :kill-choice 9 9) t)
                        (list :process-terminate
                              (list :pointer :wrong 6 7) nil)
-                       (list :process-terminate :confirm nil)
+                       (list :process-terminate :confirm t)
                        (list :help nil nil)))
           (%d-expect (act state (first entry) (second entry)) (third entry)))
         (%d-expect (ntop.app.domain:app-state-active-dialog state) nil)
         (%d-expect
          (ntop.ui:table-state-selected-index
           (ntop.process.presentation::process-termination-dialog-state-selection-state
-           (gethash :process-kill states)))
-         0)
+           dialog))
+         1)
         (%d-expect
          (ntop.app.application::%move-process-kill-selection
           composition state nil 1 2)
@@ -472,7 +472,7 @@
       (check (send (%d-action :dialog :process-sort)) t)
       (setf (ntop.app.domain:app-state-active-dialog state) :process-kill)
       (check (send (%d-action :dialog :process-kill)) t)
-      (check (send (%d-action :process-terminate :confirm)) nil)
+      (check (send (%d-action :process-terminate :confirm)) t)
       (check
        (send (%d-action :select (list :pointer :process-row 2 3)))
        t)
