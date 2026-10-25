@@ -4,28 +4,18 @@
   `(quote ,rows))
 
 (defparameter *btm-layout*
-  (define-btm-layout ((cpu nil))
-                     ((mem 4) (:column 3 ((temp nil) (disk nil))))
-                     ((net nil) (proc nil :default))))
+  (define-btm-layout ((cpu 2) (mem 1))
+                     ((net 2) (disk 2) (temp 1))
+                     ((proc 2 :default))))
 
-(defun %write-btm-widget (stream widget nested-p)
+(defun %write-btm-widget (stream widget)
   (destructuring-bind (type &optional ratio marker) widget
-    (format stream
-            (if nested-p "[[row.child.child]]~%" "[[row.child]]~%"))
+    (format stream "[[row.child]]~%")
     (when ratio
       (format stream "ratio = ~d~%" ratio))
     (format stream "type = ~s~%" (string-downcase (symbol-name type)))
     (when marker
       (format stream "default = true~%"))))
-
-(defun %write-btm-layout-child (stream child)
-  (if (eq (first child) :column)
-      (destructuring-bind (kind ratio widgets) child
-        (declare (ignore kind))
-        (format stream "[[row.child]]~%ratio = ~d~%" ratio)
-        (dolist (widget widgets)
-          (%write-btm-widget stream widget t)))
-      (%write-btm-widget stream child nil)))
 
 (defun btm-config-string (rate)
   (unless (and (integerp rate) (plusp rate))
@@ -46,5 +36,5 @@
             do (progn
                  (format stream "[[row]]~%ratio = ~d~%" row-ratio)
                  (dolist (child row)
-                   (%write-btm-layout-child stream child))
+                   (%write-btm-widget stream child))
                  (terpri stream))))))
