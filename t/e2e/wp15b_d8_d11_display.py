@@ -110,38 +110,52 @@ def complete_process_panel(text: str) -> dict[str, Any] | None:
     rows = text.splitlines()
     if len(rows) != HEIGHT or max((len(row) for row in rows), default=0) != WIDTH:
         return None
-    titles = [y for y, row in enumerate(rows) if re.search(r"\bProcesses\b", row)]
+    titles = [
+        y for y, row in enumerate(rows)
+        if re.search(r"┌\s*Processes\b", row)
+    ]
     words = ("Count", "Name(n)", "CPU%", "Mem%", "R/s", "W/s", "T.Read", "T.Write",
              "User", "State", "Time", "Priority")
     headers = [y for y, row in enumerate(rows) if all(word in row for word in words)]
     if not titles or not headers:
         return None
-    shape = structure_signature(text)
-    corners = [cell for cell in shape["box_cells"] if cell[2] in "┌┐└┘"]
-    top = min((cell[0] for cell in corners), default=HEIGHT)
-    bottom = max((cell[0] for cell in corners), default=-1)
-    left = min((cell[1] for cell in corners), default=WIDTH)
-    right = max((cell[1] for cell in corners), default=-1)
-    required_corners = {(top, left, "┌"), (top, right, "┐"),
-                        (bottom, left, "└"), (bottom, right, "┘")}
-    if not required_corners.issubset({tuple(cell) for cell in corners}):
-        return None
     horizontal = set("─━┄┈")
-    if (rows[top][left] != "┌" or rows[top][right] != "┐"
-        or rows[bottom][left] != "└" or rows[bottom][right] != "┘"
-        or not all(char in horizontal for char in rows[top][left + 1:right])
-        or not all(char in horizontal for char in rows[bottom][left + 1:right])):
-        return None
-    framed_rows = {y for y in range(top + 1, bottom)
-                   if rows[y][left] == "│" and rows[y][right] == "│"}
-    title = next((y for y in titles if top < y < bottom), None)
-    header_y = next((y for y in headers if title is not None and title < y < bottom), None)
-    if title is None or header_y is None or title not in framed_rows or header_y not in framed_rows:
-        return None
-    visible_rows = [y for y in framed_rows if y > header_y and rows[y][left + 1:right].strip()]
-    if len(framed_rows) < 3 or not visible_rows:
-        return None
-    return {"title_row": title, "header_row": header_y,
-            "visible_row_count": len(visible_rows), "layout_signature": {
-                "box_cells": shape["box_cells"], "title_row": title,
-                "header_row": header_y, "process_header": rows[header_y]}}
+    for title_y in titles:
+        top_row = rows[title_y]
+        left = top_row.find("┌")
+        right = top_row.rfind("┐")
+        header_y = next((y for y in headers if y > title_y), None)
+        if left < 0 or right <= left or header_y is None:
+            continue
+        if rows[header_y][left] != "│" or rows[header_y][right] != "│":
+            continue
+        bottom = next((
+            y for y in range(header_y + 1, HEIGHT)
+            if rows[y][left] == "└" and rows[y][right] == "┘"
+        ), None)
+        if bottom is None or not all(
+            char in horizontal for char in rows[bottom][left + 1:right]
+        ):
+            continue
+        framed_rows = [
+            y for y in range(header_y, bottom)
+            if rows[y][left] == "│" and rows[y][right] == "│"
+        ]
+        visible_rows = [
+            y for y in framed_rows
+            if y > header_y and rows[y][left + 1:right].strip()
+        ]
+        if not visible_rows:
+            continue
+        return {
+            "title_row": title_y,
+            "header_row": header_y,
+            "visible_row_count": len(visible_rows),
+            "layout_signature": {
+                "process_box": [title_y, left, bottom, right],
+                "title_row": title_y,
+                "header_row": header_y,
+                "process_header": rows[header_y],
+            },
+        }
+    return None

@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e"))
 import wp15b_d8_d11_support as d11_support
 from wp15b_d8_d11_cli import capture_d11_pair
 from wp15b_d8_d11_display import (
-    HEIGHT, WIDTH, application_render_signature, compare_d11_screens,
-    structure_signature,
+    HEIGHT, WIDTH, application_render_signature, complete_process_panel,
+    compare_d11_screens, structure_signature,
 )
 
 
@@ -53,6 +53,74 @@ def memory_screen(
         rows[6] = middle("SWP:")
     rows[7] = bottom()
     return "\n".join(rows)
+
+
+def d11_stability_screen(memory_left=24, ram_value="83%"):
+    rows = [[" "] * d11_support.WIDTH for _ in range(d11_support.HEIGHT)]
+    right, bottom = d11_support.WIDTH - 1, 10
+    for x in range(1, right):
+        rows[0][x] = rows[bottom][x] = "─"
+    rows[0][0], rows[0][right] = "┌", "┐"
+    rows[bottom][0], rows[bottom][right] = "└", "┘"
+    for y in range(1, bottom):
+        rows[y][0] = rows[y][right] = "│"
+
+    def put(y, x, text):
+        rows[y][x:x + len(text)] = list(text)
+
+    put(1, 2, "┌ CPU ───┐")
+    put(1, memory_left, "┌ Memory ───┐")
+    put(2, 2, "RAM:" if ram_value is None else f"RAM: {ram_value} 105.6GiB/128.0GiB")
+    title = "┌ Processes "
+    rows[32] = list(title + "─" * (d11_support.WIDTH - len(title) - 1) + "┐")
+    header = "Count Name(n) CPU% Mem% R/s W/s T.Read T.Write User State Time Priority"
+    put(33, 0, "│" + header.ljust(d11_support.WIDTH - 2) + "│")
+    put(34, 0, "│" + "1 ntop 0 0 0 0 0 0 root R 1 20".ljust(d11_support.WIDTH - 2) + "│")
+    for y in range(35, 47):
+        put(y, 0, "│" + " " * (d11_support.WIDTH - 2) + "│")
+    rows[47] = list("└" + "─" * (d11_support.WIDTH - 2) + "┘")
+    return "\n".join("".join(row) for row in rows)
+
+
+def run_mocked_d11_capture(directory, ram_value):
+    class Clock:
+        def __init__(self):
+            self.value = 0.0
+            self.output_sent = False
+
+        def monotonic(self):
+            return self.value
+
+        def select(self, readers, _writes, _errors, timeout):
+            self.value += timeout
+            if not self.output_sent:
+                self.output_sent = True
+                return readers, [], []
+            return [], [], []
+
+    clock = Clock()
+    screen = d11_stability_screen(ram_value=ram_value)
+    with (
+        patch.object(d11_support.pty, "fork", return_value=(4321, 17)),
+        patch.object(d11_support.fcntl, "ioctl"),
+        patch.object(d11_support.os, "set_blocking"),
+        patch.object(d11_support.os, "read", return_value=b"initial"),
+        patch.object(d11_support.select, "select", side_effect=clock.select),
+        patch.object(d11_support.pyte, "Screen", return_value=object()),
+        patch.object(d11_support.pyte, "Stream") as stream_class,
+        patch.object(d11_support, "screen_text", return_value=screen),
+        patch.object(d11_support, "wait_child", return_value=(False, None)),
+        patch.object(
+            d11_support, "stop_pty_child",
+            return_value={"reaped": True, "pid_absent": True},
+        ),
+        patch.object(d11_support, "time", clock),
+    ):
+        stream_class.return_value.feed.return_value = None
+        return d11_support.capture_tui(
+            "ntop", directory, ["--rate", "700ms"],
+            directory / "capture.raw", directory / "capture.screen.txt", "d11",
+        )
 
 
 class D11ScreenComparisonTests(unittest.TestCase):
@@ -194,6 +262,27 @@ class D11ScreenComparisonTests(unittest.TestCase):
         self.assertIsNotNone(signature)
         self.assertEqual(signature["panels"], {"CPU": (0, 0), "Memory": (0, 16)})
 
+    def test_complete_process_panel_is_scoped_to_its_frame(self):
+        rows = memory_screen(used=24, free=75, swap_used=25).splitlines()
+        title = "┌ Processes "
+        rows[32] = title + "─" * (WIDTH - len(title) - 1) + "┐"
+        header = (
+            "Count Name(n) CPU% Mem% R/s W/s T.Read T.Write "
+            "User State Time Priority"
+        )
+        rows[33] = "│" + header.ljust(WIDTH - 2) + "│"
+        rows[34] = "│" + "1 ntop 0 0 0 0 0 0 root R 1 20".ljust(WIDTH - 2) + "│"
+        for y in range(35, 47):
+            rows[y] = "│" + " " * (WIDTH - 2) + "│"
+        rows[47] = "└" + "─" * (WIDTH - 2) + "┘"
+
+        panel = complete_process_panel("\n".join(rows))
+
+        self.assertIsNotNone(panel)
+        self.assertEqual(panel["title_row"], 32)
+        self.assertEqual(panel["header_row"], 33)
+        self.assertEqual(panel["visible_row_count"], 1)
+
     def test_optional_lower_panel_changes_full_screen_signature(self):
         initial = memory_screen(used=24, free=75, swap_used=25)
         rows = initial.splitlines()
@@ -318,6 +407,45 @@ class D11ScreenComparisonTests(unittest.TestCase):
             },
         )
 
+    def test_stable_d11_screen_requires_numeric_ram_and_separated_signature(self):
+        stable = d11_support.StableD11Screen()
+        ready = d11_stability_screen()
+        self.assertFalse(stable.observe(d11_stability_screen(ram_value=None), 1))
+        self.assertEqual(stable.consecutive_count, 0)
+        self.assertFalse(stable.observe(ready.replace("CPU", "System"), 2))
+        self.assertEqual(stable.consecutive_count, 0)
+        self.assertFalse(stable.observe(ready.replace("Processes", "System   "), 2.5))
+        self.assertEqual(stable.consecutive_count, 0)
+        self.assertFalse(stable.observe(ready, 3))
+        self.assertEqual(stable.consecutive_count, 1)
+        self.assertFalse(stable.observe(d11_stability_screen(ram_value="84%"), 3.699))
+        self.assertEqual(stable.consecutive_count, 1)
+        self.assertFalse(stable.observe(d11_stability_screen(ram_value=None), 4))
+        self.assertEqual(stable.consecutive_count, 0)
+        self.assertFalse(stable.observe(ready, 5))
+        self.assertTrue(stable.observe(d11_stability_screen(ram_value="84%"), 5.7))
+        self.assertEqual(len(stable.snapshot_monotonic_times), 2)
+        self.assertGreaterEqual(
+            stable.snapshot_monotonic_times[1] - stable.snapshot_monotonic_times[0],
+            d11_support.D11_REFRESH_INTERVAL_SECONDS,
+        )
+        changed = d11_stability_screen(memory_left=40)
+        self.assertFalse(stable.observe(changed, 7))
+        self.assertEqual(stable.consecutive_count, 1)
+        self.assertTrue(stable.observe(changed, 7.7))
+
+    def test_capture_tui_records_stable_snapshots_without_new_pty_output(self):
+        with TemporaryDirectory() as temporary:
+            result = run_mocked_d11_capture(Path(temporary), "83%")
+
+        self.assertTrue(result["application_rendered"])
+        self.assertEqual(result["application_render_snapshot_count"], 2)
+        times = result["stable_snapshot_monotonic_times"]
+        self.assertEqual(len(times), 2)
+        self.assertGreaterEqual(
+            times[1] - times[0], d11_support.D11_REFRESH_INTERVAL_SECONDS
+        )
+
     def test_unconfirmed_cleanup_stops_before_next_capture(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -328,8 +456,11 @@ class D11ScreenComparisonTests(unittest.TestCase):
                 return {
                     "argv": [binary, *arguments],
                     "pid": 12345,
+                    "started_utc": "2026-10-25T07:00:00+00:00",
+                    "started_monotonic": 123.5,
                     "application_rendered": False,
                     "application_render_snapshot_count": 0,
+                    "stable_snapshot_monotonic_times": [],
                     "cli_error_output_detected": False,
                     "complete_panel_complete": False,
                     "cleanup": {"reaped": False, "pid_absent": False},
@@ -346,6 +477,13 @@ class D11ScreenComparisonTests(unittest.TestCase):
         self.assertEqual(capture.call_count, 1)
         self.assertEqual(set(runs), {"without"})
         self.assertIsNone(pair["with_capture"])
+        self.assertEqual(
+            pair["without_capture"]["started_utc"], "2026-10-25T07:00:00+00:00"
+        )
+        self.assertEqual(pair["without_capture"]["started_monotonic"], 123.5)
+        self.assertEqual(
+            pair["without_capture"]["stable_snapshot_monotonic_times"], []
+        )
         self.assertFalse(pair["cleanup_confirmed"])
         self.assertFalse(pair["comparison_complete"])
         self.assertEqual(pair["acceptance_status"], "incomplete")

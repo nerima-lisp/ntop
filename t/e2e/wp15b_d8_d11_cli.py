@@ -196,9 +196,14 @@ def capture_d11_pair(
         label: {
             "argv": run["argv"],
             "pid": run["pid"],
+            "started_utc": run["started_utc"],
+            "started_monotonic": run["started_monotonic"],
             "application_rendered": run["application_rendered"],
             "application_render_snapshot_count": (
                 run["application_render_snapshot_count"]
+            ),
+            "stable_snapshot_monotonic_times": (
+                run["stable_snapshot_monotonic_times"]
             ),
             "cli_error_output_detected": run["cli_error_output_detected"],
             "complete_panel_complete": run["complete_panel_complete"],
@@ -229,6 +234,8 @@ def run_d11(args: argparse.Namespace) -> int:
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         raise FileExistsError(f"output directory is not empty: {output}")
+    d11_started_utc = utc_now()
+    load_average_before = list(os.getloadavg())
     common = ["--rate", "700ms", "--default_cpu_entry", "avg"]
     comparison_pairs = []
     first_runs = None
@@ -240,6 +247,7 @@ def run_d11(args: argparse.Namespace) -> int:
         if pair["cli_error_output_detected"] or not pair["cleanup_confirmed"]:
             break
 
+    load_average_after = list(os.getloadavg())
     first_pair = comparison_pairs[0]
     completed_pair_count = len(comparison_pairs)
     captures = [
@@ -309,7 +317,8 @@ def run_d11(args: argparse.Namespace) -> int:
     }
     record = {
         "requirement": "D11",
-        "started_utc": utc_now(),
+        "started_utc": d11_started_utc,
+        "load_average_before": load_average_before,
         "common_arguments": common,
         "comparison_signature": "application_render_signature",
         "comparison_pair_count_target": D11_COMPARISON_PAIR_COUNT,
@@ -338,6 +347,7 @@ def run_d11(args: argparse.Namespace) -> int:
             "one or more owned app PIDs were not confirmed absent and reaped"
         ],
         "process_success": acceptance_pass and cleanup_confirmed,
+        "load_average_after": load_average_after,
         "finished_utc": utc_now(),
     }
     write_json(output / "d11-comparison.json", record)
@@ -352,6 +362,8 @@ def run_d11(args: argparse.Namespace) -> int:
         "display_structure_equal": display_signature_equal,
         "comparison_pair_count_completed": completed_pair_count,
         "comparison_pair_count_target": D11_COMPARISON_PAIR_COUNT,
+        "load_average_before": load_average_before,
+        "load_average_after": load_average_after,
         "output": str(output),
     }))
     return 0 if record["process_success"] else 1

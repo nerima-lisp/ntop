@@ -3,6 +3,7 @@
 
 import argparse
 import errno
+import fcntl
 import json
 import os
 import signal
@@ -49,43 +50,75 @@ def write_all(fd, data):
 
 
 def writer_child(arguments):
-    data_path, report_path, ready_path = map(Path, arguments[:3])
-    rate = int(arguments[3])
+    data_path, report_path, ready_path, trace_path = map(Path, arguments[:4])
+    rate = int(arguments[4])
     fd = os.open(data_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     running = True
+    events = []
 
     def request_stop(_signum, _frame):
         nonlocal running
         running = False
 
-    signal.signal(signal.SIGTERM, request_stop)
-    ready_path.write_text("ready\n")
     chunk_bytes = 100_000
-    block = b"x" * chunk_bytes
     period_ns = int(chunk_bytes * 1_000_000_000 / rate)
-    started = time.monotonic_ns()
-    due = started
-    written = 0
     try:
+        signal.signal(signal.SIGTERM, request_stop)
+        nocache_command = getattr(fcntl, "F_NOCACHE", None)
+        if nocache_command is None:
+            raise RuntimeError("Darwin F_NOCACHE is unavailable")
+        fcntl.fcntl(fd, nocache_command, 1)
+        ready_path.write_text("ready\n")
+        block = b"x" * chunk_bytes
+        started = time.monotonic_ns()
+        written = chunk_index = 0
         while running:
-            delay_ns = due - time.monotonic_ns()
+            deadline = started + chunk_index * period_ns
+            delay_ns = deadline - time.monotonic_ns()
             if delay_ns > 0:
                 time.sleep(delay_ns / 1_000_000_000)
             if not running:
                 break
+            write_started = time.monotonic_ns()
             write_all(fd, block)
+            write_completed = time.monotonic_ns()
+            fsync_started = time.monotonic_ns()
+            os.fsync(fd)
+            fsync_completed = time.monotonic_ns()
             written += chunk_bytes
-            due = time.monotonic_ns() + period_ns
+            events.append((chunk_index + 1, write_started, write_completed,
+                           fsync_started, fsync_completed, written))
+            chunk_index += 1
         ended = time.monotonic_ns()
-        os.fsync(fd)
     finally:
         os.close(fd)
+
+    trace_fields = ("chunk", "write_started_monotonic_ns",
+                    "write_completed_monotonic_ns", "fsync_started_monotonic_ns",
+                    "fsync_completed_monotonic_ns", "cumulative_bytes")
+    trace_path.write_text(
+        "\t".join(trace_fields) + "\n" + "".join(
+            "\t".join(map(str, event)) + "\n" for event in events
+        ),
+        encoding="utf-8",
+    )
     write_json(report_path, {
         "target_bytes_per_second": rate,
         "bytes_written": written,
         "started_monotonic_ns": started,
         "ended_monotonic_ns": ended,
         "duration_seconds": (ended - started) / 1_000_000_000,
+        "chunk_count": len(events),
+        "io_settings": {
+            "open_flags": ["O_WRONLY", "O_CREAT", "O_EXCL"],
+            "file_mode": "0600",
+            "f_nocache_command": nocache_command,
+            "f_nocache_enabled": True,
+            "fsync_per_chunk": True,
+            "chunk_bytes": chunk_bytes,
+            "period_ns": period_ns,
+            "pacing": "absolute_from_start",
+        },
     })
 
 
@@ -193,7 +226,8 @@ def start_writer(raw_dir):
     script = str(Path(__file__).resolve())
     argv = [WRITER_TOKEN, script, "--writer-child",
             str(raw_dir / "writer.data"), str(raw_dir / "writer.json"),
-            str(raw_dir / "writer.ready"), str(TARGET_BPS)]
+            str(raw_dir / "writer.ready"),
+            str(raw_dir / "writer-io-samples.tsv"), str(TARGET_BPS)]
     log = (raw_dir / "writer.log").open("wb")
     try:
         writer = subprocess.Popen(
@@ -281,6 +315,7 @@ def run_d1(binary, raw_dir, backend="ntop"):
             "pty": "btm.ansi" if is_btm else "ntop.ansi",
             "writer_data": "writer.data",
             "writer_report": "writer.json",
+            "writer_io_samples": "writer-io-samples.tsv",
             "writer_log": "writer.log",
         },
     }

@@ -9,6 +9,7 @@ import fcntl
 import json
 import os
 import pty
+import re
 import select
 import signal
 import struct
@@ -236,6 +237,40 @@ def stop_pty_child(pid: int, master: int | None, already_done: bool,
 def screen_text(screen: pyte.Screen) -> str:
     return "\n".join(screen.display)
 
+RAM_VALUE_PATTERN = re.compile(r"\bRAM:\s*\d+(?:\.\d+)?%")
+D11_REFRESH_INTERVAL_SECONDS = 0.7
+D11_CAPTURE_TIMEOUT_SECONDS = 60.0
+
+class StableD11Screen:
+    def __init__(self) -> None:
+        self.signature: dict[str, Any] | None = None
+        self.consecutive_count = 0
+        self.snapshot_monotonic_times: list[float] = []
+
+    def observe(self, text: str, snapshot_monotonic: float) -> bool:
+        signature = application_render_signature(text)
+        has_ram_value = RAM_VALUE_PATTERN.search(text) is not None
+        has_complete_process_panel = complete_process_panel(text) is not None
+        if signature is None or not has_ram_value or not has_complete_process_panel:
+            self.signature = None
+            self.consecutive_count = 0
+            self.snapshot_monotonic_times = []
+            return False
+        if signature != self.signature:
+            self.signature = signature
+            self.consecutive_count = 1
+            self.snapshot_monotonic_times = [snapshot_monotonic]
+            return False
+        if self.consecutive_count >= 2:
+            return True
+        if (snapshot_monotonic - self.snapshot_monotonic_times[-1]
+            < D11_REFRESH_INTERVAL_SECONDS):
+            return False
+        self.consecutive_count += 1
+        self.snapshot_monotonic_times.append(snapshot_monotonic)
+        return self.consecutive_count >= 2
+
+
 def capture_tui(binary: str, working_directory: Path, arguments: list[str],
                 raw_path: Path, display_path: Path, mode: str) -> dict[str, Any]:
     raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -251,15 +286,17 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
     screen = pyte.Screen(WIDTH, HEIGHT)
     stream = pyte.Stream(screen)
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
-    deadline = started + (20.0 if mode == "d8" else 8.0)
+    deadline = started + (
+        20.0 if mode == "d8" else D11_CAPTURE_TIMEOUT_SECONDS
+    )
     first_avg = panel_snapshot = child_return_code = None
     complete_panel_seen = complete_panel_complete = child_done = False
     application_initial_text = None
     application_initial_signature = None
     application_snapshot_count = 0
+    stable_screen = StableD11Screen()
     cli_error_detected = False
     last_output_at = None
-    signature_checked = False
     try:
         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", HEIGHT, WIDTH, 0, 0))
         os.set_blocking(master, False)
@@ -280,7 +317,6 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
                     stream.feed(decoder.decode(data))
                     text, now = screen_text(screen), time.monotonic()
                     last_output_at = now
-                    signature_checked = False
                     if mode == "d8" and first_avg is None:
                         match = AVG_PATTERN.search(text)
                         if match:
@@ -293,28 +329,30 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
                         )
                         panel_snapshot = complete_process_panel(text) or panel_snapshot
                         if panel_snapshot is not None:
-                            complete_panel_seen = complete_panel_complete = True
+                            complete_panel_seen = True
                 child_done, child_return_code = wait_child(pid, 0.0)
                 if child_done:
                     break
                 now = time.monotonic()
                 if (mode == "d11" and last_output_at is not None
-                    and not signature_checked
                     and now - last_output_at >= 0.2
                     and not decoder.getstate()[0]):
-                    signature_checked = True
                     text = screen_text(screen)
                     cli_error_detected = (
                         cli_error_detected or cli_error_output_detected(text)
                     )
-                    signature = (
-                        application_render_signature(text)
-                        if not cli_error_detected else None
+                    stable = stable_screen.observe(
+                        text if not cli_error_detected else "", now
                     )
-                    if signature is not None:
+                    application_snapshot_count = stable_screen.consecutive_count
+                    if stable:
                         application_initial_text = text
-                        application_initial_signature = signature
-                        application_snapshot_count = 1
+                        application_initial_signature = stable_screen.signature
+                        panel_snapshot = complete_process_panel(text)
+                        complete_panel_seen = (
+                            complete_panel_seen or panel_snapshot is not None
+                        )
+                        complete_panel_complete = panel_snapshot is not None
                         break
     finally:
         tail = decoder.decode(b"", final=True)
@@ -349,6 +387,9 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
         ),
         "cli_error_output_detected": cli_error_detected,
         "application_render_snapshot_count": application_snapshot_count,
+        "stable_snapshot_monotonic_times": list(
+            stable_screen.snapshot_monotonic_times
+        ),
         "cleanup": cleanup,
         "screen_dimensions": {"rows": HEIGHT, "columns": WIDTH},
         "raw_path": str(raw_path),
