@@ -17,7 +17,7 @@
   (let* ((previous (%process-in-sample previous-sample pid))
          (current (%process-in-sample current-sample pid))
          (elapsed (%sample-elapsed-seconds previous-sample current-sample)))
-    (when (and previous current)
+    (when (and previous current elapsed (plusp elapsed))
       (ntop.shared.domain:counter-rate-per-second
        (funcall accessor previous)
        (funcall accessor current)
@@ -59,7 +59,7 @@
                                  (process-record-cpu-time-ns previous)))
              (current-time (process-record-cpu-time-ns current))
              (counter-rate
-               (when (and previous-time current-time)
+               (when (and previous-time current-time elapsed (plusp elapsed))
                  (ntop.shared.domain:counter-rate-per-second
                   previous-time current-time elapsed))))
         (cond

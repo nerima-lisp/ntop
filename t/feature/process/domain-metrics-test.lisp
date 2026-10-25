@@ -7,6 +7,7 @@
                      (:cpu-current-usage 0 1000000000 2 4 nil t 0.5 nil 25)
                      (:cpu-cgroup-capacity 0 1000000000 2 2 nil nil nil nil 25)
                      (:cpu-counter-reset 100 50 1 2 nil nil nil nil 0)
+                     (:cpu-zero-elapsed-fallback 0 1000000000 0 4 nil nil nil 80 20)
                      (:cpu-empty-system 0 1000000000 1 2 nil t 0 nil 0)
                      (:cpu-missing-capacity 0
                                             1000000000
@@ -265,23 +266,25 @@
     (eq (ntop.process.domain::%process-in-sample sample 61) record)
     :to-be
     t)))
-                   (cl-weave:it "rejects nonpositive elapsed sample intervals"
-                                (let ((sample
-                                       (%wp4-metrics-sample 10
-                                                            (%wp4-metrics-record
-                                                             41
-                                                             :read-bytes
-                                                             2))))
-                                  (cl-weave:expect
-                                   (handler-case (progn
-                                                   (%wp4-read-bytes-per-second sample
-                                                    sample
-                                                    41)
-                                                   :returned)
-                                     (error ()
-                                       :signaled))
-                                   :to-be
-                                   :signaled)))
+                   (cl-weave:it
+                    "returns unavailable rates for nonpositive elapsed sample intervals"
+                    (let* ((record (%wp4-metrics-record 41 :read-bytes 2))
+                           (sample (%wp4-metrics-sample 10 record))
+                           (earlier (%wp4-metrics-sample 9 record)))
+                      (cl-weave:expect
+                       (%wp4-read-bytes-per-second sample sample 41)
+                       :to-be nil)
+                      (cl-weave:expect
+                       (ntop.process.domain::process-write-bytes-per-second
+                        sample sample 41)
+                       :to-be nil)
+                      (cl-weave:expect
+                       (%wp4-read-bytes-per-second sample earlier 41)
+                       :to-be nil)
+                      (cl-weave:expect
+                       (ntop.process.domain::process-write-bytes-per-second
+                        sample earlier 41)
+                       :to-be nil)))
                    (cl-weave:it
                     "builds every computed row field without mutating either sample"
                     (let* ((previous-record
@@ -410,6 +413,18 @@
                             40
                             20))
                       (cl-weave:expect (eq row second-row) :to-be nil)
+                      (cl-weave:expect
+                       (let ((zero-row
+                               (ntop.process.domain::process-row-from-samples
+                                previous-sample
+                                (%wp4-metrics-sample 200 current-record)
+                                51)))
+                         (list
+                          (ntop.process.domain:process-row-read-bytes-per-second
+                           zero-row)
+                          (ntop.process.domain:process-row-write-bytes-per-second
+                           zero-row)))
+                       :to-equal (list nil nil))
                       (cl-weave:expect
                        (list
                         (ntop.shared.domain:sample-record-sampled-at
