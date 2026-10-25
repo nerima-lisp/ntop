@@ -94,6 +94,20 @@
       (lambda ()
         (ntop.shared.domain:make-history-store 0)))
      :to-be t))
+  (cl-weave:it "retains history when actual samples arrive faster than configured"
+    (let ((store
+            (ntop.shared.domain:make-history-store
+             1 :retention-seconds 1d0
+             :sample-interval-seconds 1d0)))
+      (%append-history-at store 0 0d0 1)
+      (%append-history-at store 0 0.4d0 2)
+      (%append-history-at store 0 0.8d0 3)
+      (cl-weave:expect
+       (equalp (%history-times store 0) '(0d0 0.4d0 0.8d0))
+       :to-be t)
+      (cl-weave:expect
+       (> (ntop.shared.domain:history-store-capacity store) 2)
+       :to-be t)))
 
   (cl-weave:it "rejects nonpositive retention"
     (cl-weave:expect
@@ -257,21 +271,28 @@
         (lambda () (ntop.shared.domain:history-slice store 1)))
        :to-be t)))
 
-  (cl-weave:it "rejects bursts beyond the configured fixed ring capacity"
+  (cl-weave:it "grows all rings when arrivals exceed configured capacity"
     (let ((store (%history-test-store :retention 1d0
                                       :interval 1d0
                                       :window 1d0
                                       :minimum 1d0)))
       (%append-history-at store 0 0d0 0)
       (%append-history-at store 0 0.5d0 1)
-      (cl-weave:expect
-       (%signals-history-error-p
-        (lambda () (%append-history-at store 0 1d0 2)))
-       :to-be t)
+      (%append-history-at store 1 0d0 10)
+      (%append-history-at store 1 0.5d0 11)
+      (%append-history-at store 0 1d0 2)
+      (%append-history-at store 1 1d0 12)
       (cl-weave:expect
        (equalp (%history-times store 0 :start -1d0 :end 2d0)
-               '(0d0 0.5d0))
-       :to-be t)))
+               '(0d0 0.5d0 1d0))
+       :to-be t)
+      (cl-weave:expect
+       (equalp (%history-times store 1 :start -1d0 :end 2d0)
+               '(0d0 0.5d0 1d0))
+       :to-be t)
+      (cl-weave:expect
+       (ntop.shared.domain:history-store-capacity store)
+       :to-be 4)))
 
   (cl-weave:it "follows the newest sample while in current mode"
     (let ((store (%history-test-store)))

@@ -174,7 +174,7 @@
                (< series-index (history-store-series-count store)))
     (error "SERIES-INDEX ~S is outside the history store." series-index)))
 
-(defun %store-ring-sample (ring timestamp value)
+(defun %store-ring-sample (store ring timestamp value)
   (let* ((count (%history-ring-count ring))
          (capacity (length (%history-ring-timestamps ring)))
          (present (if value 1 0))
@@ -186,7 +186,38 @@
                 (sbit (%history-ring-present ring) index) present))
         (progn
           (when (>= count capacity)
-            (error "History capacity exhausted before retention pruning."))
+            (let ((new-capacity (* 2 capacity)))
+              (labels ((grow-ring (target)
+                         (let* ((old-count (%history-ring-count target))
+                                (timestamps
+                                  (make-array new-capacity
+                                              :element-type 'double-float
+                                              :initial-element 0d0))
+                                (value-array
+                                  (make-array new-capacity
+                                              :element-type 'double-float
+                                              :initial-element 0d0))
+                                (present-bits
+                                  (make-array new-capacity
+                                              :element-type 'bit
+                                              :initial-element 0)))
+                           (loop for offset below old-count
+                                 for source = (%ring-index target offset)
+                                 do (setf (aref timestamps offset)
+                                          (aref (%history-ring-timestamps target)
+                                                source)
+                                          (aref value-array offset)
+                                          (aref (%history-ring-values target) source)
+                                          (sbit present-bits offset)
+                                          (sbit (%history-ring-present target)
+                                                source)))
+                           (setf (%history-ring-timestamps target) timestamps
+                                 (%history-ring-values target) value-array
+                                 (%history-ring-present target) present-bits
+                                 (%history-ring-head target) 0))))
+                (loop for target across (history-store-series store)
+                      do (grow-ring target)))
+            (setf (history-store-capacity store) new-capacity)))
           (let ((index (%ring-index ring count)))
             (setf (aref (%history-ring-timestamps ring) index) timestamp
                   (aref (%history-ring-values ring) index) stored-value
@@ -217,7 +248,7 @@
           (progn
             (%clamp-live-endpoint store)
             :expired)
-        (let ((result (%store-ring-sample ring timestamp value)))
+        (let ((result (%store-ring-sample store ring timestamp value)))
           (%clamp-live-endpoint store)
           result)))))
 
