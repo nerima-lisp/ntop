@@ -45,6 +45,7 @@
    :to-equal
    (quote
     (:hostname
+     :username
      :home-path
      :working-directory
      :root-path
@@ -53,7 +54,7 @@
  (cl-weave:it
   "divides patterns into bounded batches"
   (let* ((patterns
-           (loop for index below 130
+           (loop for index below 9
                  collect (format nil "PATTERN_~d" index)))
          (batches (ntop.e2e::%n7-pattern-batches patterns)))
     (cl-weave:expect (every (lambda (batch)
@@ -62,7 +63,10 @@
                             batches)
                      :to-be
                      t)
-    (cl-weave:expect (length batches) :to-equal 9)
+    (cl-weave:expect (length batches) :to-equal 3)
+    (cl-weave:expect (mapcar (function length) batches)
+                     :to-equal
+                     (quote (4 4 1)))
     (cl-weave:expect (apply (function append) batches)
                      :to-equal
                      patterns)))
@@ -83,7 +87,7 @@
    (quote error)))
  (cl-weave:it-each
   ((:found "N7_TEST_SENTINEL" :found 1)
-   (:later-batch "N7_TEST_SENTINEL" :found 65)
+   (:later-batch "N7_TEST_SENTINEL" :found 5)
    (:absent "N7_ABSENT_SENTINEL" :absent 1))
   "searches nested files for the ~A pattern"
   (case-name pattern expected-outcome pattern-count)

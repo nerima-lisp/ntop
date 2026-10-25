@@ -9,7 +9,7 @@
                ,(second setting)))
           settings)))
   (define-n7-settings (+n7-command-timeout-seconds+ 12d0)
-                      (+n7-pattern-batch-size+ 16)
+                      (+n7-pattern-batch-size+ 4)
                       (+n7-total-timeout-seconds+ 180d0)))
 
 (defconstant +n7-probe-output-limit+
@@ -34,6 +34,7 @@
 
 (define-n7-pattern-sources *n7-pattern-sources*
                            :hostname
+                           :username
                            :home-path
                            :working-directory
                            :root-path
@@ -107,6 +108,9 @@
 (defun %runtime-source-values (source root)
   (ecase source
     (:hostname (host-kit:hostname))
+    (:username
+     (or (uiop:getenv "USER")
+         (error "N7 could not determine the current username.")))
     (:home-path (namestring (host-kit:user-home-directory)))
     (:working-directory (namestring (pathname (host-kit:getcwd))))
     (:root-path (namestring root))
