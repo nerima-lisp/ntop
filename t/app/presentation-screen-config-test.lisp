@@ -322,8 +322,17 @@
                             :key #'first :test #'eq))
                 (rectangle (second call)))
            (cl-weave:expect (not (null call)) :to-be t)
-           (cl-weave:expect (ntop.ui:rectangle-height rectangle)
-                            :to-equal footer-y)
+           (let* ((mode (ntop.app.presentation::%screen-layout-mode state config))
+                  (placements
+                   (ntop.app.presentation::%screen-layout-placements
+                    80 footer-y state mode nil
+                    (ntop.app.presentation::%screen-config config mode)))
+                  (process-rectangle (cdr (assoc :process placements))))
+             (cl-weave:expect
+              (ntop.ui:rectangle-height rectangle)
+              :to-equal
+              (min (if (eq mode :basic) 3 5)
+                   (ntop.ui:rectangle-height process-rectangle))))
            (cl-weave:expect
             (+ (ntop.ui:rectangle-y rectangle)
                (ntop.ui:rectangle-height rectangle))

@@ -265,15 +265,13 @@
                                   :style
                                   border-style)
       (when
-        (and (not basic-p) (>= width 12))
+        (and (not basic-p) (>= width 16))
         (cl-tty-kit:screen-write-string target
-                                        (+ x 2)
+                                        (+ x (- width 15))
                                         y
-                                        " Search "
+                                        " Esc to close "
                                         :style
-                                        (ntop.ui:presentation-theme-style
-                                          theme
-                                          :table-header)))
+                                        border-style))
       (when
         (>= height 3)
         (%process-search-write-query target

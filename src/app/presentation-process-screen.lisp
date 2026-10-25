@@ -24,6 +24,21 @@
            :key key
            :order order
            :memory-mode memory-mode)))))
+(defun %screen-process-search-layout (rectangle config)
+  (let* ((basic-p
+           (ntop.shared.application:application-config-basic-p config))
+         (x (ntop.ui:rectangle-x rectangle))
+         (y (ntop.ui:rectangle-y rectangle))
+         (width (ntop.ui:rectangle-width rectangle))
+         (height (ntop.ui:rectangle-height rectangle))
+         (search-height (min height (if basic-p 3 5)))
+         (body-height (- height search-height))
+         (search-x (+ x (if basic-p 1 0)))
+         (search-width (max 0 (- width (if basic-p 2 0)))))
+    (values
+     (ntop.ui:make-rectangle :x x :y y :width width :height body-height)
+     (ntop.ui:make-rectangle :x search-x :y (+ y body-height)
+                             :width search-width :height search-height))))
 
 (defun %screen-process-widget-config (snapshot state config selected-p sort-state)
   (let* ((gpu-sample
@@ -252,20 +267,23 @@
         (widget-states (ntop.app.domain:app-state-widget-v-states state)))
     (case dialog
       (:process-search
-       (let* ((height (min rows 5))
-              (rectangle
-                (ntop.ui:make-rectangle
-                 :x 0
-                 :y (max 0 (floor (- rows height) 2))
-                 :width columns
-                 :height height)))
-         (ntop.ui:draw-widget
-          :process-search
-          target
-          rectangle
-          (gethash :process-search widget-states)
-          config
-          nil)))
+       (let* ((mode (%screen-layout-mode state config))
+              (placements
+                (nth-value 0
+                           (%screen-layout-placements
+                            columns rows state mode)))
+              (process-placement (assoc :process placements :test #'eq)))
+         (when process-placement
+           (multiple-value-bind (body-rectangle search-rectangle)
+               (%screen-process-search-layout (cdr process-placement) config)
+             (declare (ignore body-rectangle))
+             (ntop.ui:draw-widget
+              :process-search
+              target
+              search-rectangle
+              (gethash :process-search widget-states)
+              config
+              nil)))))
       (:process-sort
        (let ((sort-state (%screen-process-sort-state config state)))
          (multiple-value-bind (table-state process-config)

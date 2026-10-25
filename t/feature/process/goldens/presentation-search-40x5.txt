@@ -1,4 +1,4 @@
-┌─ Search ─────────────────────────────┐
+┌──────────────────────── Esc to close ┐
 │> worker                              │
 │                                      │
 │Case  Whole  Regex                    │

@@ -101,11 +101,33 @@
   (let* ((basic-p (ntop.shared.application:application-config-basic-p config))
          (basic-table-frame-p
            (and basic-p selected-p
-                (member widget '(:disk :temperature :process-table) :test #'eq)))
+                (member widget
+                        (list :disk :temperature :process-table)
+                        :test (function eq))))
+         (process-search-p
+           (and (eq widget :process-table)
+                (eq (ntop.app.domain:app-state-active-dialog state)
+                    :process-search)))
+         (search-body-rectangle
+           (when process-search-p
+             (nth-value 0
+                        (%screen-process-search-layout rectangle config))))
          (widget-rectangle
-           (if (or (not basic-p) basic-table-frame-p)
-               (%screen-inner-rectangle rectangle basic-table-frame-p)
-               rectangle))
+           (if process-search-p
+               (if (or (not basic-p) basic-table-frame-p)
+                   (%screen-inner-rectangle search-body-rectangle
+                                            basic-table-frame-p)
+                   search-body-rectangle)
+               (if (or (not basic-p) basic-table-frame-p)
+                   (%screen-inner-rectangle rectangle basic-table-frame-p)
+                   rectangle)))
+         (frame-rectangles
+           (cond
+             ((and process-search-p (not basic-p))
+              (list search-body-rectangle))
+             ((or (not basic-p) basic-table-frame-p)
+              (list rectangle))
+             (t nil)))
          (clickable-areas nil))
     (multiple-value-bind (widget-state widget-config widget-series)
         (%screen-widget-inputs widget
@@ -116,10 +138,10 @@
                                unavailability-reasons
                                current-time-unix-seconds
                                selected-p)
-      (when (or (not basic-p) basic-table-frame-p)
-        (%screen-draw-frame target rectangle config
+      (dolist (frame-rectangle frame-rectangles)
+        (%screen-draw-frame target frame-rectangle config
                             selected-p
-                            nil basic-table-frame-p))
+                            nil (and basic-p basic-table-frame-p)))
       (when (and (plusp (ntop.ui:rectangle-width widget-rectangle))
                  (plusp (ntop.ui:rectangle-height widget-rectangle)))
         (setf clickable-areas

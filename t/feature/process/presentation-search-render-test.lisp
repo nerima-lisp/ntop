@@ -110,10 +110,9 @@
           :to-be
           5)
         (cl-weave:expect
-          (not
-           (null (search "Search" (cl-tty-kit:screen-to-string screen))))
-          :to-be
-          t)
+          (search "Esc to close" (cl-tty-kit:screen-row-string screen 0))
+          :to-equal
+          26)
         (cl-weave:expect
           lines
           :to-equal

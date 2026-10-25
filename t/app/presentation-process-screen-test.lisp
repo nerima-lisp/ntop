@@ -3,47 +3,137 @@
 (cl-weave:describe
  "process modal composition"
  (cl-weave:it
-  "draws a full-width search modal and filters displayed process rows"
+  "matches btm process search geometry and click bounds"
+  ;; btm 0.14.9: src/canvas/widgets/process_table.rs:29-43, 206-245.
   (let* ((state (ntop.app.domain:make-app-state))
          (config (%wp12b-screen-config))
-         (search-state
-           (ntop.process.presentation:make-process-search-field-state
-            :config config))
+         (basic-config
+           (ntop.shared.application:make-application-config :basic-p t))
+         (composition
+           (ntop.app.application:make-application-composition config))
+         (on-action
+           (ntop.app.application:application-composition-on-action composition))
          (*wp12b-screen-widget-calls* nil)
          (*wp12b-screen-recording-p* t))
-    (ntop.process.presentation:transition-process-search-field
-     search-state
-     :insert-text
-     "alpha")
-    (setf (ntop.app.domain:app-state-active-dialog state) :process-search
-          (gethash :process-search
-                   (ntop.app.domain:app-state-widget-v-states state))
-          search-state)
-    (%wp12b-screen-render 80 24 :state state :config config)
-    (setf *wp12b-screen-widget-calls*
-          (nreverse *wp12b-screen-widget-calls*))
-    (let* ((search-call
-             (find :process-search
-                   *wp12b-screen-widget-calls*
-                   :key (function first)
-                   :test (function eq)))
-           (rectangle (second search-call))
-           (process-call
-             (find :process-table
-                   *wp12b-screen-widget-calls*
-                   :key (function first)
-                   :test (function eq)))
-           (rows (third process-call)))
-      (cl-weave:expect (ntop.ui:rectangle-x rectangle) :to-equal 0)
-      (cl-weave:expect (ntop.ui:rectangle-width rectangle) :to-equal 80)
+    (funcall on-action
+             state
+             (ntop.app.domain:make-app-action :kind :search :value :process))
+    (funcall on-action
+             state
+             (ntop.app.domain:make-app-action :kind :search :value "alpha"))
+    (multiple-value-bind (areas screen)
+        (%wp12b-screen-render 80 48 :state state :config config)
+      (declare (ignore screen))
+      (setf *wp12b-screen-widget-calls*
+            (nreverse *wp12b-screen-widget-calls*))
+      (let* ((search-call
+               (find :process-search *wp12b-screen-widget-calls*
+                     :key #'first :test #'eq))
+             (search-rectangle (second search-call))
+             (process-call
+               (find :process-table *wp12b-screen-widget-calls*
+                     :key #'first :test #'eq))
+             (process-rectangle (second process-call))
+             (rows (third process-call))
+             (row-areas
+               (remove-if-not
+                (lambda (area)
+                  (eq (ntop.ui:clickable-area-action area) :select-row))
+                areas))
+             (row-area (first row-areas))
+             (row-rectangle
+               (and row-area
+                    (ntop.ui:clickable-area-rectangle row-area))))
+        (cl-weave:expect
+         (list (ntop.ui:rectangle-x search-rectangle)
+               (ntop.ui:rectangle-y search-rectangle)
+               (ntop.ui:rectangle-width search-rectangle)
+               (ntop.ui:rectangle-height search-rectangle))
+         :to-equal
+         (list 0 43 80 5))
+        (cl-weave:expect
+         (list (ntop.ui:rectangle-x process-rectangle)
+               (ntop.ui:rectangle-y process-rectangle)
+               (ntop.ui:rectangle-width process-rectangle)
+               (ntop.ui:rectangle-height process-rectangle))
+         :to-equal
+         (list 1 32 78 10))
+        (cl-weave:expect
+         (and
+          (equal (mapcar #'ntop.process.domain:process-row-name rows)
+                 (list "alpha"))
+          (not
+           (null
+            (search
+             "alpha"
+             (cl-tty-kit:screen-row-string
+              screen
+              (1+ (ntop.ui:rectangle-y search-rectangle))))))
+          (let* ((body-bottom-row
+                   (cl-tty-kit:screen-row-string
+                    screen
+                    (1- (ntop.ui:rectangle-y search-rectangle))))
+                 (search-top-row
+                   (cl-tty-kit:screen-row-string
+                    screen
+                    (ntop.ui:rectangle-y search-rectangle))))
+            (and (char= (char body-bottom-row 0) #\└)
+                 (char= (char body-bottom-row 79) #\┘)
+                 (char= (char search-top-row 0) #\┌)
+                 (char= (char search-top-row 79) #\┐))))
+         :to-be t)
+        (cl-weave:expect (not (null row-area)) :to-be t)
+        (cl-weave:expect
+         (< (ntop.ui:rectangle-y row-rectangle)
+            (ntop.ui:rectangle-y search-rectangle))
+         :to-be t)
+        (setf (ntop.app.application::application-composition-clickable-areas
+               composition)
+              areas)
+        (cl-weave:expect
+         (not
+          (null
+           (ntop.app.application::%process-dialog-area-at
+            composition :select-row
+            (ntop.ui:rectangle-x row-rectangle)
+            (ntop.ui:rectangle-y row-rectangle))))
+         :to-be t)
+        (cl-weave:expect
+         (ntop.app.application::%process-dialog-area-at
+          composition :select-row
+          (ntop.ui:rectangle-x row-rectangle)
+          (ntop.ui:rectangle-y search-rectangle))
+         :to-be nil)
+        (cl-weave:expect
+         (first (car (last *wp12b-screen-widget-calls*)))
+         :to-equal :process-search))
+    (labels
+        ((dimensions (rectangle)
+           (list (ntop.ui:rectangle-x rectangle)
+                 (ntop.ui:rectangle-y rectangle)
+                 (ntop.ui:rectangle-width rectangle)
+                 (ntop.ui:rectangle-height rectangle)))
+         (layout (rectangle config)
+           (multiple-value-bind (body search)
+               (ntop.app.presentation::%screen-process-search-layout
+                rectangle config)
+             (list (dimensions body) (dimensions search)))))
       (cl-weave:expect
-       (mapcar (function ntop.process.domain:process-row-name) rows)
+       (list
+        (layout (ntop.ui:make-rectangle :x 2 :y 6 :width 40 :height 8)
+                config)
+        (layout (ntop.ui:make-rectangle :x 4 :y 10 :width 50 :height 8)
+                basic-config)
+        (layout (ntop.ui:make-rectangle :x 3 :y 20 :width 30 :height 2)
+                config)
+        (layout (ntop.ui:make-rectangle :x 7 :y 8 :width 24 :height 1)
+                basic-config))
        :to-equal
-       (quote ("alpha")))
-      (cl-weave:expect
-       (first (car (last *wp12b-screen-widget-calls*)))
-       :to-equal
-       :process-search))))
+       (list
+        (list (list 2 6 40 3) (list 2 9 40 5))
+        (list (list 4 10 50 5) (list 5 15 48 3))
+        (list (list 3 20 30 0) (list 3 20 30 2))
+        (list (list 7 8 24 0) (list 8 8 22 1))))))))
  (cl-weave:it
   "centers the sort menu and returns its clickable choices"
   (let* ((state (ntop.app.domain:make-app-state))
