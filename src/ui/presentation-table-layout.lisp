@@ -28,18 +28,20 @@
                                sortable-p
                                value-function)
   (check-type header string)
-  (unless (member width-kind '(:hard :soft))
+  (unless (member width-kind '(:hard :soft :follow-header))
     (error "Unknown table column width kind ~S." width-kind))
   (when width
     (unless (and (integerp width) (not (minusp width)))
       (error "A table column width must be a non-negative integer or NIL.")))
   (when (and (eq width-kind :hard) (null width))
     (error "A hard table column requires a width."))
+  (when (and (member width-kind '(:hard :follow-header)) max-percent)
+    (error "A ~S table column cannot have a percentage limit." width-kind))
+  (when (and (eq width-kind :follow-header) width)
+    (error "A FollowHeader table column cannot set a width."))
   (when max-percent
     (unless (and (numberp max-percent) (<= 0 max-percent 1))
       (error "A soft width limit must be between zero and one.")))
-  (when (and (eq width-kind :hard) max-percent)
-    (error "A hard table column cannot have a percentage limit."))
   (when (and value-function (not (functionp value-function)))
     (error "A table column value function must be a function or NIL."))
   (%make-table-column id
@@ -76,8 +78,7 @@
 
 (defun measure-table-text (text)
   (check-type text string)
-  (loop for character across text
-        sum (cl-tty-kit:char-width character)))
+  (length (sb-ext:string-to-octets text :external-format :utf-8)))
 
 (defun truncate-table-text (text width)
   (check-type text string)
@@ -106,29 +107,32 @@
          0)))
 
 (defun table-column-desired-width (column rows)
-  (if (eq (table-column-width-kind column) :hard)
-      (table-column-width column)
-      (loop with desired = (table-column-header-width column)
-            for row in rows
-            for width = (measure-table-text (table-column-cell-text column row))
-            when (> width desired)
-              do (setf desired width)
-            finally (return (max desired (or (table-column-width column) 0))))))
+  (case (table-column-width-kind column)
+    (:hard (table-column-width column))
+    (:follow-header (table-column-header-width column))
+    (otherwise
+     (loop with desired = (table-column-header-width column)
+           for row in rows
+           for width = (measure-table-text (table-column-cell-text column row))
+           when (> width desired)
+             do (setf desired width)
+           finally (return (max desired (or (table-column-width column) 0)))))))
 
 (defun table-column-initial-width (column rows total-width remaining-width)
-  (let ((desired (table-column-desired-width column rows)))
-    (if (eq (table-column-width-kind column) :hard)
-        desired
-        (let* ((header-width (table-column-header-width column))
-               (percentage-limit (table-column-max-percent column)))
-          (when (> header-width remaining-width)
-            (return-from table-column-initial-width
-              nil))
-          (let ((soft-limit
-                 (if percentage-limit
-                     (max header-width (ceiling (* percentage-limit total-width)))
-                     desired)))
-            (min soft-limit desired remaining-width))))))
+  (case (table-column-width-kind column)
+    (:hard (table-column-width column))
+    (:follow-header (table-column-header-width column))
+    (otherwise
+     (let* ((desired (table-column-desired-width column rows))
+            (header-width (table-column-header-width column))
+            (percentage-limit (table-column-max-percent column)))
+       (when (> header-width remaining-width)
+         (return-from table-column-initial-width nil))
+       (let ((soft-limit
+               (if percentage-limit
+                   (max header-width (ceiling (* percentage-limit total-width)))
+                   desired)))
+         (min soft-limit desired remaining-width))))))
 
 (defun compute-table-layout (columns total-width &key right-to-left-p rows)
   (check-type total-width (integer 0 *))
@@ -152,7 +156,11 @@
           (setf remaining-width (max 0 (- remaining-width width 1))))))
     (setf accepted (nreverse accepted))
     (when right-to-left-p
-      (setf accepted (nreverse accepted)))
+      ;; BTM returns RTL widths, then DataTable zips them with the original columns.
+      (setf accepted
+            (loop for column in column-list
+                  for entry in (nreverse accepted)
+                  collect (cons column (cdr entry)))))
     (when accepted
       (let* ((count (length accepted))
              (per-column (floor remaining-width count))

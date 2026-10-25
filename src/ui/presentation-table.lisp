@@ -9,6 +9,8 @@
      (:constructor make-table-config
                    (&key columns
                          title
+                         (show-header-p t)
+                         empty-message
                          (show-scroll-position-p nil)
                          (right-to-left-p nil)
                          sort-column
@@ -18,6 +20,8 @@
                          (show-current-entry-when-unfocused-p t))))
   columns
   title
+  show-header-p
+  empty-message
   show-scroll-position-p
   right-to-left-p
   sort-column
@@ -77,10 +81,25 @@
   (table-visible-window state item-count viewport-height)
   (table-state-selected-index state))
 
-(defun table-cell-within-width (text width)
-  (let* ((truncated (truncate-table-text text width))
-         (padding (- width (measure-table-text truncated))))
-    (if (plusp padding)
+(defun table-cell-within-width (text width &optional (pad-p t))
+  (check-type text string)
+  (check-type width (integer 0 *))
+  (let* ((text-width
+          (loop for character across text
+                sum (cl-tty-kit:char-width character)))
+         (truncated
+          (if (<= text-width width)
+              text
+              (if (zerop width)
+                  ""
+                  (concatenate 'string
+                               (truncate-table-text text (1- width))
+                               "…"))))
+         (visible-width
+          (loop for character across truncated
+                sum (cl-tty-kit:char-width character)))
+         (padding (- width visible-width)))
+    (if (and pad-p (plusp padding))
         (concatenate 'string truncated (make-string padding :initial-element #\Space))
         truncated)))
 
@@ -107,39 +126,38 @@
 (defun draw-table (target rectangle state config rows)
   (check-type state table-state)
   (check-type config table-config)
-  (let* ((row-list (coerce rows 'list))
-         (columns (coerce (table-config-columns config) 'list))
+  (let* ((row-list (coerce rows (quote list)))
+         (columns (coerce (table-config-columns config) (quote list)))
          (title-row-p (not (null (table-config-title config))))
-         (title-height
-          (if title-row-p
-              1
-              0))
-         (header-row-p (> (- (rectangle-height rectangle) title-height) 1))
-         (header-height
-          (if header-row-p
-              1
-              0))
+         (title-height (if title-row-p 1 0))
+         (empty-message-p (and (null row-list) (table-config-empty-message config)))
+         (header-row-p
+           (and (table-config-show-header-p config)
+                (> (- (rectangle-height rectangle) title-height) 1)
+                (not empty-message-p)))
+         (header-height (if header-row-p 1 0))
          (body-y (+ (rectangle-y rectangle) title-height header-height))
-         (body-height (max 0 (- (rectangle-height rectangle) title-height header-height)))
+         (body-height
+           (max 0 (- (rectangle-height rectangle) title-height header-height)))
          (selected-index
-          (progn
-            (table-visible-window state (length row-list) body-height)
-            (table-state-selected-index state)))
+           (progn
+             (table-visible-window state (length row-list) body-height)
+             (table-state-selected-index state)))
          (layout
-          (compute-table-layout columns
-                                (rectangle-width rectangle)
-                                :right-to-left-p
-                                (table-config-right-to-left-p config)
-                                :rows
-                                row-list))
+           (compute-table-layout columns
+                                 (rectangle-width rectangle)
+                                 :right-to-left-p
+                                 (table-config-right-to-left-p config)
+                                 :rows
+                                 row-list))
          (areas nil))
     (when title-row-p
       (let ((title
-             (format-table-title (table-config-title config)
-                                 selected-index
-                                 (length row-list)
-                                 (rectangle-width rectangle)
-                                 (table-config-show-scroll-position-p config))))
+              (format-table-title (table-config-title config)
+                                  selected-index
+                                  (length row-list)
+                                  (rectangle-width rectangle)
+                                  (table-config-show-scroll-position-p config))))
         (draw-table-text target
                          (rectangle-x rectangle)
                          (rectangle-y rectangle)
@@ -149,67 +167,69 @@
       (let ((header-y (+ (rectangle-y rectangle) title-height)))
         (dolist (column-layout layout)
           (let* ((column
-                  (find (table-column-layout-id column-layout)
-                        columns
-                        :key
-                        #'table-column-id
-                        :test
-                        #'eql))
+                   (find (table-column-layout-id column-layout)
+                         columns
+                         :key
+                         (function table-column-id)
+                         :test
+                         (function eql)))
                  (x (+ (rectangle-x rectangle) (table-column-layout-x column-layout)))
                  (width (table-column-layout-width column-layout)))
             (draw-table-text target
                              x
                              header-y
-                             (truncate-table-text (table-header-text column config) width)
+                             (table-cell-within-width (table-header-text column config) width nil)
                              :header)
             (when (table-column-sortable-p column)
               (let* ((right-edge (+ (rectangle-x rectangle) (rectangle-width rectangle)))
                      (click-width (min (1+ width) (- right-edge x))))
-                (push
-                 (table-click-area x
-                                   header-y
-                                   click-width
-                                   (table-column-id column)
-                                   :sort-column)
-                 areas)))))))
+                (push (table-click-area x
+                                        header-y
+                                        click-width
+                                        (table-column-id column)
+                                        :sort-column)
+                      areas)))))))
+    (when (and empty-message-p (plusp body-height))
+      (draw-table-text target
+                       (rectangle-x rectangle)
+                       body-y
+                       (truncate-table-text empty-message-p
+                                            (rectangle-width rectangle))
+                       :normal))
     (multiple-value-bind (start-index end-index)
         (table-visible-window state (length row-list) body-height)
       (loop for row-index from start-index below end-index
             for row in (nthcdr start-index row-list)
             for y from body-y
             do (let ((selected-p
-                      (and (table-config-selectable-p config)
-                           (= row-index (table-state-selected-index state))
-                           (or (table-config-focused-p config)
-                               (table-config-show-current-entry-when-unfocused-p config)))))
+                       (and (table-config-selectable-p config)
+                            (= row-index (table-state-selected-index state))
+                            (or (table-config-focused-p config)
+                                (table-config-show-current-entry-when-unfocused-p config)))))
                  (dolist (column-layout layout)
                    (let* ((column
-                           (find (table-column-layout-id column-layout)
-                                 columns
-                                 :key
-                                 #'table-column-id
-                                 :test
-                                 #'eql))
+                            (find (table-column-layout-id column-layout)
+                                  columns
+                                  :key
+                                  (function table-column-id)
+                                  :test
+                                  (function eql)))
                           (text (table-column-cell-text column row))
-                          (x
-                           (+ (rectangle-x rectangle)
-                              (table-column-layout-x column-layout)))
+                          (x (+ (rectangle-x rectangle)
+                                (table-column-layout-x column-layout)))
                           (width (table-column-layout-width column-layout)))
                      (draw-table-text target
                                       x
                                       y
                                       (table-cell-within-width text width)
-                                      (if selected-p
-                                          :selected
-                                          :normal))))
+                                      (if selected-p :selected :normal))))
                  (when (table-config-selectable-p config)
-                   (push
-                    (table-click-area (rectangle-x rectangle)
-                                      y
-                                      (rectangle-width rectangle)
-                                      row-index
-                                      :select-row)
-                    areas)))))
+                   (push (table-click-area (rectangle-x rectangle)
+                                           y
+                                           (rectangle-width rectangle)
+                                           row-index
+                                           :select-row)
+                         areas)))))
     (nreverse areas)))
 
 (define-widget :table

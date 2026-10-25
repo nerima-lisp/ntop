@@ -43,21 +43,20 @@
 
 (defun make-temperature-table-config (&key (temperature-unit :celsius)
                                            (title " Temperatures ")
+                                           (show-header-p t)
+                                           empty-message
                                            (sort-column :sensor)
                                            (sort-order :ascending)
                                            (focused-p t)
-                                           (show-current-entry-when-unfocused-p
-                                            nil))
+                                           (show-current-entry-when-unfocused-p nil))
   (ntop.ui:make-table-config :columns
                              (%temperature-table-columns temperature-unit)
-                             :title
-                             title
-                             :sort-column
-                             sort-column
-                             :sort-order
-                             sort-order
-                             :focused-p
-                             focused-p
+                             :title title
+                             :show-header-p show-header-p
+                             :empty-message empty-message
+                             :sort-column sort-column
+                             :sort-order sort-order
+                             :focused-p focused-p
                              :show-current-entry-when-unfocused-p
                              show-current-entry-when-unfocused-p))
 

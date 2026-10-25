@@ -1,4 +1,4 @@
  Processes
-Count   Name(n)  CPU%(c)▼ Mem%(m)  R/s      W/s      T.Read   T.Write  User  State     Time
-1       worker   12.5%    10.0%    101B/s   202B/s   10KB     20KB     sampl sleeping  1m 0.00s
-1       shell    3.0%     5.0%     102B/s   204B/s   10KB     20KB     sampl sleeping  3.000s
+Count   Name(n)   CPU%(c)▼  Mem%(m)   R/s      W/s      T.Read   T.Write  User  State     Time
+1       worker    12.5%     10.0%     101B/s   202B/s   10KB     20KB     samp… sleeping  1m 0…
+1       shell     3.0%      5.0%      102B/s   204B/s   10KB     20KB     samp… sleeping  3.00…

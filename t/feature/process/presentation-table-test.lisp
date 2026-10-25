@@ -154,7 +154,7 @@
                                             (formatter
                                              (if (eq memory-mode :bytes)
                                                  #'ntop.ui:format-process-binary-bytes
-                                                 #'ntop.ui:format-percent-value)))
+                                               #'ntop.ui:format-percent-value)))
                                        (cl-weave:expect
                                         (mapcar #'ntop.ui:table-column-header columns)
                                         :to-equal
@@ -166,7 +166,7 @@
                                         (funcall formatter
                                                  (if (eq memory-mode :bytes)
                                                      1024
-                                                     10.0d0)))
+                                                   10.0d0)))
                                        (cl-weave:expect
                                         (ntop.ui::table-column-cell-text (second columns)
                                                                          display-row)
@@ -174,7 +174,7 @@
                                         (funcall formatter
                                                  (if (eq memory-mode :bytes)
                                                      2048
-                                                     4.0d0)))
+                                                   4.0d0)))
                                        (cl-weave:expect
                                         (ntop.ui::table-column-cell-text (third columns)
                                                                          display-row)
@@ -189,4 +189,22 @@
                                                      '(:gpu-memory :gpu-util :cpu)))))
                                   (cl-weave:expect (mapcar #'ntop.ui:table-column-id columns)
                                                    :to-equal
-                                                   '(:cpu-percent)))))
+                                                   '(:cpu-percent))))
+                   (cl-weave:it
+                    "configures basic process panes with hidden titles and height-gated headers"
+                    (let* ((config (ntop.process.presentation::make-process-table-config
+                                    :basic-p t))
+                           (table-config
+                            (ntop.process.presentation::%process-table-ui-config
+                             config
+                             (ntop.process.presentation:process-table-visible-columns config))))
+                      (cl-weave:expect
+                       (ntop.process.presentation::process-table-config-basic-p config)
+                       :to-be
+                       t)
+                      (cl-weave:expect
+                       (list (ntop.ui:table-config-title table-config)
+                             (ntop.ui:table-config-show-header-p table-config)
+                             (ntop.ui:table-config-empty-message table-config))
+                       :to-equal
+                       (list nil t "No data")))))

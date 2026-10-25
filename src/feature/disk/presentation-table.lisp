@@ -183,6 +183,8 @@
 
 (defun make-disk-table-config (&key (show-free-percent-p nil)
                                     (title " Disks ")
+                                    (show-header-p t)
+                                    empty-message
                                     (sort-column :disk)
                                     (sort-order :ascending)
                                     (focused-p t)
@@ -191,14 +193,12 @@
                              (if show-free-percent-p
                                  *disk-table-columns-with-free-percent*
                                  *disk-table-columns*)
-                             :title
-                             title
-                             :sort-column
-                             sort-column
-                             :sort-order
-                             sort-order
-                             :focused-p
-                             focused-p
+                             :title title
+                             :show-header-p show-header-p
+                             :empty-message empty-message
+                             :sort-column sort-column
+                             :sort-order sort-order
+                             :focused-p focused-p
                              :show-current-entry-when-unfocused-p
                              show-current-entry-when-unfocused-p))
 

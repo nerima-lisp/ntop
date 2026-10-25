@@ -90,21 +90,23 @@
                                              (ntop.ui:table-column-value-function column)))))
 
 (defun %process-table-ui-config (config columns)
-  (let ((sort-state (process-table-config-sort-state config)))
-    (ntop.ui:make-table-config :columns
-                               columns
-                               :title
-                               " Processes "
-                               :show-scroll-position-p
-                               (process-table-config-show-scroll-position-p config)
-                               :sort-column
-                               (ntop.process.domain:process-sort-state-key sort-state)
-                               :sort-order
-                               (ntop.process.domain:process-sort-state-order sort-state)
-                               :focused-p
-                               (process-table-config-focused-p config)
-                               :show-current-entry-when-unfocused-p
-                               (process-table-config-show-current-entry-when-unfocused-p config))))
+  (let ((sort-state (process-table-config-sort-state config))
+        (basic-p (process-table-config-basic-p config)))
+    (ntop.ui:make-table-config
+     :columns columns
+     :title (unless basic-p " Processes ")
+     :show-header-p t
+     :empty-message "No data"
+     :show-scroll-position-p
+     (process-table-config-show-scroll-position-p config)
+     :sort-column
+     (ntop.process.domain:process-sort-state-key sort-state)
+     :sort-order
+     (ntop.process.domain:process-sort-state-order sort-state)
+     :focused-p
+     (process-table-config-focused-p config)
+     :show-current-entry-when-unfocused-p
+     (process-table-config-show-current-entry-when-unfocused-p config))))
 
 (ntop.ui:define-widget :process-table
                        (target rectangle state config rows)

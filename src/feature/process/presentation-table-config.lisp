@@ -72,6 +72,7 @@
                                focused-p
                                show-current-entry-when-unfocused-p
                                show-scroll-position-p
+                               basic-p
                                column-ids))
      (:copier nil))
   (sort-state nil :read-only t)
@@ -83,6 +84,7 @@
   (focused-p t :read-only t)
   (show-current-entry-when-unfocused-p nil :read-only t)
   (show-scroll-position-p nil :read-only t)
+  (basic-p nil :read-only t)
   (column-ids nil :read-only t))
 
 (defun make-process-table-config (&key sort-state
@@ -94,44 +96,48 @@
                                        (focused-p t)
                                        (show-current-entry-when-unfocused-p nil)
                                        show-scroll-position-p
+                                       (basic-p nil)
                                        column-ids)
   (when sort-state
     (check-type sort-state ntop.process.domain:process-sort-state))
   (unless
-      (and (member grouped-p '(t nil))
-           (member grouped-by-tab-p '(t nil))
-           (member show-command-p '(t nil))
-           (member gpu-available-p '(t nil))
-           (member focused-p '(t nil))
-           (member show-current-entry-when-unfocused-p '(t nil))
-           (member show-scroll-position-p '(t nil)))
+      (and (member grouped-p (list t nil))
+           (member grouped-by-tab-p (list t nil))
+           (member show-command-p (list t nil))
+           (member gpu-available-p (list t nil))
+           (member focused-p (list t nil))
+           (member show-current-entry-when-unfocused-p (list t nil))
+           (member show-scroll-position-p (list t nil))
+           (member basic-p (list t nil)))
     (error "Process table flags must be true or false."))
   (when (and grouped-by-tab-p (not grouped-p))
     (error "Tab grouping origin requires grouped rows."))
-  (unless (member memory-mode '(nil :bytes :percent))
+  (unless (member memory-mode (list nil :bytes :percent))
     (error "Unsupported process memory display mode: ~S." memory-mode))
-  (unless (and (typep column-ids 'sequence) (not (stringp column-ids)))
+  (unless (and (typep column-ids (quote sequence)) (not (stringp column-ids)))
     (error "Process column IDs must be a list or vector: ~S." column-ids))
   (let* ((sort-state*
           (or sort-state
-              (ntop.process.domain:make-process-sort-state :memory-mode (or memory-mode :percent))))
+              (ntop.process.domain:make-process-sort-state
+               :memory-mode (or memory-mode :percent))))
          (effective-memory-mode
-          (or memory-mode (ntop.process.domain:process-sort-state-memory-mode sort-state*)))
+          (or memory-mode
+              (ntop.process.domain:process-sort-state-memory-mode sort-state*)))
          (effective-column-ids
           (remove-duplicates
            (if column-ids
-               (coerce column-ids 'list)
+               (coerce column-ids (quote list))
                +default-process-table-column-ids+)
            :test
            (function eq)
            :from-end
            t)))
-    (unless (member effective-memory-mode '(:bytes :percent))
+    (unless (member effective-memory-mode (list :bytes :percent))
       (error "Unsupported process memory display mode: ~S." effective-memory-mode))
     (unless
         (every
          (lambda (column-id)
-           (member column-id +process-table-column-ids+ :test #'eq))
+           (member column-id +process-table-column-ids+ :test (function eq)))
          effective-column-ids)
       (error "Unsupported process table column IDs: ~S." effective-column-ids))
     (%make-process-table-config sort-state*
@@ -143,4 +149,5 @@
                                 focused-p
                                 show-current-entry-when-unfocused-p
                                 show-scroll-position-p
+                                basic-p
                                 effective-column-ids)))

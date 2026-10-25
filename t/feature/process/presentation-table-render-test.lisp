@@ -35,30 +35,40 @@
                                    :to-equal
                                    '(:bold (:fg 12)))))
                    (cl-weave:it-each
-                    ((95 11 :runtime-seconds 6 8 5 8) (96 11 :runtime-seconds 7 8 5 8)
-                     (104 11 :runtime-seconds 7 9 6 9)
-                     (105 12 :priority 6 8 6 8))
-                    "matches btm column sizing and first non-fitting drop at ~A cells"
-                    (width expected-count expected-last first-width name-width user-width io-width)
-                    (let* ((config (%f8b-config))
-                           (display-rows (%f8b-display-rows config +f8b-rows+))
-                           (layout
-                            (ntop.ui:compute-table-layout (%f8b-process-table-column config)
-                                                          width
-                                                          :rows
-                                                          display-rows))
-                           (ids (mapcar #'ntop.ui:table-column-layout-id layout))
-                           (widths (mapcar #'ntop.ui:table-column-layout-width layout)))
-                      (cl-weave:expect (length layout) :to-be expected-count)
-                      (cl-weave:expect (car (last ids)) :to-be expected-last)
-                      (cl-weave:expect (first widths) :to-be first-width)
-                      (cl-weave:expect (second widths) :to-be name-width)
-                      (cl-weave:expect (ninth widths) :to-be user-width)
-                      (cl-weave:expect (elt widths 10) :to-be 8)
-                      (cl-weave:expect (subseq widths 4 8)
-                                       :to-equal
-                                       (make-list 4 :initial-element io-width))
-                      (cl-weave:expect (tenth widths) :to-be 9)))
+                     ((95 ((:count 0 7) (:name 8 9) (:cpu-percent 18 9) (:memory 28 8)
+                            (:read-bytes-per-second 37 8) (:write-bytes-per-second 46 8)
+                            (:total-read-bytes 55 8) (:total-write-bytes 64 8)
+                            (:user 73 5) (:state 79 9) (:runtime-seconds 89 5)))
+                      (96 ((:count 0 7) (:name 8 9) (:cpu-percent 18 9) (:memory 28 9)
+                            (:read-bytes-per-second 38 8) (:write-bytes-per-second 47 8)
+                            (:total-read-bytes 56 8) (:total-write-bytes 65 8)
+                            (:user 74 5) (:state 80 9) (:runtime-seconds 90 5)))
+                      (104 ((:count 0 7) (:name 8 8) (:cpu-percent 17 8) (:memory 26 8)
+                             (:read-bytes-per-second 35 8) (:write-bytes-per-second 44 8)
+                             (:total-read-bytes 53 8) (:total-write-bytes 62 8)
+                             (:user 71 6) (:state 78 9) (:runtime-seconds 88 5)
+                             (:priority 94 9)))
+                      (105 ((:count 0 7) (:name 8 9) (:cpu-percent 18 8) (:memory 27 8)
+                             (:read-bytes-per-second 36 8) (:write-bytes-per-second 45 8)
+                             (:total-read-bytes 54 8) (:total-write-bytes 63 8)
+                             (:user 72 6) (:state 79 9) (:runtime-seconds 89 5)
+                             (:priority 95 9))))
+                     "matches BTM 0.14.9 column.rs:161-242 and draw.rs:217-229 at ~A cells"
+                     (width expected-columns)
+                     (let* ((config (%f8b-config))
+                            (display-rows (%f8b-display-rows config +f8b-rows+))
+                            (layout (ntop.ui:compute-table-layout
+                                     (%f8b-process-table-column config)
+                                     width
+                                     :rows
+                                     display-rows))
+                            (actual (mapcar
+                                     (lambda (column)
+                                       (list (ntop.ui:table-column-layout-id column)
+                                             (ntop.ui:table-column-layout-x column)
+                                             (ntop.ui:table-column-layout-width column)))
+                                     layout)))
+                       (cl-weave:expect actual :to-equal expected-columns)))
                    (cl-weave:it
                     "renders the supplied selection and scroll window without reordering rows"
                     (let* ((rows +f8b-rows+)
@@ -113,27 +123,31 @@
                          (search "+ worker" (third (%f8b-process-table-lines collapsed-target)))
                          :to-be
                          0))))
-                   (cl-weave:it "adds a btm-style ellipsis when the Time value exceeds its column"
-                                (let* ((config
-                                        (%f8b-config :sort-state
-                                                     (%f8b-sort-state :runtime-seconds :ascending)
-                                                     :column-ids
-                                                     '(:time)))
-                                       (row
-                                        (%f8b-process-table-row 104
-                                                                "monitor"
-                                                                2.0d0
-                                                                7.0d0
-                                                                4096
-                                                                3600d0))
-                                       (target (%f8b-process-table-target 6 3)))
-                                  (%f8b-draw-process-table target
-                                                           (ntop.ui:make-table-state)
-                                                           config
-                                                           (list row))
-                                  (cl-weave:expect (third (%f8b-process-table-lines target))
-                                                   :to-equal
-                                                   "1h 0m…")))
+                   (cl-weave:it
+                    "uses BTM 0.14.9 ellipsis for allocated process cells"
+                    (cl-weave:expect (ntop.ui::table-cell-within-width "sample-user" 5)
+                                     :to-equal
+                                     "samp…")
+                    (let* ((config
+                            (%f8b-config :sort-state
+                                         (%f8b-sort-state :runtime-seconds :ascending)
+                                         :column-ids
+                                         '(:time)))
+                           (row
+                            (%f8b-process-table-row 104
+                                                    "monitor"
+                                                    2.0d0
+                                                    7.0d0
+                                                    4096
+                                                    3600d0))
+                           (target (%f8b-process-table-target 6 3)))
+                      (%f8b-draw-process-table target
+                                               (ntop.ui:make-table-state)
+                                               config
+                                               (list row))
+                      (cl-weave:expect (third (%f8b-process-table-lines target))
+                                       :to-equal
+                                       "1h 0…")))
                    (cl-weave:it "matches the deterministic synthetic screen golden"
                                 (let* ((target (%f8b-process-table-target 96 4))
                                        (config (%f8b-config))

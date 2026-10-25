@@ -84,14 +84,14 @@
            (error "Unsupported process table column: ~S." column-id))))))
 
 (define-process-table-columns *process-table-column-prototypes*
-                              (:pid "PID(p)" :soft :pid :sortable-p t)
-                              (:count "Count" :soft :count :sortable-p t)
+                              (:pid "PID(p)" :follow-header :pid :sortable-p t)
+                              (:count "Count" :follow-header :count :sortable-p t)
                               (:name "Name(n)" :soft :name :max-percent 3/10 :sortable-p t)
                               (:command "Command(n)" :soft :command :max-percent 3/10 :sortable-p t)
-                              (:cpu-percent "CPU%(c)" :soft :cpu-percent :sortable-p t)
-                              (:memory "Mem%(m)" :soft :memory :sortable-p t)
+                              (:cpu-percent "CPU%(c)" :follow-header :cpu-percent :sortable-p t)
+                              (:memory "Mem%(m)" :follow-header :memory :sortable-p t)
                               (:virtual-memory-bytes "Virt"
-                                                     :soft
+                                                     :follow-header
                                                      :virtual-memory-bytes
                                                      :sortable-p
                                                      t)
@@ -125,11 +125,13 @@
                                                   t)
                               (:user "User" :soft :user :max-percent 1/20 :sortable-p t)
                               (:state "State" :hard :state :width 9 :sortable-p t)
-                              (:runtime-seconds "Time" :soft :runtime-seconds :sortable-p t)
-                              (:priority "Priority" :soft :priority :sortable-p t)
-                              (:nice "Nice" :soft :nice :sortable-p t)
-                              (:gpu-memory "GMem%" :soft :gpu-memory :sortable-p t)
-                              (:gpu-usage-percent "GPU%" :soft :gpu-usage-percent :sortable-p t))
+                              (:runtime-seconds "Time" :follow-header :runtime-seconds
+                                                :sortable-p t)
+                              (:priority "Priority" :follow-header :priority :sortable-p t)
+                              (:nice "Nice" :follow-header :nice :sortable-p t)
+                              (:gpu-memory "GMem%" :follow-header :gpu-memory :sortable-p t)
+                              (:gpu-usage-percent "GPU%" :follow-header :gpu-usage-percent
+                                                  :sortable-p t))
 
 (defun %process-table-column-spec (column-id config)
   (case column-id

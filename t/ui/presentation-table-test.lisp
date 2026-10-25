@@ -57,33 +57,43 @@
                                    '((8 "Name" :header) (8 "PID" :header)
                                      (9 "Alpha    " :selected)
                                      (9 "10   " :selected)))))
-                   (cl-weave:it "renders an ascending sort mark in the selected header"
-                                (let* ((target (make-wp7-fake-table-target))
-                                       (config
-                                        (ntop.ui:make-table-config :columns
-                                                                   *wp7-render-columns*
-                                                                   :sort-column
-                                                                   :name
-                                                                   :sort-order
-                                                                   :ascending))
-                                       (rectangle
-                                        (ntop.ui:make-rectangle :x
-                                                                0
-                                                                :y
-                                                                0
-                                                                :width
-                                                                16
-                                                                :height
-                                                                2)))
-                                  (ntop.ui:draw-table target
-                                                      rectangle
-                                                      (ntop.ui:make-table-state)
-                                                      config
-                                                      nil)
-                                  (cl-weave:expect
-                                   (third (%wp7-table-call target :header))
-                                   :to-equal
-                                   "Name▲")))
+                   (cl-weave:it
+                    "matches BTM sortable.rs:107-127 sorted-header truncation"
+                    (let* ((target (make-wp7-fake-table-target))
+                           (config
+                            (ntop.ui:make-table-config :columns
+                                                       *wp7-render-columns*
+                                                       :sort-column
+                                                       :name
+                                                       :sort-order
+                                                       :ascending))
+                           (rectangle (ntop.ui:make-rectangle :x 0 :y 0
+                                                              :width 16 :height 2)))
+                      (ntop.ui:draw-table target rectangle
+                                          (ntop.ui:make-table-state) config nil)
+                      (cl-weave:expect (third (%wp7-table-call target :header))
+                                       :to-equal
+                                       "Name▲")
+                      (let* ((narrow-column
+                              (ntop.ui:make-table-column :id :name
+                                                         :header "Name(n)"
+                                                         :width-kind :hard
+                                                         :width 2
+                                                         :sortable-p t))
+                             (narrow-target (make-wp7-fake-table-target))
+                             (narrow-config
+                              (ntop.ui:make-table-config :columns (list narrow-column)
+                                                         :sort-column :name
+                                                         :sort-order :ascending))
+                             (narrow-rectangle
+                              (ntop.ui:make-rectangle :x 0 :y 0 :width 2 :height 2)))
+                        (ntop.ui:draw-table narrow-target narrow-rectangle
+                                            (ntop.ui:make-table-state)
+                                            narrow-config nil)
+                        (cl-weave:expect
+                         (third (%wp7-table-call narrow-target :header))
+                         :to-equal
+                         "N…"))))
                    (cl-weave:it "renders a descending sort mark in the selected header"
                                 (let* ((target (make-wp7-fake-table-target))
                                        (config
@@ -421,4 +431,28 @@
                                   (cl-weave:expect
                                    (ntop.ui:table-state-selected-index state)
                                    :to-be
-                                   0))))
+                                   0)))
+                   (cl-weave:it "renders empty messages in basic and normal panes without headers"
+  (let* ((basic-target (make-wp7-fake-table-target))
+         (normal-target (make-wp7-fake-table-target))
+         (basic-config
+           (ntop.ui:make-table-config :columns *wp7-render-columns*
+                                      :title nil
+                                      :show-header-p nil
+                                      :empty-message "No data"))
+         (normal-config
+           (ntop.ui:make-table-config :columns *wp7-render-columns*
+                                      :title " Processes "
+                                      :empty-message "No data"))
+         (rectangle (ntop.ui:make-rectangle :x 0 :y 5 :width 16 :height 3)))
+    (ntop.ui:draw-table basic-target rectangle (ntop.ui:make-table-state)
+                        basic-config nil)
+    (ntop.ui:draw-table normal-target rectangle (ntop.ui:make-table-state)
+                        normal-config nil)
+    (cl-weave:expect (%wp7-table-calls basic-target)
+                     :to-equal
+                     (quote ((0 5 "No data" :normal))))
+    (cl-weave:expect (%wp7-table-calls normal-target)
+                     :to-equal
+                     (quote ((0 5 " Processes " :title)
+                             (0 6 "No data" :normal)))))))
