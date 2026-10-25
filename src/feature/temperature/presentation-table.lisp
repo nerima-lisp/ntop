@@ -48,7 +48,8 @@
                                            (sort-column :sensor)
                                            (sort-order :ascending)
                                            (focused-p t)
-                                           (show-current-entry-when-unfocused-p nil))
+                                           (show-current-entry-when-unfocused-p nil)
+                                           (show-scroll-position-p nil))
   (ntop.ui:make-table-config :columns
                              (%temperature-table-columns temperature-unit)
                              :title title
@@ -58,7 +59,9 @@
                              :sort-order sort-order
                              :focused-p focused-p
                              :show-current-entry-when-unfocused-p
-                             show-current-entry-when-unfocused-p))
+                             show-current-entry-when-unfocused-p
+                             :show-scroll-position-p
+                             show-scroll-position-p))
 
 (defun %temperature-table-rows (sample)
   (when sample

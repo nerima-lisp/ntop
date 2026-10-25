@@ -317,4 +317,20 @@
                          collect (list x y (char-code character))))
     :to-equal
     expected-cells)))
+ (cl-weave:it
+  "passes the global scroll-position setting to the Temperature table"
+  ;; BTM 0.14.9: src/canvas/components/data_table/draw.rs:107-128.
+  (let ((config (%wp12b-screen-config))
+        (state (ntop.app.domain:make-app-state)))
+    (setf
+     (ntop.shared.application:application-config-show-table-scroll-position-p config)
+     t)
+    (multiple-value-bind (table-state table-config rows)
+        (ntop.app.presentation::%screen-widget-inputs
+         :temperature nil nil state config nil)
+      (declare (ignore table-state rows))
+      (cl-weave:expect
+       (ntop.ui:table-config-show-scroll-position-p table-config)
+       :to-be
+       t))))
  )

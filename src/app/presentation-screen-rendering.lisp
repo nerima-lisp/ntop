@@ -40,7 +40,10 @@
                 :title (unless basic-p " Disks ")
                 :show-header-p (not basic-p)
                 :empty-message "No data"
-                :focused-p selected-p)
+                :focused-p selected-p
+                :show-scroll-position-p
+                (ntop.shared.application:application-config-show-table-scroll-position-p
+                 config))
                (%screen-disk-rows (%screen-series series-by-widget :disks)
                                   snapshot))))
     (:disk-io-graph
@@ -55,6 +58,9 @@
                 :title (unless basic-p " Temperatures ")
                 :show-header-p (not basic-p)
                 :empty-message "No data"
+                :show-scroll-position-p
+                (ntop.shared.application:application-config-show-table-scroll-position-p
+                 config)
                 :focused-p selected-p)
                (and snapshot
                     (ntop.app.domain:collection-snapshot-temperature-sample

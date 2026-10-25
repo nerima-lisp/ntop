@@ -153,6 +153,17 @@
                                    (ntop.ui:table-config-sort-order config)
                                    :to-be
                                    :ascending)))
+                   (cl-weave:it "forwards the scroll-position option to the UI table config"
+                                ;; BTM 0.14.9: src/canvas/widgets/disk_table.rs:12-37
+                                ;; delegates to src/canvas/components/data_table/draw.rs:107-128.
+                                (let ((config
+                                       (ntop.disk.presentation:make-disk-table-config
+                                        :show-scroll-position-p
+                                        t)))
+                                  (cl-weave:expect
+                                   (ntop.ui:table-config-show-scroll-position-p config)
+                                   :to-be
+                                   t)))
                    (cl-weave:it "sorts rendered rows by the configured column"
                                 (let* ((target (%disk-screen-target 96 4))
                                        (config

@@ -188,7 +188,8 @@
                                     (sort-column :disk)
                                     (sort-order :ascending)
                                     (focused-p t)
-                                    (show-current-entry-when-unfocused-p nil))
+                                    (show-current-entry-when-unfocused-p nil)
+                                    (show-scroll-position-p nil))
   (ntop.ui:make-table-config :columns
                              (if show-free-percent-p
                                  *disk-table-columns-with-free-percent*
@@ -200,7 +201,9 @@
                              :sort-order sort-order
                              :focused-p focused-p
                              :show-current-entry-when-unfocused-p
-                             show-current-entry-when-unfocused-p))
+                             show-current-entry-when-unfocused-p
+                             :show-scroll-position-p
+                             show-scroll-position-p))
 
 (ntop.ui:define-widget :disk
                        (target rectangle state config rows)
