@@ -13,26 +13,33 @@
     (funcall on-unavailable :unsupported-platform))
 
   (defmethod ntop.shared.application:collect-process-sample
-      ((collector process-collector) on-sample on-unavailable)
-    (read-process-data
-     collector
-     (lambda (processes signals)
-       (ntop.shared.domain:read-monotonic-time
-        (%process-collector-clock collector)
-        (lambda (sampled-at)
+    ((collector process-collector) on-sample on-unavailable)
+  (read-process-data
+   collector
+   (lambda (processes signals)
+     (ntop.shared.domain:read-monotonic-time
+      (%process-collector-clock collector)
+      (lambda (sampled-at)
+        (let ((pid-index (make-hash-table :test (function eql)
+                                          :size (length processes))))
+          (dolist (record processes)
+            (let ((pid (ntop.process.domain:process-record-pid record)))
+              (when (and pid (not (gethash pid pid-index)))
+                (setf (gethash pid pid-index) record))))
           (funcall on-sample
                    (ntop.process.domain:make-process-sample
                     :sampled-at sampled-at
                     :processes processes
-                    :signals signals)))
-        (lambda (reason)
-          (funcall on-unavailable
-                   (ntop.shared.application:normalize-collector-unavailability-reason
-                    reason)))))
-     (lambda (reason)
-       (funcall on-unavailable
-                (ntop.shared.application:normalize-collector-unavailability-reason
-                 reason)))))
+                    :pid-index pid-index
+                    :signals signals))))
+      (lambda (reason)
+        (funcall on-unavailable
+                 (ntop.shared.application:normalize-collector-unavailability-reason
+                  reason)))))
+   (lambda (reason)
+     (funcall on-unavailable
+              (ntop.shared.application:normalize-collector-unavailability-reason
+               reason)))))
 
   (defun send-process-signal (target-pids signal-number)
     (unless (and (listp target-pids)

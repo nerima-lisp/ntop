@@ -250,6 +250,21 @@
                         31)
                        :to-be
                        nil)))
+                   (cl-weave:it
+ "uses the PID index before falling back to the process list"
+ (let* ((record (%wp4-metrics-record 61 :cpu-time-ns 10))
+        (index (make-hash-table :test (function eql)))
+        (sample
+          (ntop.process.domain:make-process-sample
+           :sampled-at 0
+           :processes nil
+           :pid-index index
+           :signals nil)))
+   (setf (gethash 61 index) record)
+   (cl-weave:expect
+    (eq (ntop.process.domain::%process-in-sample sample 61) record)
+    :to-be
+    t)))
                    (cl-weave:it "rejects nonpositive elapsed sample intervals"
                                 (let ((sample
                                        (%wp4-metrics-sample 10

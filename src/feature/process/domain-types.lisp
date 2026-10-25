@@ -39,6 +39,7 @@
 
 (ntop.shared.domain:define-sample-type process-sample
   (processes nil :type list)
+  (pid-index nil :type (or null hash-table))
   (signals nil :type list))
 
 (ntop.shared.domain:define-value-type process-row

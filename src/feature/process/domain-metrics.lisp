@@ -2,9 +2,11 @@
 
 (defun %process-in-sample (sample pid)
   (when (and sample pid)
-    (find pid (process-sample-processes sample)
-          :key #'process-record-pid
-          :test #'eql)))
+    (or (and (process-sample-pid-index sample)
+             (gethash pid (process-sample-pid-index sample)))
+        (find pid (process-sample-processes sample)
+              :key (function process-record-pid)
+              :test (function eql)))))
 
 (defun %sample-elapsed-seconds (previous-sample current-sample)
   (when (and previous-sample current-sample)
