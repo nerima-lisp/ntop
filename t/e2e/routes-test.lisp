@@ -88,11 +88,94 @@
       (cl-weave:expect (ntop.e2e::route-count additional) :to-equal 9)
       (cl-weave:expect (ntop.e2e::route-count all) :to-equal 182)))
    (cl-weave:it
-    "has nonempty subcases for all 182 routes"
-    (let ((routes (ntop.e2e::route-catalog)))
-      (cl-weave:expect (ntop.e2e::route-count routes) :to-equal 182)
-      (cl-weave:expect (every (function %route-has-subcases-p) routes)
-                       :to-be t)))
+ "selects routes and subcases from the 182-route catalog"
+ (let* ((routes (ntop.e2e::route-catalog))
+        (key-fifteen
+          (find "key-15" routes
+                :key (function ntop.e2e::route-id)
+                :test (function string=)))
+        (selected
+          (ntop.e2e::%route-selected-routes
+           routes (list "key-10" "key-15") nil))
+        (expected
+          (remove-if-not
+           (lambda (route)
+             (member (ntop.e2e::route-id route)
+                     (list "key-10" "key-15")
+                     :test (function string=)))
+           routes))
+        (catalog-subcases
+          (ntop.e2e::%route-subcases-expanded key-fifteen))
+        (subcases
+          (ntop.e2e::%route-selected-subcases
+           key-fifteen "key-15-002")))
+   (cl-weave:expect (ntop.e2e::route-count routes) :to-equal 182)
+   (cl-weave:expect (every (function %route-has-subcases-p) routes)
+                    :to-be t)
+   (cl-weave:expect (mapcar (function ntop.e2e::route-id) selected)
+                    :to-equal
+                    (mapcar (function ntop.e2e::route-id) expected))
+   (cl-weave:expect (length subcases) :to-equal 1)
+   (cl-weave:expect (caar subcases) :to-equal 2)
+   (cl-weave:expect (cdar subcases) :to-equal (second catalog-subcases))
+   (cl-weave:expect
+    (mapcar (function ntop.e2e::route-id)
+            (ntop.e2e::%route-selected-routes
+             routes nil "key-15-002"))
+    :to-equal
+    (list "key-15"))
+   (cl-weave:expect
+    (handler-case
+        (progn
+          (ntop.e2e::%route-selected-routes
+           routes (list "unknown") nil)
+          nil)
+      (error () t))
+    :to-be
+    t)
+   (cl-weave:expect
+    (handler-case
+        (progn
+          (ntop.e2e::%route-selected-routes
+           routes (list "key-10") "key-15-002")
+          nil)
+      (error () t))
+    :to-be
+    t)))
+   (cl-weave:it
+ "writes a one-subcase report with the full route report format"
+ (let* ((status nil)
+        (output
+          (with-output-to-string (*standard-output*)
+            (setf status
+                  (ntop.e2e::run-route-harness
+                   :mode "btm-self"
+                   :route-ids (list "key-15")
+                   :subcase-id "key-15-002"
+                   :evidence-directory
+                   (namestring (uiop:temporary-directory))))))
+        (prefix "Route report: ")
+        (prefix-start (search prefix output))
+        (path-start (and prefix-start
+                         (+ prefix-start (length prefix))))
+        (path-end (and path-start
+                       (position #\Newline output :start path-start)))
+        (report (and path-end
+                     (uiop:read-file-string
+                      (subseq output path-start path-end)))))
+   (cl-weave:expect status :to-be 0)
+   (cl-weave:expect (search "1/1 key-15 MANUAL" output)
+                    :to-equal
+                    0)
+   (cl-weave:expect
+    (search "| ID | Status | Input sequence | Expected | Actual | "
+            report)
+    :to-satisfy (function plusp))
+   (cl-weave:expect (search "| key-15 | MANUAL |" report)
+                    :to-satisfy (function plusp))
+   (cl-weave:expect
+    (search "Subcase counts: 1 total, 0 PASS, 0 FAIL, 1 MANUAL." report)
+    :to-satisfy (function plusp))))
    (cl-weave:it
     "records every flag spelling and the help and version controls"
     (let* ((parity (ntop.e2e::route-parity-catalog))

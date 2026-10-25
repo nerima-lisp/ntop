@@ -63,7 +63,9 @@
                      :columns (cl-cli:option-value invocation :columns)
                      :rate (cl-cli:option-value invocation :rate)
                      :timeout-seconds
-                     (cl-cli:option-value invocation :timeout-seconds)))
+                     (cl-cli:option-value invocation :timeout-seconds)
+                     :route-ids (cl-cli:option-value invocation :route)
+                     :subcase-id (cl-cli:option-value invocation :subcase)))
 
 (cl-cli:define-app *e2e-app*
                    (:name "ntop-e2e"
@@ -271,90 +273,60 @@
                                                    "On macOS, scan the golden directory "
                                                    "for host-specific data.")))
                    (:command "routes"
-                             (:description
-                              "Run the typed route catalog against ntop and btm."
-                              :handler
-                              #'%handle-routes)
-                             (:option "mode"
-                                      :kind
-                                      :value
-                                      :choices
-                                      *route-mode-choices*
-                                      :default
-                                      "ntop"
-                                      :description
-                                      "Run ntop against btm, or run btm against itself.")
-                             (:option "btm"
-                                      :kind
-                                      :value
-                                      :default
-                                      "btm"
-                                      :value-hint
-                                      :file
-                                      :description
-                                      "Reference btm executable.")
-                             (:option "ntop"
-                                      :kind
-                                      :value
-                                      :default
-                                      "./ntop"
-                                      :value-hint
-                                      :file
-                                      :description
-                                      "Candidate ntop executable.")
-                             (:option "evidence-directory"
-                                      :kind
-                                      :value
-                                      :default
-                                      "/tmp"
-                                      :value-hint
-                                      :dir
-                                      :description
-                                      "Parent directory for route evidence.")
-                             (:option "rows"
-                                      :kind
-                                      :value
-                                      :type
-                                      :integer
-                                      :min
-                                      1
-                                      :default
-                                      60
-                                      :description
-                                      "Route terminal height in rows.")
-                             (:option "columns"
-                                      :kind
-                                      :value
-                                      :type
-                                      :integer
-                                      :min
-                                      1
-                                      :default
-                                      220
-                                      :description
-                                      "Route terminal width in columns.")
-                             (:option "rate"
-                                      :kind
-                                      :value
-                                      :type
-                                      :integer
-                                      :min
-                                      1
-                                      :default
-                                      250
-                                      :description
-                                      "Sampling interval in milliseconds.")
-                             (:option "timeout-seconds"
-                                      :kind
-                                      :value
-                                      :type
-                                      :integer
-                                      :min
-                                      1
-                                      :default
-                                      30
-                                      :description
-                                      "Maximum wait for each route child.")))
+  (:description
+   "Run selected routes from the typed catalog against ntop and btm."
+   :handler #'%handle-routes)
+  (:option "mode"
+           :kind :value
+           :choices *route-mode-choices*
+           :default "ntop"
+           :description "Run ntop against btm, or run btm against itself.")
+  (:option "route"
+           :kind :value
+           :multiple-p t
+           :description "Route ID to run. Repeat to select multiple routes.")
+  (:option "subcase"
+           :kind :value
+           :description "Single subcase ID, for example key-15-002.")
+  (:option "btm"
+           :kind :value
+           :default "btm"
+           :value-hint :file
+           :description "Reference btm executable.")
+  (:option "ntop"
+           :kind :value
+           :default "./ntop"
+           :value-hint :file
+           :description "Candidate ntop executable.")
+  (:option "evidence-directory"
+           :kind :value
+           :default "/tmp"
+           :value-hint :dir
+           :description "Parent directory for route evidence.")
+  (:option "rows"
+           :kind :value
+           :type :integer
+           :min 1
+           :default 60
+           :description "Route terminal height in rows.")
+  (:option "columns"
+           :kind :value
+           :type :integer
+           :min 1
+           :default 220
+           :description "Route terminal width in columns.")
+  (:option "rate"
+           :kind :value
+           :type :integer
+           :min 1
+           :default 250
+           :description "Sampling interval in milliseconds.")
+  (:option "timeout-seconds"
+           :kind :value
+           :type :integer
+           :min 1
+           :default 30
+           :description "Maximum wait for each route child.")))
 
 (defun main (&optional (argv (cl-cli:application-argv)))
-  (cl-cli:run-app *e2e-app* :argv argv))
+  (sb-ext:exit :code (cl-cli:run-app *e2e-app* :argv argv)))

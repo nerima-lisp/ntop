@@ -12,6 +12,25 @@ terminated, and limits the SBCL package check to 60 seconds.
 The macOS test, executable, and coverage commands are documented in
 [Getting started](getting-started.md).
 
+## Route harness
+
+Run one subcase from the repository root with the project's pinned ASDF
+dependencies available. Put `btm` on `PATH` and build `./ntop` first. Repeat
+`--route` to select multiple routes; `--subcase` uses the full route ID and
+three-digit subcase index:
+
+```sh
+sbcl --noinform --non-interactive \
+  --eval '(require :asdf)' \
+  --eval '(asdf:load-asd "ntop.asd")' \
+  --eval '(asdf:load-system "ntop/e2e")' \
+  --eval '
+    (ntop.e2e:main
+      (list "ntop-e2e" "routes" "--mode" "ntop"
+            "--btm" "btm" "--ntop" "./ntop"
+            "--route" "key-15" "--subcase" "key-15-002"))'
+```
+
 ## Mutation testing
 
 Run a focused measurement from the repository root. Each mutant changes one

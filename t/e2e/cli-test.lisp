@@ -64,24 +64,18 @@
                                                         (append))))))))
                    (cl-weave:it-each
                     ((:goldens ("ntop-e2e" "goldens")
-                               (:output :btm :rate :timeout-seconds)
-                               ("t/e2e/goldens" "btm" 700 30))
-                     (:compare ("ntop-e2e" "compare" "left" "right")
-                               (:scope)
-                               ("condition-a"))
-                     (:measure ("ntop-e2e" "measure" "--measurement" "n1")
-                               (:measurement :target
-                                             :rows
-                                             :columns
-                                             :rate
-                                             :runs
-                                             :duration-seconds
-                                             :timeout-seconds)
-                               ("n1" "btm" 48 160 700 1 60 90))
-                     (:export-parity ("ntop-e2e" "export-parity")
-                                     (:output)
-                                     ("-"))
-                     (:n7 ("ntop-e2e" "n7") (:root) ("t/e2e/goldens")))
+                     (:output :btm :rate :timeout-seconds)
+                     ("t/e2e/goldens" "btm" 700 30))
+            (:compare ("ntop-e2e" "compare" "left" "right")
+                      (:scope)
+                      ("condition-a"))
+            (:measure ("ntop-e2e" "measure" "--measurement" "n1")
+                      (:measurement :target :rows :columns :rate :runs
+                       :duration-seconds :timeout-seconds)
+                      ("n1" "btm" 48 160 700 1 60 90))
+            (:export-parity ("ntop-e2e" "export-parity") (:output) ("-"))
+            (:n7 ("ntop-e2e" "n7") (:root) ("t/e2e/goldens"))
+            (:routes ("ntop-e2e" "routes") (:route :subcase) (nil nil)))
                     "uses declared defaults for the ~A command"
                     (command argv option-keys expected-values)
                     (let* ((invocation
@@ -150,4 +144,39 @@
                       (cl-weave:expect
                        (typep condition 'cl-cli:cli-invalid-option-value)
                        :to-be
-                       t))))
+                       t)))
+                   (cl-weave:it
+ "accepts repeated route filters and exits nonzero on parse errors"
+ (let* ((project-asd
+          (namestring
+           (merge-pathnames
+            "ntop.asd"
+            (asdf:system-source-directory "ntop/e2e"))))
+        (invocation
+          (cl-cli:parse-argv
+           ntop.e2e::*e2e-app*
+           (list "ntop-e2e" "routes"
+                 "--route" "key-15"
+                 "--route" "key-10"
+                 "--subcase" "key-15-002")))
+        (process
+          (sb-ext:run-program
+           "sbcl"
+           (list "--noinform"
+                 "--disable-debugger"
+                 "--eval" "(require :asdf)"
+                 "--load" project-asd
+                 "--eval" "(asdf:load-system :ntop/e2e)"
+                 "--eval"
+                 (format nil
+                         "(ntop.e2e:main (list ~s ~s ~s))"
+                         "ntop-e2e" "routes" "--unknown"))
+           :search t
+           :wait t
+           :output nil
+           :error nil)))
+   (cl-weave:expect (cl-cli:option-value invocation :route)
+                    :to-equal (list "key-15" "key-10"))
+   (cl-weave:expect (cl-cli:option-value invocation :subcase)
+                    :to-equal "key-15-002")
+   (cl-weave:expect (sb-ext:process-exit-code process) :to-be 64))))
