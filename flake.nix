@@ -88,7 +88,8 @@
           let
             pathName = builtins.baseNameOf (toString path);
           in
-          (type == "directory"
+          (
+            type == "directory"
             && !(builtins.elem pathName [
               ".git"
               ".jj"
@@ -98,7 +99,8 @@
               "build"
               "coverage"
               "result"
-            ]))
+            ])
+          )
           || type == "regular";
       };
 
@@ -211,9 +213,7 @@
       };
 
       lispDependencies =
-        ctx:
-        with siblingsFor ctx;
-        [
+        ctx: with siblingsFor ctx; [
           clTtyKit
           clCli
           clRegexKit
@@ -223,10 +223,7 @@
           clParserKit
         ];
 
-      lispCheckDependencies =
-        ctx:
-        with siblingsFor ctx;
-        [ clWeave ];
+      lispCheckDependencies = ctx: with siblingsFor ctx; [ clWeave ];
 
       extraOutputs =
         ctx:
@@ -245,18 +242,21 @@
             entryPoint = "scripts/dependency-depth.lisp";
             timeoutSeconds = 120;
           };
-          checks.local = pkgs.runCommand "ntop-local-check" {
-            nativeBuildInputs = [
-              pkgs.coreutils
-              pkgs.python3
-              pkgs.sbcl
-            ];
-          } ''
-            cd ${sourceRoot}
-            timeout --signal=TERM --kill-after=15s 300s \
-              python3 scripts/check-local.py --root ${sourceRoot} --sbcl ${pkgs.sbcl}/bin/sbcl
-            touch "$out"
-          '';
+          checks.local =
+            pkgs.runCommand "ntop-local-check"
+              {
+                nativeBuildInputs = [
+                  pkgs.coreutils
+                  pkgs.python3
+                  pkgs.sbcl
+                ];
+              }
+              ''
+                cd ${sourceRoot}
+                timeout --signal=TERM --kill-after=15s 300s \
+                  python3 scripts/check-local.py --root ${sourceRoot} --sbcl ${pkgs.sbcl}/bin/sbcl
+                touch "$out"
+              '';
         };
     };
 }
