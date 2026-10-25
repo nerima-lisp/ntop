@@ -53,8 +53,9 @@ def writer_child(arguments):
 
     signal.signal(signal.SIGTERM, request_stop)
     ready_path.write_text("ready\n")
-    block = b"x" * 100_000
-    period_ns = int(len(block) * 1_000_000_000 / rate)
+    chunk_bytes = 100_000
+    block = b"x" * chunk_bytes
+    period_ns = int(chunk_bytes * 1_000_000_000 / rate)
     started = time.monotonic_ns()
     due = started
     written = 0
@@ -66,8 +67,8 @@ def writer_child(arguments):
             if not running:
                 break
             write_all(fd, block)
-            written += len(block)
-            due += period_ns
+            written += chunk_bytes
+            due = time.monotonic_ns() + period_ns
         ended = time.monotonic_ns()
         os.fsync(fd)
     finally:
@@ -298,6 +299,9 @@ def collect_samples(ntop_child, writer, raw_dir, started):
     last_signature = None
     pid_filter_sent = False
     deadline = started + MAX_SECONDS
+    writer_data_path = raw_dir / "writer.data"
+    last_writer_observation_at = time.monotonic()
+    last_writer_bytes = writer_data_path.stat().st_size
     with (raw_dir / "ntop.ansi").open("wb") as raw:
         while len(samples) < SAMPLE_LIMIT and time.monotonic() < deadline:
             if ntop_child.poll() is not None:
@@ -337,6 +341,21 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                     and now - last_sample_at < RATE_MS / 1000):
                 continue
             last_sample_at = now
+            writer_data_bytes = writer_data_path.stat().st_size
+            writer_interval_bytes = writer_data_bytes - last_writer_bytes
+            writer_interval_seconds = now - last_writer_observation_at
+            writer_interval_rate = (
+                writer_interval_bytes / writer_interval_seconds
+                if writer_interval_seconds > 0 else None
+            )
+            last_writer_bytes = writer_data_bytes
+            last_writer_observation_at = now
+            writer_evidence = {
+                "writer_data_bytes": writer_data_bytes,
+                "writer_interval_bytes": writer_interval_bytes,
+                "writer_interval_seconds": writer_interval_seconds,
+                "writer_interval_bytes_per_second": writer_interval_rate,
+            }
             grid = TerminalGrid(ROWS, COLUMNS)
             if not grid.feed(bytes(transcript)):
                 observations.append({
@@ -345,6 +364,7 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                     "reason": "ansi-grid-invalid",
                     "writer_pid": writer.pid,
                     "terminal_frame_repeated": None,
+                    **writer_evidence,
                     "load_average": load_average(),
                 })
                 continue
@@ -366,6 +386,7 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                 "w_s_text": detail.get("text"),
                 "w_s_bytes_per_second": rate,
                 "reason": reason,
+                **writer_evidence,
                 "load_average": load_average(),
             }
             observations.append(observation)
