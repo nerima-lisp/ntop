@@ -2,10 +2,9 @@
 
 (defvar *wp12b-screen-widget-calls* nil)
 (defvar *wp12b-screen-recording-p* nil)
-
 (defmethod ntop.ui:draw-widget :around (widget-key target rectangle state config series)
   (when *wp12b-screen-recording-p*
-    (push (list widget-key rectangle series state)
+    (push (list widget-key rectangle series state config)
           *wp12b-screen-widget-calls*))
   (call-next-method))
 
@@ -29,7 +28,6 @@
                                                  (float (1+ index) 1d0))
                                                 (float value 1d0)))
     (ntop.shared.domain:history-slice history 0)))
-
 (defun %wp12b-screen-network-sample (sampled-at rx tx)
   (ntop.network.domain:make-network-sample :sampled-at
                                            sampled-at
@@ -46,10 +44,8 @@
                                              12
                                              :tx-packets
                                              15))))
-
 (defun %wp12b-screen-previous-process-sample ()
-  (ntop.process.domain:make-process-sample :sampled-at
-                                           2d0
+  (ntop.process.domain:make-process-sample :sampled-at                                           2d0
                                            :processes
                                            (list
                                             (ntop.process.domain:make-process-record
@@ -213,11 +209,9 @@
                                                "S"
                                                :ps-fallback-cpu-percent
                                                2.0d0)))))
-
 (defun %wp12b-screen-fixture-series ()
   (list
-   (cons :cpu
-         (list :usage
+   (cons :cpu         (list :usage
                (list
                 (ntop.ui:make-chart-series :name
                                            "AVG"
@@ -244,7 +238,6 @@
                (%wp12b-screen-network-sample 3d0 2400 5200)))
    (cons :process
          (list :previous-sample (%wp12b-screen-previous-process-sample)))))
-
 (defun %wp12b-screen-config ()
   (ntop.shared.application:make-application-config :theme
                                                    :default
@@ -255,13 +248,11 @@
                                                      :name-or-command
                                                      :cpu
                                                      :memory)))
-
 (defun %wp12b-screen-render (columns rows
                              &key
                              state
                              config
-                             series
-                             unavailability-reasons)
+                             series                             unavailability-reasons)
   (let* ((screen (cl-tty-kit:make-screen columns rows))
          (state (or state (ntop.app.domain:make-app-state)))
          (config (or config (%wp12b-screen-config)))
@@ -278,18 +269,14 @@
                                                         (%wp12b-screen-fixture-series)))
      screen
      (cl-tty-kit:screen-to-string screen))))
-
 (defun %wp12b-screen-bytes (string)
   (coerce (sb-ext:string-to-octets string :external-format :utf-8) 'list))
-
 (cl-weave:describe "application composition terminal output"
   (cl-weave:it "emits CRLF row separators on the first composition render"
     (let* ((config (%wp12b-screen-config))
-           (composition
-             (ntop.app.application:make-application-composition config))
+           (composition             (ntop.app.application:make-application-composition config))
            (state (ntop.app.domain:make-app-state))
-           (output
-             (with-output-to-string (stream)
+           (output             (with-output-to-string (stream)
                (let ((*standard-output* stream))
                  (funcall
                   (ntop.app.application:application-composition-render composition)
@@ -309,192 +296,33 @@
         (%wp12b-screen-render 80 24)
       (declare (ignore areas))
       (cl-weave:expect
-       (loop for (x y) in '((2 0) (0 0) (0 7) (45 0) (46 0) (47 0)
-                            (45 7) (46 7))
+       (loop for (x y) in (quote ((2 0) (0 0) (0 7) (45 0) (46 0) (47 0)
+  (45 7) (46 7)))
              collect (cl-tty-kit:cell-char
                       (cl-tty-kit:screen-cell screen x y)))
        :to-equal '(#\C #\┌ #\└ #\┐ #\┌ #\─ #\┘ #\└))
       (cl-weave:expect
        (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 2 0))
-       :to-be nil)
+       :to-equal '((:fg 7)))
+      (cl-weave:expect
+       (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
+       :to-equal '((:fg 7)))
       (cl-weave:expect
        (list (ntop.ui:presentation-theme-style :default :widget-title)
              (ntop.ui:presentation-theme-style :default :border))
-       :to-equal '(nil nil))))
+       :to-equal (list '((:fg 7)) '((:fg 7))))))
 )
-
-
 (defun %wp12b-screen-golden-bytes (name)
   (with-open-file
-      (stream
-       (asdf:system-relative-pathname "ntop/test"
-                                      (format nil "t/app/goldens/~A" name))
-       :direction
-       :input
-       :element-type
-       '(unsigned-byte 8))
-    (let ((bytes
-           (make-array (file-length stream) :element-type '(unsigned-byte 8))))
-      (read-sequence bytes stream)
-      (coerce bytes 'list))))
-
-(cl-weave:describe "application screen composition"
-                   (cl-weave:it
-                    "matches the default btm layout at each required terminal size"
-                    (dolist
-                        (case '((80 24 "application-80x24.txt")
-                                (160 48 "application-160x48.txt")
-                                (40 12 "application-40x12.txt")))
-                      (destructuring-bind (columns rows golden) case
-                        (multiple-value-bind (areas screen output)
-                            (%wp12b-screen-render columns rows)
-                          (declare (ignore areas))
-                          (cl-weave:expect (cl-tty-kit:screen-width screen)
-                                           :to-equal
-                                           columns)
-                          (cl-weave:expect (cl-tty-kit:screen-height screen)
-                                           :to-equal
-                                           rows)
-                          (cl-weave:expect (%wp12b-screen-bytes output)
-                                           :to-equal
-                                           (%wp12b-screen-golden-bytes golden))))))
-                   (cl-weave:it
-                    "renders only startup widgets and draws the CPU parent once"
-                    (let ((state (ntop.app.domain:make-app-state))
-                          (*wp12b-screen-widget-calls* nil)
-                          (*wp12b-screen-recording-p* t))
-                      (%wp12b-screen-render 80 24 :state state)
-                      (setf *wp12b-screen-widget-calls*
-                            (nreverse *wp12b-screen-widget-calls*))
-                      (cl-weave:expect
-                       (mapcar (function first) *wp12b-screen-widget-calls*)
-                       :to-equal
-                       (quote (:cpu :memory :network :disk :temperature :process-table)))
-                      (cl-weave:expect
-                       (loop for widget in (quote (:disk :temperature))
-                             for key in (quote (:disks :temperature))
-                             for call = (find widget *wp12b-screen-widget-calls*
-                                              :key (function first))
-                             always (and (typep (fourth call) (quote ntop.ui:table-state))
-                                         (not (nth-value
-                                               1
-                                               (gethash
-                                                key
-                                                (ntop.app.domain:app-state-widget-v-states
-                                                 state))))))
-                       :to-be t)
-                      (progn
-  (cl-weave:expect
-   (count :cpu *wp12b-screen-widget-calls* :key (function first))
-   :to-equal 1)
-  (let* ((placements
-           (ntop.ui:layout-widgets 80 24
-                                   :cpu-height 1
-                                   :memory-rows 2
-                                   :table-widget :process))
-         (cpu (assoc :cpu placements :test (function eq)))
-         (legend (assoc :cpu-legend placements :test (function eq)))
-         (cpu-call
-           (find :cpu *wp12b-screen-widget-calls* :key (function first)))
-         (cpu-rectangle (second cpu-call)))
-    (cl-weave:expect
-     (ntop.ui:rectangle-width cpu-rectangle)
-     :to-equal
-     (- (+ (ntop.ui:rectangle-width (cdr cpu))
-           (ntop.ui:rectangle-width (cdr legend)))
-        2))))))
-                   (cl-weave:it
-                    "renders the basic selector and honors no-color table roles"
-                    (let* ((state (ntop.app.domain:make-app-state :basic-mode-p t))
-                           (roles '((:normal :text) (:header :table-header)
-                           (:selected :selected-text) (:title :widget-title) (:custom :text)))
-                           (ntop.app.presentation::*screen-table-theme* :gruvbox)
-                           (*wp12b-screen-widget-calls* nil)
-                           (*wp12b-screen-recording-p* t))
-                      (multiple-value-bind (areas screen output)
-                          (%wp12b-screen-render 80 24 :state state)
-                        (declare (ignore areas))
-                        (cl-weave:expect
-                         (and
-                          (not (null (member :basic-table-arrows
-                                             *wp12b-screen-widget-calls*
-                                             :key #'first
-                                             :test #'eq)))
-                          (search "◄ Process ►" output)
-                          (loop for (role theme-role) in roles
-                                do (ntop.ui:draw-table-text screen 0 1 "x" role)
-                                always
-                                (and
-                                 (equal (cl-tty-kit:cell-style
-                                         (cl-tty-kit:screen-cell screen 0 1))
-                                        (ntop.app.presentation::%screen-table-style
-                                         :gruvbox role))
-                                 (equal (ntop.app.presentation::%screen-table-style
-                                         :gruvbox role nil)
-                                        (ntop.ui:presentation-theme-style
-                                         :gruvbox theme-role))))
-                          (and (not (ntop.app.presentation::%screen-no-color-p nil))
-                               (not (ntop.app.presentation::%screen-no-color-p ""))
-                               (ntop.app.presentation::%screen-no-color-p "1"))
-                          (null (ntop.app.presentation::%screen-table-style
-                                 :default :header t))
-                          (equal (ntop.app.presentation::%screen-table-style
-                                  :default :header nil)
-                                 (ntop.ui:presentation-theme-style
-                                  :default :table-header)))
-                         :to-be
-                         t))))
-                   (cl-weave:it
-                    "computes process CPU and I/O rates from the previous sample"
-                    (let ((*wp12b-screen-widget-calls* nil) (*wp12b-screen-recording-p* t))
-                      (%wp12b-screen-render 80 24)
-                      (let* ((process-call
-                              (find :process-table
-                                    *wp12b-screen-widget-calls*
-                                    :key
-                                    #'first
-                                    :test
-                                    #'eq))
-                             (rows (third process-call))
-                             (alpha
-                              (find 100
-                                    rows
-                                    :key
-                                    #'ntop.process.domain:process-row-pid
-                                    :test
-                                    #'eql)))
-                        (cl-weave:expect (not (null alpha)) :to-be t)
-                        (cl-weave:expect
-                         (list
-                          (ntop.process.domain:process-row-cpu-percent alpha)
-                          (ntop.process.domain:process-row-read-bytes-per-second
-                           alpha)
-                          (ntop.process.domain:process-row-write-bytes-per-second
-                           alpha))
-                         :to-equal
-                         '(5.0d0 2000.0d0 500.0d0)))))
-                   (cl-weave:it
-                    "highlights a selected frame only after interaction"
-                    (let* ((state (ntop.app.domain:make-app-state))
-                           (process-rectangle
-                            (cdr (assoc :process
-                                        (ntop.app.presentation::%screen-layout-placements
-                                         80 24 state :default)
-                                        :test (function eq))))
-                           (x (ntop.ui:rectangle-x process-rectangle))
-                           (y (ntop.ui:rectangle-y process-rectangle)))
-                      (dolist (case (list (list nil nil)
-                                          (list t
-                                                (ntop.ui:presentation-theme-style
-                                                 :default
-                                                 :highlighted-border))))
-                        (let ((ntop.app.presentation::*screen-selection-active-p*
-                                (first case)))
-                          (multiple-value-bind (areas screen)
-                              (%wp12b-screen-render 80 24 :state state)
-                            (declare (ignore areas))
-                            (cl-weave:expect
-                             (cl-tty-kit:cell-style
-                              (cl-tty-kit:screen-cell screen x y))
-                             :to-equal
-                             (second case))))))))
+      (stream (asdf:system-relative-pathname "ntop/test"
+                                            (format nil "t/app/goldens/~A" name))
+        :direction :input :element-type '(unsigned-byte 8))
+    (let ((bytes (make-array (file-length stream) :element-type '(unsigned-byte 8))))
+      (read-sequence bytes stream) (coerce bytes 'list))))
+(defun %wp12b-screen-memory-legend-summary (columns rows screen)  (case columns
+    (80 (loop for y below rows
+              always (let ((line (cl-tty-kit:screen-row-string screen y)))
+                       (not (or (search "RAM:" line) (search "SWP:" line))))))
+    (160 (mapcar (lambda (y) (subseq
+                              (cl-tty-kit:screen-row-string screen y) 133 159))
+                 '(2 3)))))

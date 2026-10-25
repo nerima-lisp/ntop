@@ -74,7 +74,12 @@
          (placement
            (assoc :process
                   (ntop.app.presentation::%screen-layout-placements
-                   columns rows state mode)
+                   columns
+                   rows
+                   state
+                   mode
+                   (application-composition-latest-snapshot composition)
+                   config)
                   :test (function eq)))
          (outer-height
            (if placement
@@ -123,7 +128,13 @@
     (when
         (and (eq (ntop.app.domain:app-action-kind action) :navigation)
              (null (ntop.app.domain:app-state-active-dialog state))
-             (eq (ntop.app.domain:app-state-selected-widget state) :process)
+             (eq (if (eq (ntop.app.presentation::%screen-layout-mode
+                          state
+                          (application-composition-config composition))
+                         :basic)
+                     (ntop.app.presentation::%screen-basic-table-selection state)
+                     (ntop.app.domain:app-state-selected-widget state))
+                 :process)
              (member value
                      (quote (:previous-row :next-row :first-row :last-row
                               :page-up :page-down :half-page-up

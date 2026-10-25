@@ -6,17 +6,16 @@
 
 (define-layout *default-layout*
                (:split :vertical
-                       (((:fill 2)
+                       (((:fill 1)
                          (:split :horizontal
                                  (((:fill 2) (:widget :cpu-container))
                                   ((:fill 1) (:widget :memory)))))
-                        ((:fill 2)
+                        ((:fill 1)
                          (:split :horizontal
                                  (((:fill 2) (:widget :network))
                                   ((:fill 2) (:widget :disks))
                                   ((:fill 1) (:widget :temperature)))))
-                        ((:fill 2)
-                         (:split :horizontal (((:fill 2) (:widget :process))))))))
+                        ((:fill 1) (:widget :process)))))
 
 (define-layout *basic-layout*
                (:split :vertical
@@ -68,15 +67,13 @@
              else
                collect placement))
       (:basic
-        (ensure-layout-dimensions cpu-height memory-rows)
-        (layout-node *basic-layout*
-                     rectangle
-                     (list :cpu-height
-                           cpu-height
-                           :memory-rows
-                           memory-rows
-                           :table-widget
-                           table-widget)))
+       (ensure-layout-dimensions 0 cpu-height)
+       (ensure-layout-dimensions 0 memory-rows)
+       (layout-node *basic-layout*
+                    rectangle
+                    (list :cpu-height cpu-height
+                          :memory-rows memory-rows
+                          :table-widget table-widget)))
       (:expanded
        (if selected-widget
            (layout-node *expanded-layout*

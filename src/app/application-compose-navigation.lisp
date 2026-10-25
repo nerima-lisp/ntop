@@ -75,11 +75,23 @@
       state))
 
   (defun %apply-layout-navigation (state action config columns rows)
-    (when
-        (and (null (ntop.app.domain:app-state-active-dialog state))
-             (not (ntop.app.domain:app-state-basic-mode-p state))
-             (not (ntop.shared.application:application-config-basic-p config))
-             (eq (ntop.app.domain:app-action-kind action) :navigation))
-      (let ((direction (ntop.app.domain:app-action-value action)))
-        (when (member direction (quote (:left :right :up :down)) :test (function eq))
-          (%select-layout-neighbor state config columns rows direction)))))
+    (when (and (null (ntop.app.domain:app-state-active-dialog state))
+               (eq (ntop.app.domain:app-action-kind action) :navigation))
+      (let* ((direction (ntop.app.domain:app-action-value action))
+             (basic-p
+               (or (ntop.app.domain:app-state-basic-mode-p state)
+                   (ntop.shared.application:application-config-basic-p config))))
+        (if basic-p
+            (when (member direction '(:left :right) :test (function eq))
+              (let* ((tables '(:disks :process :temperature))
+                     (selection
+                       (ntop.app.presentation::%screen-basic-table-selection state))
+                     (index (position selection tables :test (function eq)))
+                     (offset (if (eq direction :left) -1 1)))
+                (setf (gethash :basic-table-selection
+                               (ntop.app.domain:app-state-widget-v-states state))
+                      (nth (mod (+ index offset) (length tables)) tables))))
+            (when (member direction '(:left :right :up :down)
+                           :test (function eq))
+              (%select-layout-neighbor state config columns rows direction)))))
+    state)

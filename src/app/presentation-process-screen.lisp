@@ -74,6 +74,8 @@
              :focused-p selected-p
              :show-current-entry-when-unfocused-p t
              :show-scroll-position-p show-scroll-position-p
+             :basic-p
+             (ntop.shared.application:application-config-basic-p config)
              :column-ids column-ids))))
 
 (defun %screen-process-rows (snapshot state config sort-state process-series

@@ -51,11 +51,11 @@
             state config 80 24))
           (expected
            (quote ((:cpu 0 0 53 8)
-                   (:memory 53 0 27 8)
-                   (:network 0 8 32 8)
-                   (:disks 32 8 32 8)
-                   (:temperature 64 8 16 8)
-                   (:process 0 16 80 8)))))
+  (:memory 53 0 27 8)
+  (:network 0 8 32 8)
+  (:disks 32 8 32 8)
+  (:temperature 64 8 16 8)
+  (:process 0 16 80 8)))))
      (flet ((layout-values (placements)
               (mapcar
                (lambda (entry)
