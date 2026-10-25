@@ -208,6 +208,15 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
     complete_panel_seen = complete_panel_complete = child_done = False
     application_rendered = cli_error_detected = False
     stable_snapshot_count = application_snapshot_count = 0
+    application_signature_poll_limit = 128
+    application_signature_poll_count = application_signature_polls_dropped = 0
+    application_signature_polls: list[dict[str, Any]] = []
+    application_quiet_gate_check_count = application_quiet_gate_wait_count = 0
+    application_decoder_pending_count = 0
+    application_max_quiet_duration_seconds = 0.0
+    application_current_quiet_duration_seconds = None
+    application_final_stable_duration_seconds = 0.0
+    application_diagnostic_observed_elapsed_seconds = 0.0
     last_output_at = None
     layout_stable_seconds = application_render_stable_seconds = 0.0
     try:
@@ -255,25 +264,78 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
                 if child_done:
                     break
                 now = time.monotonic()
-                if (mode == "d11" and last_output_at is not None
-                    and now-last_output_at >= 0.2 and not decoder.getstate()[0]):
-                    text = screen_text(screen)
-                    cli_error_detected = (
-                        cli_error_detected or cli_error_output_detected(text)
+                if mode == "d11" and last_output_at is not None:
+                    quiet_duration = max(0.0, now-last_output_at)
+                    application_quiet_gate_check_count += 1
+                    application_current_quiet_duration_seconds = quiet_duration
+                    application_max_quiet_duration_seconds = max(
+                        application_max_quiet_duration_seconds, quiet_duration
                     )
-                    app_snapshot = (
-                        None if cli_error_detected else application_render_signature(text)
-                    )
-                    if app_snapshot:
-                        if app_snapshot == application_layout_signature:
-                            application_snapshot_count += 1
-                        else:
-                            application_layout_signature = app_snapshot
-                            application_stable_since = now
-                            application_snapshot_count = 1
+                    if quiet_duration < 0.2:
+                        application_quiet_gate_wait_count += 1
+                    elif decoder.getstate()[0]:
+                        application_decoder_pending_count += 1
                     else:
-                        application_layout_signature = application_stable_since = None
-                        application_snapshot_count = 0
+                        text = screen_text(screen)
+                        cli_error_detected = (
+                            cli_error_detected or cli_error_output_detected(text)
+                        )
+                        app_snapshot = (
+                            None if cli_error_detected
+                            else application_render_signature(text)
+                        )
+                        previous_signature = application_layout_signature
+                        if app_snapshot:
+                            if app_snapshot == previous_signature:
+                                application_snapshot_count += 1
+                                reset_reason = "same-signature"
+                            else:
+                                application_layout_signature = app_snapshot
+                                application_stable_since = now
+                                application_snapshot_count = 1
+                                reset_reason = (
+                                    "signature-changed"
+                                    if previous_signature is not None
+                                    else "initial-signature"
+                                )
+                        else:
+                            application_layout_signature = None
+                            application_stable_since = None
+                            application_snapshot_count = 0
+                            reset_reason = (
+                                "cli-error" if cli_error_detected
+                                else "invalid-signature"
+                            )
+                        application_signature_poll_count += 1
+                        stable_duration = (
+                            max(0.0, now-application_stable_since)
+                            if app_snapshot and application_stable_since is not None
+                            else 0.0
+                        )
+                        if len(application_signature_polls) < application_signature_poll_limit:
+                            application_signature_polls.append({
+                                "poll_index": application_signature_poll_count,
+                                "timestamp_utc": utc_now(),
+                                "elapsed_seconds": now-started,
+                                "signature_valid": app_snapshot is not None,
+                                "signature_changed": (
+                                    app_snapshot is not None
+                                    and previous_signature is not None
+                                    and app_snapshot != previous_signature
+                                ),
+                                "reset_reason": reset_reason,
+                                "quiet_duration_seconds": quiet_duration,
+                                "stable_duration_seconds": stable_duration,
+                                "stable_seconds_required": 1.2,
+                                "stable_seconds_remaining": max(
+                                    0.0, 1.2-stable_duration
+                                ),
+                                "snapshot_count": application_snapshot_count,
+                                "required_snapshot_count": 2,
+                                "cli_error_output_detected": cli_error_detected,
+                            })
+                        else:
+                            application_signature_polls_dropped += 1
                 if (mode == "d11" and stable_since is not None and stable_snapshot_count >= 2
                     and now-stable_since >= 1.2 and last_output_at is not None
                     and now-last_output_at >= 0.2 and not decoder.getstate()[0]):
@@ -287,6 +349,21 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
                     application_render_stable_seconds = now-application_stable_since
                     break
     finally:
+        observed_at = time.monotonic()
+        application_diagnostic_observed_elapsed_seconds = observed_at-started
+        if mode == "d11":
+            if last_output_at is not None:
+                application_current_quiet_duration_seconds = max(
+                    0.0, observed_at-last_output_at
+                )
+                application_max_quiet_duration_seconds = max(
+                    application_max_quiet_duration_seconds,
+                    application_current_quiet_duration_seconds,
+                )
+            if application_stable_since is not None:
+                application_final_stable_duration_seconds = max(
+                    0.0, observed_at-application_stable_since
+                )
         tail = decoder.decode(b"", final=True)
         if tail:
             stream.feed(tail)
@@ -301,20 +378,47 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
     )
     application_rendered = application_rendered and not cli_error_detected
     display_path.write_text(text + "\n")
-    return {"argv": argv, "pid": pid, "started_utc": started_utc,
-            "started_monotonic": started, "elapsed_seconds": time.monotonic()-started,
-            "first_displayed_avg": first_avg, "complete_panel_seen": complete_panel_seen,
-            "complete_panel_complete": complete_panel_complete,
-            "process_panel_snapshot": panel_snapshot,
-            "layout_snapshot_count": stable_snapshot_count,
-            "layout_stable_seconds": layout_stable_seconds,
-            "application_rendered": application_rendered,
-            "cli_error_output_detected": cli_error_detected,
-            "application_render_snapshot_count": application_snapshot_count,
-            "application_render_stable_seconds": application_render_stable_seconds,
-            "cleanup": cleanup,
-            "screen_dimensions": {"rows": HEIGHT, "columns": WIDTH},
-            "raw_path": str(raw_path), "display_path": str(display_path)}
+    result = {"argv": argv, "pid": pid, "started_utc": started_utc,
+              "started_monotonic": started, "elapsed_seconds": time.monotonic()-started,
+              "first_displayed_avg": first_avg, "complete_panel_seen": complete_panel_seen,
+              "complete_panel_complete": complete_panel_complete,
+              "process_panel_snapshot": panel_snapshot,
+              "layout_snapshot_count": stable_snapshot_count,
+              "layout_stable_seconds": layout_stable_seconds,
+              "application_rendered": application_rendered,
+              "cli_error_output_detected": cli_error_detected,
+              "application_render_snapshot_count": application_snapshot_count,
+              "application_render_stable_seconds": application_render_stable_seconds,
+              "cleanup": cleanup,
+              "screen_dimensions": {"rows": HEIGHT, "columns": WIDTH},
+              "raw_path": str(raw_path), "display_path": str(display_path)}
+    if mode == "d11":
+        result["application_signature_diagnostics"] = {
+            "poll_count": application_signature_poll_count,
+            "polls": application_signature_polls,
+            "polls_dropped": application_signature_polls_dropped,
+            "poll_limit": application_signature_poll_limit,
+            "quiet_gate_check_count": application_quiet_gate_check_count,
+            "quiet_gate_wait_count": application_quiet_gate_wait_count,
+            "decoder_pending_count": application_decoder_pending_count,
+            "maximum_quiet_duration_seconds": (
+                application_max_quiet_duration_seconds
+            ),
+            "final_quiet_duration_seconds": (
+                application_current_quiet_duration_seconds
+            ),
+            "final_stable_duration_seconds": (
+                application_final_stable_duration_seconds
+            ),
+            "measurement_loop_elapsed_seconds": (
+                application_diagnostic_observed_elapsed_seconds
+            ),
+            "quiet_gate_seconds_required": 0.2,
+            "stable_seconds_required": 1.2,
+            "required_snapshot_count": 2,
+            "deadline_seconds": 8.0,
+        }
+    return result
 
 
 def stop_workers(workers: list[subprocess.Popen[bytes]]) -> dict[str, Any]:
