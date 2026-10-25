@@ -67,15 +67,20 @@
             (list value))))
 
 (defun cli-test-invalid-p (arguments)
-  (handler-case (progn
-                  (cli-test-parse arguments)
-                  nil)
+  (handler-case
+      (multiple-value-bind (config status)
+          (ntop.cli::%config-from-invocation (cli-test-parse arguments))
+        (declare (ignore config))
+        (/= status 0))
     (cl-cli:cli-usage-error ()
       t)))
 
 (defun cli-test-captured-run (arguments)
   (let* ((calls 0)
          (captured nil)
+         (status nil)
+         (stdout nil)
+         (stderr nil)
          (ntop.cli::*application-runner*
           (lambda (config collectors clock render
                    &key on-action on-snapshot history-stores)
@@ -83,9 +88,15 @@
                              on-snapshot history-stores))
             (incf calls)
             (setf captured config))))
-    (values (ntop.cli::%run-cli (cons "ntop" arguments))
-            calls
-            captured)))
+    (setf stdout
+          (with-output-to-string (out)
+            (setf stderr
+                  (with-output-to-string (err)
+                    (let ((*standard-output* out)
+                          (*error-output* err))
+                      (setf status
+                            (ntop.cli::%run-cli (cons "ntop" arguments))))))))
+    (values status calls captured stdout stderr)))
 
 (defun cli-test-accessor (initarg)
   (intern
@@ -199,12 +210,14 @@
                            (dolist (spelling spellings)
                              (dolist
                                  (value
-                                  (list "abc"
-                                        (cond
-                                          ((string= name "rate") "250ms")
-                                          ((string= name "default_time_value") "29999ms")
-                                          ((string= name "retention") "59999ms")
-                                          ((string= name "time_delta") "999ms"))))
+                                  (append
+                                   (list "abc")
+                                   (unless (string= name "retention")
+                                     (list
+                                      (cond
+                                        ((string= name "rate") "249ms")
+                                        ((string= name "default_time_value") "29999ms")
+                                        ((string= name "time_delta") "999ms"))))))
                                (cl-weave:expect
                                 (multiple-value-bind (config status)
                                     (ntop.cli::%config-from-invocation
@@ -212,9 +225,7 @@
                                   (declare (ignore config))
                                   status)
                                 :to-equal
-                                (if (string= name "rate")
-                                    1
-                                    2)))))
+                                1))))
                           (t
                            (let ((value
                                   (cond
@@ -376,80 +387,56 @@
                        :to-equal
                        :average)))
                    (cl-weave:it "returns required status codes for invalid input"
-                                (cl-weave:expect
-                                 (first
-                                  (multiple-value-list
-                                   (cli-test-captured-run '("--unknown"))))
-                                 :to-equal
-                                 2)
-                                (cl-weave:expect
-                                 (first
-                                  (multiple-value-list
-                                   (cli-test-captured-run
-                                    '("--config_location" "/tmp/config"))))
-                                 :to-equal
-                                 2)
-                                (cl-weave:expect
-                                 (first
-                                  (multiple-value-list
-                                   (cli-test-captured-run '("--theme" "invalid"))))
-                                 :to-equal
-                                 2)
-                                (dolist (entry (cli-test-flags))
-                                  (when
-                                      (string=
-                                       (ntop.app.domain:parity-flag-value-type entry)
-                                       "duration")
-                                    (let ((name
-                                           (ntop.app.domain:parity-flag-snake-case entry))
-                                          (expected
-                                           (if (string=
-                                                (ntop.app.domain:parity-flag-snake-case
-                                                 entry)
-                                                "rate")
-                                               1
-                                               2)))
-                                      (cl-weave:expect
-                                       (multiple-value-bind (config status)
-                                           (ntop.cli::%config-from-invocation
-                                            (cli-test-parse
-                                             (list (concatenate 'string "--" name) "abc")))
-                                         (declare (ignore config))
-                                         status)
-                                       :to-equal
-                                       expected))))
-                                (cl-weave:expect
-                                 (multiple-value-bind (config status)
-                                     (ntop.cli::%config-from-invocation
-                                      (cli-test-parse '("--rate" "100")))
-                                   (declare (ignore config))
-                                   status)
-                                 :to-equal
-                                 1)
-                                (cl-weave:expect
-                                 (multiple-value-bind (config status)
-                                     (ntop.cli::%config-from-invocation
-                                      (cli-test-parse '("--rate" "250")))
-                                   (declare (ignore config))
-                                   status)
-                                 :to-equal
-                                 1)
-                                (cl-weave:expect
-                                 (first
-                                  (multiple-value-list
-                                   (cli-test-captured-run '("--hide_k_threads"))))
-                                 :to-equal
-                                 (if (member :linux *features*)
-                                     0
-                                     2))
-                                (cl-weave:expect
-                                 (multiple-value-bind (config status)
-                                     (ntop.cli::%config-from-invocation
-                                      (cli-test-parse '("--celsius" "--kelvin")))
-                                   (declare (ignore config))
-                                   status)
-                                 :to-equal
-                                 2))
+  (cl-weave:expect
+   (first (multiple-value-list (cli-test-captured-run '("--unknown"))))
+   :to-equal 2)
+  (cl-weave:expect
+   (first (multiple-value-list
+           (cli-test-captured-run '("--config_location" "/tmp/config"))))
+   :to-equal 2)
+  (cl-weave:expect
+   (first (multiple-value-list (cli-test-captured-run '("--theme" "invalid"))))
+   :to-equal 2)
+  (dolist (entry (cli-test-flags))
+    (when (string= (ntop.app.domain:parity-flag-value-type entry) "duration")
+      (let ((name (ntop.app.domain:parity-flag-snake-case entry)))
+        (cl-weave:expect
+         (multiple-value-bind (config status)
+             (ntop.cli::%config-from-invocation
+              (cli-test-parse (list (concatenate 'string "--" name) "abc")))
+           (declare (ignore config))
+           status)
+         :to-equal 1))))
+  (dolist (arguments '(("--process_default_sort" "not-a-column")
+                      ("--rate" "100")))
+    (cl-weave:expect
+     (first (multiple-value-list (cli-test-captured-run arguments)))
+     :to-equal 1))
+  (dolist (arguments '(("--rate" "250")
+                      ("--rate" "250ms")
+                      ("--retention" "59999ms")))
+    (cl-weave:expect
+     (multiple-value-bind (config status)
+         (ntop.cli::%config-from-invocation (cli-test-parse arguments))
+       (declare (ignore config))
+       status)
+     :to-equal 0))
+  (multiple-value-bind (status calls config stdout stderr)
+      (cli-test-captured-run '("--rate" "abc"))
+    (declare (ignore calls config))
+    (cl-weave:expect status :to-equal 1)
+    (cl-weave:expect stdout :to-equal "")
+    (cl-weave:expect (plusp (length stderr)) :to-be t))
+  (cl-weave:expect
+   (first (multiple-value-list (cli-test-captured-run '("--hide_k_threads"))))
+   :to-equal (if (member :linux *features*) 0 2))
+  (cl-weave:expect
+   (multiple-value-bind (config status)
+       (ntop.cli::%config-from-invocation
+        (cli-test-parse '("--celsius" "--kelvin")))
+     (declare (ignore config))
+     status)
+   :to-equal 2))
                    (cl-weave:it
                     "accepts free_arc as a no-op and calls the application runner"
                     (multiple-value-bind (status calls config)

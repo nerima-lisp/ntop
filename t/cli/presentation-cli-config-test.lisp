@@ -74,7 +74,7 @@
                                 (let ((invocation
                                        (cli-test-parse
                                         '("--process_default_sort" "memory"
-                                                                   "--process_memory_as_value"))))
+                                          "--process_memory_as_value"))))
                                   (cl-weave:expect
                                    (ntop.cli::%column-sort-key "memory" invocation)
                                    :to-equal
@@ -90,8 +90,8 @@
                                                                "unknown"
                                                                (cli-test-parse nil))
                                   (cl-weave:expect key :to-equal :process-sort-column)
-                                  (cl-weave:expect value :to-equal :cpu-percent)
-                                  (cl-weave:expect status :to-equal 0)))
+                                  (cl-weave:expect value :to-be nil)
+                                  (cl-weave:expect status :to-equal 1)))
                    (cl-weave:it "maps every widget type and CPU entry value"
                                 (dolist
                                     (case '(("cpu" :cpu) ("mem" :memory)

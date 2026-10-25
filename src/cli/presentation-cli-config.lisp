@@ -201,23 +201,15 @@
   (cond
     ((string= name "default_time_value") 30000)
     ((string= name "rate") 250)
-    ((string= name "retention") 60000)
+    ((string= name "retention") 0)
     ((string= name "time_delta") 1000)))
 
 (defun %duration-config-binding (name value)
   (let* ((milliseconds (%parse-duration-ms value))
          (minimum (%duration-minimum-ms name)))
-    (when
-        (or (null milliseconds)
-            (if (string= name "rate")
-                (<= milliseconds minimum)
-                (< milliseconds minimum)))
+    (when (or (null milliseconds) (< milliseconds minimum))
       (return-from %duration-config-binding
-        (values nil
-                nil
-                (if (string= name "rate")
-                    1
-                    2))))
+        (values nil nil 1)))
     (values
      (cond
        ((string= name "rate") :rate-ms)
@@ -267,7 +259,7 @@
      (values :default-widget-type (%widget-type-value value) 0))
     ((string= name "process_default_sort")
      (let ((sort-key (%column-sort-key value invocation)))
-       (values :process-sort-column (or sort-key :cpu-percent) 0)))
+       (values :process-sort-column sort-key (if sort-key 0 1))))
     ((string= name "default_cpu_entry")
      (values :default-cpu-entry
              (if (member value '("avg" "average") :test #'string-equal)

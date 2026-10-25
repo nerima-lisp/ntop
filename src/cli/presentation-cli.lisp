@@ -29,21 +29,24 @@
   1)
 
 (defun %run-cli (argv)
-  (handler-case (let* ((app (%make-cli-app))
-                       (invocation (cl-cli:parse-argv app argv)))
-                  (case (cl-cli:invocation-action invocation)
-                    (:help
-                      (cl-cli:print-app-help app)
-                      0)
-                    (:version
-                      (format t "ntop 0.1.0~%")
-                      0)
-                    (otherwise
-                     (multiple-value-bind (config status)
-                         (%config-from-invocation invocation)
-                       (if (zerop status)
-                           (%run-application config)
-                           status)))))
+  (handler-case
+      (let* ((app (%make-cli-app))
+             (invocation (cl-cli:parse-argv app argv)))
+        (case (cl-cli:invocation-action invocation)
+          (:help
+           (cl-cli:print-app-help app)
+           0)
+          (:version
+           (format t "ntop 0.1.0~%")
+           0)
+          (otherwise
+           (multiple-value-bind (config status)
+               (%config-from-invocation invocation)
+             (if (zerop status)
+                 (%run-application config)
+                 (progn
+                   (format *error-output* "Error: invalid command-line input.~%")
+                   status))))))
     (cl-cli:cli-usage-error (condition)
       (format *error-output* "~A~%" condition)
       2)))

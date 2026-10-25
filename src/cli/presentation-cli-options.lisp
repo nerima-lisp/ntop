@@ -6,14 +6,6 @@
      (eq (ntop.app.domain:parity-entry-kind entry) :flag))
    (ntop.app.domain:btm-parity-catalog)))
 
-(defun %column-choice-values ()
-  (remove-duplicates
-   (loop for entry in (ntop.app.domain:btm-parity-catalog)
-         when (eq (ntop.app.domain:parity-entry-kind entry) :column)
-           append (ntop.app.domain:parity-column-aliases entry))
-   :test
-   #'string-equal))
-
 (defun %bare-option-name (name)
   (string-left-trim "-" name))
 
@@ -34,10 +26,8 @@
       (%bare-option-name short))))
 
 (defun %option-choices (entry)
-  (let ((type (ntop.app.domain:parity-flag-value-type entry)))
-    (cond
-      ((string= type "enum") (ntop.app.domain:parity-flag-values entry))
-      ((string= type "column-name") (%column-choice-values)))))
+  (when (string= (ntop.app.domain:parity-flag-value-type entry) "enum")
+    (ntop.app.domain:parity-flag-values entry)))
 
 (defun %make-cli-option (entry)
   (let* ((type (ntop.app.domain:parity-flag-value-type entry))
