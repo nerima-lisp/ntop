@@ -56,110 +56,107 @@ The rerun wrote 14 internal process-counter samples to `/tmp/ntop-wp15b-d1-20261
 | 13 | 378483621858000 | 2,633,728 | 18,997,248 | 1.363664 | 1,507,328 | 1,105,351 |
 | 14 | 378485267377000 | 2,879,488 | 20,750,336 | 1.645519 | 1,753,088 | 1,065,371 |
 
-## WP13 CLI parity
+## WP13 CLI invalid-input parity
 
-The focused comparison plan contains 91 unique cases: nine generated valid samples, 74 generated invalid inputs, and 16 explicit checks. Eight cases belong to two groups: seven valid samples and one invalid input also appear as explicit checks (9 + 74 + 16 − 8 = 91). Of the 91 cases, 83 use captured output and eight require terminal interaction: seven ordinary TUI invocations and one default-config creation. The config case gives ntop and btm independent temporary paths, then compares each created file byte-for-byte with the bundled default TOML and checks its mode against `0666 & ~umask`.
+The focused comparison used the built `ntop` executable and btm 0.14.9 on macOS. The 90 unique cases include 74 generated invalid inputs and 15 explicit checks, including seven accepted TUI invocations; some arguments appear in multiple groups.
 
-The recorded focused run used the rebuilt `./ntop` and btm 0.14.9. All 91 cases passed: exit statuses and stdout/stderr presence matched for the 83 captured cases, and no config-file mismatches, unexpected cases, or unobserved statuses remained. Both programs rendered a nonempty screen in all eight terminal-interaction cases. The config case created a 15,946-byte default TOML with SHA-256 `a079bd2f3bab33ca20079e2b159a9ad85cfec32feb4abed5c4f053f83d8b13e9` and matching mode `0600`. The PTY combines terminal output, so stdout/stderr placement is not applicable to TUI-like cases. Captured stream checks compare only whether each stream is nonempty; diagnostic text is not compared.
+All 90 exit statuses were observed and matched, with no unexpected results. For the 83 captured cases, stdout/stderr presence also matched. For the seven accepted TUI cases, both programs rendered visible screen content through the existing PTY helper; the runner waited at least 3.5 seconds after launch, confirmed a nonempty terminal screen, then sent `q` and observed exit status 0. The PTY combines terminal output, so stdout/stderr placement is not applicable to TUI cases. Captured stream checks compare only whether each stream is nonempty; diagnostic text is not compared.
 
-For an existing unreadable but writable file, ntop preserves the existing bytes and starts with built-in defaults. btm may replace such a file while creating its defaults. The added parity case covers a missing path; it does not compare this existing-file side effect.
-
-Build `./ntop` with `python3 scripts/darwin-workflow.py build` and use btm 0.14.9. Then reproduce the comparison with `python3 t/e2e/wp13_cli_parity.py --ntop ./ntop --btm "$(command -v btm)" --output /tmp/wp13-cli`.
-
-`Draw` names which programs rendered a visible screen (`both`, `ntop`, `btm`, or `none`). `Channels` reports whether stdout and stderr presence matched (`match`, `mismatch`, or `n/a`). `Config` reports whether created files matched byte-for-byte and by mode (`match` or `mismatch`), or `n/a` when a case did not create one.
+Reproduce it with `python3 t/e2e/wp13_cli_parity.py --ntop ./ntop --btm "$(command -v btm)" --output /tmp/wp13-cli` after building `./ntop` and selecting btm 0.14.9.
 
 ### Case-by-case results
 
-| Case | Arguments | Expected | ntop | btm | Draw | Channels | Config | Result |
-|---|---|---:|---:|---:|---|---|---|---|
-| 001 | `["--config_location", "<temporary-config-path>"]` | 0 | 0 | 0 | both | n/a | match | pass |
-| 002 | `["--default_widget_count", "2"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 003 | `["--default_widget_type", "cpu"]` | 0 | 0 | 0 | both | n/a | n/a | pass |
-| 004 | `["--rate", "251ms"]` | 0 | 0 | 0 | both | n/a | n/a | pass |
-| 005 | `["--hide_k_threads"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 006 | `["--free_arc"]` | 0 | 0 | 0 | both | n/a | n/a | pass |
-| 007 | `["--battery"]` | 0 | 0 | 0 | both | n/a | n/a | pass |
-| 008 | `["-h"]` | 0 | 0 | 0 | n/a | match | n/a | pass |
-| 009 | `["-V"]` | 0 | 0 | 0 | n/a | match | n/a | pass |
-| 010 | `["--autohide_time=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 011 | `["--basic=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 012 | `["--config_location"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 013 | `["--config-location"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 014 | `["--config"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 015 | `["-C"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 016 | `["--default_time_value", "abc"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 017 | `["--default_time_value", "29999ms"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 018 | `["--default-time-value", "abc"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 019 | `["--default-time-value", "29999ms"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 020 | `["-t", "abc"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 021 | `["-t", "29999ms"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 022 | `["--default_widget_count", "not-an-integer"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 023 | `["--default-widget-count", "not-an-integer"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 024 | `["--default_widget_type", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 025 | `["--default-widget-type", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 026 | `["--disable_click=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 027 | `["--disable_keys=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 028 | `["--dot_marker=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 029 | `["--expanded=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 030 | `["--hide_time=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 031 | `["--rate", "abc"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 032 | `["--rate", "249ms"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 033 | `["-r", "abc"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 034 | `["-r", "249ms"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 035 | `["--retention", "abc"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 036 | `["--show_table_scroll_position=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 037 | `["--time_delta", "abc"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 038 | `["--time_delta", "999ms"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 039 | `["--time-delta", "abc"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 040 | `["--time-delta", "999ms"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 041 | `["-d", "abc"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 042 | `["-d", "999ms"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 043 | `["--case_sensitive=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 044 | `["--current_usage=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 045 | `["--disable_advanced_kill=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 046 | `["--read_only=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 047 | `["--hide_k_threads=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 048 | `["--get_threads=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 049 | `["--process_default_sort", "not-a-column"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 050 | `["--process-default-sort", "not-a-column"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 051 | `["--group_processes=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 052 | `["--process_memory_as_value=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 053 | `["--process_command=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 054 | `["--regex=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 055 | `["--tree=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 056 | `["--tree_collapse=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 057 | `["--unnormalized_cpu=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 058 | `["--whole_word=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 059 | `["--celsius=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 060 | `["--fahrenheit=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 061 | `["--kelvin=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 062 | `["--cpu_left_legend=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 063 | `["--default_cpu_entry", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 064 | `["--default-cpu-entry", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 065 | `["--hide_avg_cpu=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 066 | `["--memory_legend", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 067 | `["--memory-legend", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 068 | `["--enable_cache_memory=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 069 | `["--free_arc=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 070 | `["--short_gpu_names=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 071 | `["--network_legend", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 072 | `["--network-legend", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 073 | `["--network_use_bytes=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 074 | `["--network_use_binary_prefix=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 075 | `["--network_use_log=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 076 | `["--use_old_network_legend=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 077 | `["--show_packets=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 078 | `["--network_start_zeroed=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 079 | `["--battery=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 080 | `["--disable_gpu=false"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 081 | `["--theme", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 082 | `["--help=invalid"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 083 | `["--version=invalid"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 084 | `["--bogus"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 085 | `["--theme", "bad"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 086 | `["--default_widget_type", "foo"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
-| 087 | `["--rate", "100"]` | 1 | 1 | 1 | n/a | match | n/a | pass |
-| 088 | `["--rate", "250"]` | 0 | 0 | 0 | both | n/a | n/a | pass |
-| 089 | `["--rate", "250ms"]` | 0 | 0 | 0 | both | n/a | n/a | pass |
-| 090 | `["--retention", "59999ms"]` | 0 | 0 | 0 | both | n/a | n/a | pass |
-| 091 | `["--celsius", "--kelvin"]` | 2 | 2 | 2 | n/a | match | n/a | pass |
+| Case | Arguments | Expected | ntop | btm | Draw | Channels | Result |
+|---|---|---:|---:|---:|---|---|---|
+| 001 | `["--default_widget_count", "2"]` | 2 | 2 | 2 | n/a | match | pass |
+| 002 | `["--default_widget_type", "cpu"]` | 0 | 0 | 0 | both | n/a | pass |
+| 003 | `["--rate", "251ms"]` | 0 | 0 | 0 | both | n/a | pass |
+| 004 | `["--hide_k_threads"]` | 2 | 2 | 2 | n/a | match | pass |
+| 005 | `["--free_arc"]` | 0 | 0 | 0 | both | n/a | pass |
+| 006 | `["--battery"]` | 0 | 0 | 0 | both | n/a | pass |
+| 007 | `["-h"]` | 0 | 0 | 0 | n/a | match | pass |
+| 008 | `["-V"]` | 0 | 0 | 0 | n/a | match | pass |
+| 009 | `["--autohide_time=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 010 | `["--basic=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 011 | `["--config_location"]` | 2 | 2 | 2 | n/a | match | pass |
+| 012 | `["--config-location"]` | 2 | 2 | 2 | n/a | match | pass |
+| 013 | `["--config"]` | 2 | 2 | 2 | n/a | match | pass |
+| 014 | `["-C"]` | 2 | 2 | 2 | n/a | match | pass |
+| 015 | `["--default_time_value", "abc"]` | 1 | 1 | 1 | n/a | match | pass |
+| 016 | `["--default_time_value", "29999ms"]` | 1 | 1 | 1 | n/a | match | pass |
+| 017 | `["--default-time-value", "abc"]` | 1 | 1 | 1 | n/a | match | pass |
+| 018 | `["--default-time-value", "29999ms"]` | 1 | 1 | 1 | n/a | match | pass |
+| 019 | `["-t", "abc"]` | 1 | 1 | 1 | n/a | match | pass |
+| 020 | `["-t", "29999ms"]` | 1 | 1 | 1 | n/a | match | pass |
+| 021 | `["--default_widget_count", "not-an-integer"]` | 2 | 2 | 2 | n/a | match | pass |
+| 022 | `["--default-widget-count", "not-an-integer"]` | 2 | 2 | 2 | n/a | match | pass |
+| 023 | `["--default_widget_type", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | pass |
+| 024 | `["--default-widget-type", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | pass |
+| 025 | `["--disable_click=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 026 | `["--disable_keys=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 027 | `["--dot_marker=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 028 | `["--expanded=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 029 | `["--hide_time=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 030 | `["--rate", "abc"]` | 1 | 1 | 1 | n/a | match | pass |
+| 031 | `["--rate", "249ms"]` | 1 | 1 | 1 | n/a | match | pass |
+| 032 | `["-r", "abc"]` | 1 | 1 | 1 | n/a | match | pass |
+| 033 | `["-r", "249ms"]` | 1 | 1 | 1 | n/a | match | pass |
+| 034 | `["--retention", "abc"]` | 1 | 1 | 1 | n/a | match | pass |
+| 035 | `["--show_table_scroll_position=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 036 | `["--time_delta", "abc"]` | 1 | 1 | 1 | n/a | match | pass |
+| 037 | `["--time_delta", "999ms"]` | 1 | 1 | 1 | n/a | match | pass |
+| 038 | `["--time-delta", "abc"]` | 1 | 1 | 1 | n/a | match | pass |
+| 039 | `["--time-delta", "999ms"]` | 1 | 1 | 1 | n/a | match | pass |
+| 040 | `["-d", "abc"]` | 1 | 1 | 1 | n/a | match | pass |
+| 041 | `["-d", "999ms"]` | 1 | 1 | 1 | n/a | match | pass |
+| 042 | `["--case_sensitive=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 043 | `["--current_usage=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 044 | `["--disable_advanced_kill=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 045 | `["--read_only=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 046 | `["--hide_k_threads=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 047 | `["--get_threads=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 048 | `["--process_default_sort", "not-a-column"]` | 1 | 1 | 1 | n/a | match | pass |
+| 049 | `["--process-default-sort", "not-a-column"]` | 1 | 1 | 1 | n/a | match | pass |
+| 050 | `["--group_processes=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 051 | `["--process_memory_as_value=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 052 | `["--process_command=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 053 | `["--regex=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 054 | `["--tree=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 055 | `["--tree_collapse=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 056 | `["--unnormalized_cpu=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 057 | `["--whole_word=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 058 | `["--celsius=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 059 | `["--fahrenheit=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 060 | `["--kelvin=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 061 | `["--cpu_left_legend=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 062 | `["--default_cpu_entry", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | pass |
+| 063 | `["--default-cpu-entry", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | pass |
+| 064 | `["--hide_avg_cpu=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 065 | `["--memory_legend", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | pass |
+| 066 | `["--memory-legend", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | pass |
+| 067 | `["--enable_cache_memory=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 068 | `["--free_arc=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 069 | `["--short_gpu_names=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 070 | `["--network_legend", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | pass |
+| 071 | `["--network-legend", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | pass |
+| 072 | `["--network_use_bytes=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 073 | `["--network_use_binary_prefix=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 074 | `["--network_use_log=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 075 | `["--use_old_network_legend=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 076 | `["--show_packets=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 077 | `["--network_start_zeroed=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 078 | `["--battery=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 079 | `["--disable_gpu=false"]` | 2 | 2 | 2 | n/a | match | pass |
+| 080 | `["--theme", "not-a-choice"]` | 2 | 2 | 2 | n/a | match | pass |
+| 081 | `["--help=invalid"]` | 2 | 2 | 2 | n/a | match | pass |
+| 082 | `["--version=invalid"]` | 2 | 2 | 2 | n/a | match | pass |
+| 083 | `["--bogus"]` | 2 | 2 | 2 | n/a | match | pass |
+| 084 | `["--theme", "bad"]` | 2 | 2 | 2 | n/a | match | pass |
+| 085 | `["--default_widget_type", "foo"]` | 2 | 2 | 2 | n/a | match | pass |
+| 086 | `["--rate", "100"]` | 1 | 1 | 1 | n/a | match | pass |
+| 087 | `["--rate", "250"]` | 0 | 0 | 0 | both | n/a | pass |
+| 088 | `["--rate", "250ms"]` | 0 | 0 | 0 | both | n/a | pass |
+| 089 | `["--retention", "59999ms"]` | 0 | 0 | 0 | both | n/a | pass |
+| 090 | `["--celsius", "--kelvin"]` | 2 | 2 | 2 | n/a | match | pass |
+
+The valid path argument `--config_location /tmp/config` is outside this invalid-input comparison. btm proceeds to terminal initialization, and its non-TTY failure emits terminal-control bytes on stdout. ntop rejects config-location values before launching the TUI; that behavior is not covered here.

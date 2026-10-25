@@ -165,7 +165,6 @@
    (:file "src/cli/presentation-cli-options")
    (:file "src/cli/presentation-cli-config")
    (:file "src/cli/presentation-cli")
-   (:static-file "src/cli/default-config.toml")
    )
   :build-operation "program-op"
   :build-pathname "ntop"

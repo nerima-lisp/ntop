@@ -16,9 +16,7 @@ ntop uses [bottom (`btm`) 0.14.9](https://github.com/ClementTsang/bottom/tree/0.
 
 ## Unsupported behavior
 
-ntop accepts `-C`, `--config`, `--config-location`, and `--config_location`. If the target is missing, it creates parent directories and writes btm 0.14.9's default TOML using file mode `0666` and directory mode `0777`, filtered by the process umask. ntop starts with built-in defaults and does not read the file. Existing files remain unchanged. An existing file must be openable for reading or writing; if neither works, ntop exits with status 1. ntop also rejects a final path that is a symbolic link.
-
-btm reads existing configuration files. ntop preserves and ignores them, including an unreadable but writable file that btm replaces before starting.
+ntop does not load configuration files. Passing `-C`, `--config`, `--config-location`, or `--config_location` exits with status 2.
 
 ntop supports macOS and Linux. It exits with status 1 on other platforms, including Windows and FreeBSD.
 

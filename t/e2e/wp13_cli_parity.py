@@ -5,17 +5,13 @@ import argparse, json, os, platform, re, selectors, signal, subprocess, sys, tim
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from wp13_cli_parity_runtime import (
-    CONFIG_PATH_PLACEHOLDER,
-    MAX_RETAINED_OUTPUT_BYTES,
-    PROCESS_TIMEOUT_SECONDS,
-    run_config_case,
-    run_tui,
-)
+from wp15b_measure_support import PtySession, TerminalGrid
 ROOT = Path(__file__).resolve().parents[2]
 FLAG_CATALOG = ROOT / "src/app/domain-parity-flags.lisp"
 COLUMN_CATALOG = ROOT / "src/app/domain-parity-process.lisp"
-READ_CHUNK_BYTES = 65536
+PTY_ROWS, PTY_COLUMNS = 24, 80
+PROCESS_TIMEOUT_SECONDS, PTY_Q_GRACE_SECONDS, PTY_OBSERVATION_SECONDS = 8.0, 5.0, 3.5
+MAX_RETAINED_OUTPUT_BYTES, READ_CHUNK_BYTES = 8192, 65536
 
 @dataclass
 class CliCase:
@@ -24,6 +20,21 @@ class CliCase:
     execution: str
     groups: set[str] = field(default_factory=set)
     sources: list[str] = field(default_factory=list)
+
+class CountingSink:
+    def __init__(self):
+        self.retained = bytearray()
+        self.session: PtySession | None = None
+    def write(self, data: bytes) -> int:
+        self.retained.extend(data[:max(0, MAX_RETAINED_OUTPUT_BYTES - len(self.retained))])
+        if self.session is not None and b"\x1b[6n" in data:
+            self.session.send(b"\x1b[1;1R")
+        return len(data)
+    def visible_cells(self) -> int:
+        screen = TerminalGrid(PTY_ROWS, PTY_COLUMNS)
+        screen.feed(bytes(self.retained))
+        return sum(cell != " " for row in screen.cells for cell in row)
+    def flush(self) -> None: pass
 
 def _strings(text: str) -> list[str]:
     return re.findall(r'"([^"]*)"', text)
@@ -88,7 +99,7 @@ def _sample_values(row: list[Any], columns: list[str]) -> list[str | None]:
     if value_type == "enum":
         return list(row[4])
     if value_type == "path":
-        return [CONFIG_PATH_PLACEHOLDER]
+        return ["/tmp/ntop-config"]
     if value_type == "column-name":
         if not columns:
             raise ValueError("the CLI sample rules require at least one column alias")
@@ -112,9 +123,7 @@ def _generated_valid_case(row: list[Any]) -> tuple[int, str]:
     name, value_type = row[0], row[3]
     if value_type == "control":
         return 0, "capture"
-    if value_type == "path":
-        return 0, "config"
-    if name == "default_widget_count":
+    if value_type == "path" or name == "default_widget_count":
         return 2, "capture"
     if name == "hide_k_threads" and not sys.platform.startswith("linux"):
         return 2, "capture"
@@ -172,12 +181,6 @@ def _build_cases() -> list[CliCase]:
         (("--battery",), 0, "tui", "WP13/§9.4 --battery"),
         (("--default_widget_count", "2"), 2, "capture", "CLI conditional config status"),
         (("--celsius", "--kelvin"), 2, "capture", "presentation-cli-test mutually exclusive units"),
-        (
-            ("--config_location", CONFIG_PATH_PLACEHOLDER),
-            0,
-            "config",
-            "btm creates default config at a missing path",
-        ),
     ]
     if sys.platform == "darwin":
         explicit.append((("--hide_k_threads",), 2, "capture", "WP13/§9.4 macOS --hide_k_threads"))
@@ -270,16 +273,52 @@ def _run_captured(binary: str, argv: tuple[str, ...]) -> dict[str, Any]:
         for name in ("stdout", "stderr")}
     return result
 
+def _run_tui(binary: str, argv: tuple[str, ...]) -> dict[str, Any]:
+    sink = CountingSink()
+    session: PtySession | None = None
+    observation_error: str | None = None
+    q_sent = False
+    status_before_cleanup: int | None = None
+    cleanup: dict[str, Any] = {"verified": False, "errors": []}
+    screen_drawn = False
+    try:
+        session = PtySession([binary, *argv], PTY_ROWS, PTY_COLUMNS)
+        sink.session = session
+        try:
+            session.read_idle(sink, timeout=PROCESS_TIMEOUT_SECONDS,
+                              first_not_before=session.started + PTY_OBSERVATION_SECONDS)
+        except (RuntimeError, TimeoutError, OSError) as error:
+            observation_error = type(error).__name__
+        screen_drawn = sink.visible_cells() > 0
+        if session.poll() is None:
+            try:
+                session.send(b"q")
+                q_sent = True
+                session.read_for(PTY_Q_GRACE_SECONDS, sink)
+            except RuntimeError:
+                pass
+            except OSError as error:
+                observation_error = observation_error or type(error).__name__
+        status_before_cleanup = session.poll()
+    except OSError as error:
+        observation_error = type(error).__name__
+    finally:
+        if session is not None:
+            cleanup = session.close()
+    return {
+        "exit_status": status_before_cleanup,
+        "timed_out": observation_error == "TimeoutError" or (
+            q_sent and status_before_cleanup is None),
+        "execution_error": {"type": observation_error} if observation_error else None,
+        "q_sent": q_sent,
+        "screen_drawn": screen_drawn,
+        "cleanup_verified": bool(cleanup.get("verified")),
+    }
+
 def _run_case(case: CliCase, ntop: str, btm: str) -> dict[str, Any]:
-    config_files_match: bool | None = None
-    if case.execution == "config":
-        ntop_result, btm_result, config_files_match = run_config_case(
-            case.argv, ntop, btm
-        )
-    else:
-        runner = run_tui if case.execution == "tui" else _run_captured
-        ntop_result = runner(ntop, case.argv)
-        btm_result = runner(btm, case.argv)
+    runner = _run_tui if case.execution == "tui" else _run_captured
+    ntop_result = runner(ntop, case.argv)
+    btm_result = runner(btm, case.argv)
     ntop_status = ntop_result["exit_status"]
     btm_status = btm_result["exit_status"]
     status_match = None if None in (ntop_status, btm_status) else ntop_status == btm_status
@@ -304,17 +343,14 @@ def _run_case(case: CliCase, ntop: str, btm: str) -> dict[str, Any]:
             channels = result["output_channels"]
             if not channels["stdout"]["nonempty"] and not channels["stderr"]["nonempty"]:
                 unexpected.append(f"{name} produced no captured output")
-        elif case.execution in ("tui", "config"):
+        else:
             if not result["q_sent"]:
                 unexpected.append(f"{name} did not receive q")
             if not result["screen_drawn"]:
                 unexpected.append(f"{name} TUI screen draw was not observed")
             if not result["cleanup_verified"]:
                 unexpected.append(f"{name} cleanup was not verified")
-    if case.execution == "config" and config_files_match is not True:
-        unexpected.append("default config content or permissions did not match")
-    passed = (status_match is True and channels_match is not False
-              and config_files_match is not False and not unexpected)
+    passed = status_match is True and channels_match is not False and not unexpected
     return {
         "argv": list(case.argv),
         "expected_status": case.expected_status,
@@ -325,7 +361,6 @@ def _run_case(case: CliCase, ntop: str, btm: str) -> dict[str, Any]:
         "btm": btm_result,
         "status_match": status_match,
         "output_channels_match": channels_match,
-        "config_files_match": config_files_match,
         "unexpected": unexpected,
         "pass": passed,
     }
@@ -338,16 +373,13 @@ def _summary(available_cases: list[CliCase], planned_cases: list[CliCase],
         "planned_cases": len(planned_cases),
         "planned_invalid_cases": sum("invalid" in case.groups for case in planned_cases),
         "planned_explicit_cases": sum("explicit" in case.groups for case in planned_cases),
-        "planned_tui_cases": sum(case.execution in ("tui", "config")
-                                  for case in planned_cases),
+        "planned_tui_cases": sum(case.execution == "tui" for case in planned_cases),
         "completed_cases": len(results),
         "passed_cases": sum(result["pass"] for result in results),
         "mismatched_statuses": sum(result["status_match"] is False for result in results),
         "unobserved_statuses": sum(result["status_match"] is None for result in results),
         "mismatched_output_channels": sum(
             result["output_channels_match"] is False for result in results),
-        "mismatched_config_files": sum(
-            result["config_files_match"] is False for result in results),
         "unexpected_cases": sum(bool(result["unexpected"]) for result in results),
     }
 
@@ -372,28 +404,21 @@ def _markdown(report: dict[str, Any]) -> str:
         f"- Status mismatches: {summary['mismatched_statuses']}",
         f"- Unobserved statuses: {summary['unobserved_statuses']}",
         f"- Output channel mismatches: {summary['mismatched_output_channels']}",
-        f"- Default config file mismatches: {summary['mismatched_config_files']}",
         f"- Unexpected cases: {summary['unexpected_cases']}",
         "",
         "## Cases",
         "",
-        "| Case | Arguments | Expected | ntop | btm | Draw | Channels | Config | Result |",
-        "|---|---|---:|---:|---:|---|---|---|---|",
+        "| Case | Arguments | Expected | ntop | btm | Draw | Channels | Result |",
+        "|---|---|---:|---:|---:|---|---|---|",
     ]
     for number, case in enumerate(report["results"], start=1):
         ntop_status = case["ntop"]["exit_status"]
         btm_status = case["btm"]["exit_status"]
         channels = case["output_channels_match"]
         draw = "n/a"
-        if case["execution"] in ("tui", "config"):
+        if case["execution"] == "tui":
             drawn = [name for name in ("ntop", "btm") if case[name]["screen_drawn"]]
             draw = "both" if len(drawn) == 2 else drawn[0] if drawn else "none"
-        config_files = case["config_files_match"]
-        config_status = (
-            "match" if config_files is True
-            else "mismatch" if config_files is False
-            else "n/a"
-        )
         args = json.dumps(case["argv"], ensure_ascii=False)
         lines.append(
             f"| {number:03d} | `{args}` | {case['expected_status']} | "
@@ -401,7 +426,6 @@ def _markdown(report: dict[str, Any]) -> str:
             f"{btm_status if btm_status is not None else 'n/a'} | "
             f"{draw} | "
             f"{'match' if channels is True else 'mismatch' if channels is False else 'n/a'} | "
-            f"{config_status} | "
             f"{'pass' if case['pass'] else 'fail'} |"
         )
     return "\n".join(lines) + "\n"

@@ -391,6 +391,10 @@
    (first (multiple-value-list (cli-test-captured-run '("--unknown"))))
    :to-equal 2)
   (cl-weave:expect
+   (first (multiple-value-list
+           (cli-test-captured-run '("--config_location" "/tmp/config"))))
+   :to-equal 2)
+  (cl-weave:expect
    (first (multiple-value-list (cli-test-captured-run '("--theme" "invalid"))))
    :to-equal 2)
   (dolist (entry (cli-test-flags))

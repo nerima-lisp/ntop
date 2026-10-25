@@ -98,7 +98,7 @@ On a graph, press `[` to move back one visible time window and `]` to move forwa
 
 ## Command-line options
 
-Long options accept both hyphenated and underscore spellings. Options marked with a value placeholder require that value; the other options take no value. `ntop --help` prints the options recognized by the executable.
+Long options accept both hyphenated and underscore spellings. Options marked with a value placeholder require that value; the other options take no value. The table after the option list gives accepted forms and choices. `ntop --help` prints the options recognized by the executable.
 
 | Area | Options |
 | --- | --- |
@@ -107,9 +107,7 @@ Long options accept both hyphenated and underscore spellings. Options marked wit
 | CPU, memory, and temperature | `--celsius` (`-c`), `--fahrenheit` (`-f`), `--kelvin` (`-k`), `--cpu-left-legend` (`-l`), `--default-cpu-entry <entry>`, `--hide-avg-cpu` (`-a`), `--memory-legend <position>`, `--enable-cache-memory`, `--free-arc`, `--free_arc` (accepted; no display effect; see [Differences from btm](differences.md)) |
 | Network, GPU, battery, and theme | `--short-gpu-names`, `--network-legend <position>`, `--network-use-bytes`, `--network-use-binary-prefix`, `--network-use-log`, `--use-old-network-legend`, `--show-packets`, `--network-start-zeroed`, `--battery`, `--disable-gpu`, `--theme <name>` |
 | CLI actions | `--help` (`-h`), `--version` (`-V`) |
-| Configuration path | `--config-location <path>`, `--config_location <path>`, `--config <path>` (`-C`) |
-
-For a configuration path, ntop creates a missing file and any missing parent directories. It writes btm 0.14.9's default TOML with file mode `0666` and directory mode `0777`, each filtered by the process umask. ntop then starts with its built-in defaults and does not read the file. Existing files remain unchanged; ntop must be able to open an existing file for reading or writing. A final path that is a symbolic link is rejected. Path creation failures exit with status 1.
+| Rejected compatibility option | `--config-location <path>`, `--config_location <path>`, `--config <path>` (`-C`) (always exits with status 2) |
 
 Duration values accept an integer with or without a unit. A value without a unit is milliseconds. Units include `ns`, `us`, `ms`, `s`, `m`, `h`, `d`, `w`, and `y`; full singular and plural names and common abbreviations are also accepted. Examples are `700ms`, `15s`, and `1m`. Value options use these forms and choices:
 
@@ -140,9 +138,9 @@ The following options set behavior that is not clear from their names:
 
 `--celsius`, `--fahrenheit`, and `--kelvin` are mutually exclusive. `--disable-advanced-kill` applies to Unix-like systems. `--hide-k-threads` is Linux-only. `--battery` enables collection for the battery view, which is available from the temperature widget's view cycle. Battery collection is off by default. If no battery sample is available, the view displays `No data found for this battery`. `--disable-gpu` is available in GPU-enabled builds. `--use-old-network-legend` is deprecated but accepted.
 
-`--default-widget-type` sets the initially selected widget; it does not add a widget to the layout. The accepted `battery` and `batt` values select the temperature widget's normal view, not its battery view. Pressing `v` immediately does not open the battery view. To open it, set another default widget, select temperature, and press `v`.
+`--default-widget-type` sets the initially selected widget; it does not add a widget to the layout. The accepted `battery` and `batt` values initially show the temperature widget's normal view, not the battery view; `v` does not switch views from that initial selection. To open the battery view, set another default widget, select temperature, and press `v`.
 
-For how this differs from btm's configuration loading, see [Differences from btm](differences.md#unsupported-behavior).
+ntop does not load configuration files. See [Differences from btm](differences.md#unsupported-behavior) for the rejected compatibility options.
 
 ### Defaults
 
