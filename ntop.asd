@@ -387,6 +387,7 @@
    (:file "t/e2e/domain-parity-export")
    (:file "t/e2e/routes")
    (:file "t/e2e/route-runner-report")
+   (:file "t/e2e/route-runner-manual-report")
    (:file "t/e2e/route-runner-support")
    (:file "t/e2e/route-runner")
    (:file "t/e2e/route-runner-additional")
