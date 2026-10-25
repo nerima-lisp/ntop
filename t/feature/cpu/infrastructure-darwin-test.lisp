@@ -11,54 +11,6 @@
                       append (%darwin-cpu-fixture-u32 counter)))
    '(vector (unsigned-byte 8))))
 
-(defun %darwin-reference-command-output (program arguments)
-  (let ((result (host-kit:run-program program arguments
-                                      :timeout 5
-                                      :max-output-characters 256)))
-    (unless (and (zerop (host-kit:process-result-exit-code result))
-                 (not (host-kit:process-result-stdout-truncated-p result))
-                 (not (host-kit:process-result-stderr-truncated-p result)))
-      (error "Reference command failed or exceeded its output limit: ~A."
-             program))
-    (host-kit:process-result-stdout result)))
-
-(defun %darwin-reference-fields (text)
-  (let ((fields nil)
-        (start nil))
-    (loop for index from 0 to (length text)
-          for separator = (or (= index (length text))
-                              (find (char text index)
-                                    '(#\Space #\Tab #\Return #\Newline
-                                      #\{ #\})))
-          do (cond
-               ((and separator start)
-                (push (subseq text start index) fields)
-                (setf start nil))
-               ((and (not separator) (null start))
-                (setf start index))))
-    (nreverse fields)))
-
-(defun %darwin-reference-load-average ()
-  (let ((fields (%darwin-reference-fields
-                 (%darwin-reference-command-output
-                  "sysctl" '("-n" "vm.loadavg")))))
-    (unless (= (length fields) 3)
-      (error "Expected three sysctl load averages, got ~S." fields))
-    (mapcar
-     (lambda (field)
-       (let ((*read-eval* nil))
-         (multiple-value-bind (value end) (read-from-string field)
-           (unless (and (= end (length field)) (realp value))
-             (error "Invalid sysctl load average: ~S." field))
-           (float value 1d0))))
-     fields)))
-
-(defun %darwin-reference-core-count ()
-  (parse-integer
-   (string-trim '(#\Space #\Tab #\Return #\Newline)
-                (%darwin-reference-command-output
-                 "sysctl" '("-n" "hw.ncpu")))))
-
 (defun %darwin-core-frequency-table (core-index tables)
   (let ((key (cond ((<= 0 core-index 3) "voltage-states1-sram")
                    ((<= 4 core-index 9) "voltage-states5-sram")
@@ -152,75 +104,93 @@
        :to-equal '(1750 nil))))
 
   (cl-weave:it-run-if (member :darwin *features*)
-                      "matches bounded sysctl references around the Darwin CPU read"
-                      (let* ((before-core-count (%darwin-reference-core-count))
-                             (before-load (%darwin-reference-load-average))
-                             (sample nil)
-                             (failure nil))
-                        (ntop.cpu.infrastructure::read-platform-cpu-source-sample
-                         (lambda (value) (setf sample value))
-                         (lambda (reason) (setf failure reason)))
-                        (let* ((after-core-count (%darwin-reference-core-count))
-                               (after-load (%darwin-reference-load-average))
-                               (cores (and sample
-                                           (ntop.cpu.infrastructure::cpu-source-sample-core-values
-                                            sample)))
-                               (tables (ntop.platform.darwin::%read-pmgr-dvfs-tables)))
-                          (cl-weave:expect failure :to-be-null)
-                          (cl-weave:expect
-                           (and cores (= (length cores) before-core-count))
-                           :to-be t)
-                          (progn
-                            (cl-weave:expect after-core-count
-                                             :to-equal before-core-count)
-                            (cl-weave:expect
-                             (every
-                              (lambda (key)
-                                (let ((table (cdr (assoc key tables
-                                                         :test #'string=))))
-                                  (and table
-                                       (every (lambda (frequency)
-                                                (and (integerp frequency)
-                                                     (plusp frequency)))
-                                              table))))
-                              '("voltage-states1-sram"
-                                "voltage-states5-sram"
-                                "voltage-states13-sram"))
-                             :to-be t))
-                          (loop for value in
-                                (list
-                                 (ntop.cpu.infrastructure::cpu-source-sample-load-average-1
-                                  sample)
-                                 (ntop.cpu.infrastructure::cpu-source-sample-load-average-5
-                                  sample)
-                                 (ntop.cpu.infrastructure::cpu-source-sample-load-average-15
-                                  sample))
-                                for before in before-load
-                                for after in after-load
-                                do (cl-weave:expect
-                                    (and (realp value)
-                                         (<= (- (min before after) 0.05d0)
-                                             value
-                                             (+ (max before after) 0.05d0)))
-                                    :to-be t))
-                          (cl-weave:expect
-                           (every
-                            (lambda (core)
-                              (let* ((frequency
-                                      (ntop.cpu.domain:cpu-core-value-frequency-mhz core))
-                                     (table
-                                      (%darwin-core-frequency-table
-                                       (ntop.cpu.domain:cpu-core-value-core-index core)
-                                       tables)))
-                                (if (<= 0 (ntop.cpu.domain:cpu-core-value-core-index core) 15)
-                                    (and table
-                                         (realp frequency)
-                                         (<= (/ (apply #'min table) 1000d0)
-                                             frequency
-                                             (/ (apply #'max table) 1000d0)))
-                                    (null frequency))))
-                            cores)
-                           :to-be t)))))
+  "assembles fixed CPU samples within their DVFS table bounds"
+  (let* ((core-counters
+           (loop for index below 17
+                 collect (list (+ index 1) (+ index 2)
+                               (+ index 3) (+ index 4))))
+         (octets (%darwin-cpu-fixture-bytes core-counters))
+         (tables '(("voltage-states1-sram" . (1000000 2000000))
+                   ("voltage-states5-sram" . (1500000 2500000))
+                   ("voltage-states13-sram" . (2000000 3000000))))
+         (residencies '(("DOWN" . 90) ("IDLE" . 5)
+                        ("E-core-state-0" . 25)
+                        ("E-core-state-1" . 75)))
+         (performance-state-data
+           (loop for core-index below 17
+                 for table-key =
+                   (cond ((<= 0 core-index 3) "voltage-states1-sram")
+                         ((<= 4 core-index 9) "voltage-states5-sram")
+                         ((<= 10 core-index 15) "voltage-states13-sram"))
+                 collect
+                 (list core-index residencies
+                       (cdr (assoc table-key tables :test #'string=)))))
+         (expected-frequencies
+           (append (make-list 4 :initial-element 1750)
+                   (make-list 6 :initial-element 2250)
+                   (make-list 6 :initial-element 2750)
+                   (list nil)))
+         (sample nil)
+         (failure nil))
+    (cl-weave:with-mocked-functions
+        (((symbol-function
+           'ntop.cpu.infrastructure::%read-darwin-processor-cpu-load-info)
+          (lambda (on-value on-unavailable)
+            (declare (ignore on-unavailable))
+            (funcall on-value (length core-counters) octets)))
+         ((symbol-function
+           'ntop.cpu.infrastructure::%darwin-load-average-values)
+          (lambda () '(1d0 2d0 3d0)))
+         ((symbol-function
+           'ntop.platform.darwin::read-darwin-cpu-performance-state-data)
+          (lambda (on-value on-unavailable)
+            (declare (ignore on-unavailable))
+            (funcall on-value performance-state-data))))
+      (ntop.cpu.infrastructure::read-platform-cpu-source-sample
+       (lambda (value) (setf sample value))
+       (lambda (reason) (setf failure reason)))
+      (let ((cores (and sample
+                        (ntop.cpu.infrastructure::cpu-source-sample-core-values
+                         sample))))
+        (cl-weave:expect failure :to-be-null)
+        (cl-weave:expect (and cores (= (length cores) 17)) :to-be t)
+        (cl-weave:expect
+         (mapcar
+          (lambda (core)
+            (list (ntop.cpu.domain:cpu-core-value-core-index core)
+                  (ntop.cpu.domain:cpu-core-value-user-ticks core)
+                  (ntop.cpu.domain:cpu-core-value-system-ticks core)
+                  (ntop.cpu.domain:cpu-core-value-idle-ticks core)
+                  (ntop.cpu.domain:cpu-core-value-nice-ticks core)
+                  (ntop.cpu.domain:cpu-core-value-frequency-mhz core)))
+          cores)
+         :to-equal
+         (loop for index below 17
+               for counters in core-counters
+               for frequency in expected-frequencies
+               collect (append (list index) counters (list frequency))))
+        (cl-weave:expect
+         (list
+          (ntop.cpu.infrastructure::cpu-source-sample-load-average-1 sample)
+          (ntop.cpu.infrastructure::cpu-source-sample-load-average-5 sample)
+          (ntop.cpu.infrastructure::cpu-source-sample-load-average-15 sample))
+         :to-equal '(1d0 2d0 3d0))
+        (cl-weave:expect
+         (every
+          (lambda (core)
+            (let* ((index (ntop.cpu.domain:cpu-core-value-core-index core))
+                   (frequency
+                     (ntop.cpu.domain:cpu-core-value-frequency-mhz core))
+                   (table (%darwin-core-frequency-table index tables)))
+              (if (<= 0 index 15)
+                  (and table
+                       (realp frequency)
+                       (<= (/ (apply #'min table) 1000d0)
+                           frequency
+                           (/ (apply #'max table) 1000d0)))
+                  (null frequency))))
+          cores)
+         :to-be t))))))
 (cl-weave:describe "Darwin CPU error paths"
   (cl-weave:it-run-if (member :darwin *features*)
     "reports processor info failures and releases returned memory"
