@@ -70,8 +70,23 @@
       (values t difference
               (if comparable-p "condition-A projections match"
                 "approved §D extension deviation")))
+     ((and (string= mode "ntop") (null reference-state) (null candidate-state))
+      (values nil difference
+              (if difference
+                  (concatenate 'string
+                               "The condition-A projection did not establish the expected "
+                               "state. Verify the route manually.")
+                (concatenate 'string
+                             "Both condition-A projections matched, but neither saved frame "
+                             "showed the expected transition. Verify the documented "
+                             "before/action/after procedure manually."))
+              :manual))
      (t (values nil difference
-                "expected route state was not observed on the reference and candidate")))))
+                (if reference-state
+                    "The expected transition was observed on the reference, but not the candidate."
+                  (concatenate 'string
+                               "The expected transition was observed on the candidate, "
+                               "but not the reference.")))))))
 
 (defun %route-run-interactive-pair (route subcase description mode btm ntop
                                     reference-prefix candidate-prefix rows

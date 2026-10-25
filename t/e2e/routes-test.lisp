@@ -335,6 +335,38 @@
             (list :passed nil)))
      :to-be :fail)))
  (cl-weave:it
+ "classifies invisible and asymmetric route state observations"
+ (let* ((route
+          (find "basic-mode" (ntop.e2e::route-catalog)
+                :key (function ntop.e2e::route-id)
+                :test (function string=)))
+        (subcase (first (ntop.e2e::%route-subcases-expanded route)))
+        (empty-side (list :projection nil :initial-projection nil
+                          :grid nil :initial-grid nil))
+        (visible-grid
+          (criterion-test-grid
+           12 100
+           "RAM RX: TX: Total RX: Total TX: Disks Temperature"))
+        (visible-side
+          (list :projection nil :initial-projection nil
+                :grid visible-grid :initial-grid visible-grid))
+        (unobserved
+          (multiple-value-list
+           (ntop.e2e::%route-all-expected-actual
+            route "ntop" subcase empty-side empty-side)))
+        (asymmetric
+          (multiple-value-list
+           (ntop.e2e::%route-all-expected-actual
+            route "ntop" subcase visible-side empty-side))))
+   (cl-weave:expect (fourth unobserved) :to-be :manual)
+   (cl-weave:expect
+    (search "Both condition-A projections matched" (third unobserved))
+    :to-satisfy (function plusp))
+   (cl-weave:expect (fourth asymmetric) :to-be nil)
+   (cl-weave:expect
+    (search "reference, but not the candidate" (third asymmetric))
+    :to-satisfy (function plusp))))
+ (cl-weave:it
   "uses one status classification for subcase rows and totals"
   (cl-weave:expect
    (mapcar #'ntop.e2e::%route-subresult-status
