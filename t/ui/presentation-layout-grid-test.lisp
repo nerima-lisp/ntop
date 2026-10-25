@@ -134,7 +134,7 @@
                              (list 0 (+ cpu-height 2) width 2)
                              (list 0 (+ cpu-height 4) width table-height)))))
                    (cl-weave:it-each
-                    ((40 12 8 3 26) (80 24 16 5 66))
+                    ((40 12 8 3 26) (40 12 16 3 26) (80 24 16 5 66))
                     "renders basic table labels at the CPU-derived rows and selects tables at ~Ax~A"
                     (width height core-count cpu-height expected-right-start)
                     (let* ((state

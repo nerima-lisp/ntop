@@ -81,27 +81,6 @@
          (expanded-widget
            (and (eq mode :expanded)
                 (%screen-effective-widget selected state)))
-         (cpu-height
-           (if (and (eq mode :basic) snapshot)
-               (let* ((cpu-sample
-                        (ntop.app.domain:collection-snapshot-cpu-sample
-                         snapshot))
-                      (core-count
-                        (if cpu-sample
-                            (length
-                             (ntop.cpu.domain:cpu-sample-core-values cpu-sample))
-                            0))
-                      (average-row-p
-                        (and cpu-sample
-                             config
-                             (not
-                              (ntop.shared.application:application-config-hide-average-cpu-p
-                               config))
-                             (realp
-                              (ntop.cpu.domain:cpu-sample-average-usage-percent
-                               cpu-sample)))))
-                 (max 1 (ceiling (+ core-count (if average-row-p 1 0)) 4)))
-               1))
          (memory-rows
            (if (and (eq mode :basic) snapshot)
                (let ((memory-sample
@@ -142,6 +121,33 @@
                       4
                       2)))
                2))
+         (requested-cpu-height
+           (if (and (eq mode :basic) snapshot)
+               (let* ((cpu-sample
+                        (ntop.app.domain:collection-snapshot-cpu-sample
+                         snapshot))
+                      (core-count
+                        (if cpu-sample
+                            (length
+                             (ntop.cpu.domain:cpu-sample-core-values cpu-sample))
+                            0))
+                      (average-row-p
+                        (and cpu-sample
+                             config
+                             (not
+                              (ntop.shared.application:application-config-hide-average-cpu-p
+                               config))
+                             (realp
+                              (ntop.cpu.domain:cpu-sample-average-usage-percent
+                               cpu-sample)))))
+                 (max 1 (+ (ceiling core-count 4) (if average-row-p 1 0))))
+               1))
+         (cpu-height
+           (if (eq mode :basic)
+               ;; Preserve the process table's five-row minimum when the screen is short.
+               (min requested-cpu-height
+                    (max 1 (- rows memory-rows 2 5)))
+               requested-cpu-height))
          (placements
            (let ((cpu-left-legend-p
                    (and config

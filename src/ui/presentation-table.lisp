@@ -136,7 +136,7 @@
                          :value
                          value)))
 
-(defun draw-table (target rectangle state config rows)
+(defun draw-table (target rectangle state config rows &key (table-gap-p t))
   (check-type state table-state)
   (check-type config table-config)
   (let* ((row-list (coerce rows (quote list)))
@@ -149,9 +149,17 @@
                 (> (- (rectangle-height rectangle) title-height) 1)
                 (not empty-message-p)))
          (header-height (if header-row-p 1 0))
-         (body-y (+ (rectangle-y rectangle) title-height header-height))
+         (table-gap-height
+           (if (and table-gap-p header-row-p (>= (rectangle-height rectangle) 7)) 1 0))
+         (body-y (+ (rectangle-y rectangle)
+                    title-height
+                    header-height
+                    table-gap-height))
          (body-height
-           (max 0 (- (rectangle-height rectangle) title-height header-height)))
+           (max 0 (- (rectangle-height rectangle)
+                     title-height
+                     header-height
+                     table-gap-height)))
          (selected-index
            (progn
              (table-visible-window state (length row-list) body-height)
@@ -185,6 +193,13 @@
                          :title)))
     (when header-row-p
       (let ((header-y (+ (rectangle-y rectangle) title-height)))
+        (draw-table-background
+         target
+         (make-rectangle :x (rectangle-x rectangle)
+                         :y header-y
+                         :width (rectangle-width rectangle)
+                         :height 1)
+         :header)
         (dolist (column-layout layout)
           (let* ((column
                    (find (table-column-layout-id column-layout)

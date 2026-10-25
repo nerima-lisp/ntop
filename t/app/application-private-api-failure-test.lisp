@@ -293,7 +293,7 @@
                               :end2 use-position)))
                (frequency-header-position
                  (and header-line (search "MHz" header-line)))
-               (cpu-row (and header-index (nth (+ header-index 3) lines)))
+               (cpu-row (and header-index (nth (+ header-index 4) lines)))
                (label-cell
                  (and cpu-header-position
                       use-position

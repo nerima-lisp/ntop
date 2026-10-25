@@ -125,7 +125,25 @@
                           (equal (ntop.app.presentation::%screen-table-style
                                   :default :header nil)
                                  (ntop.ui:presentation-theme-style
-                                  :default :table-header)))
+                                  :default :table-header))
+                          (let ((selector-position
+                                  (loop for y below (cl-tty-kit:screen-height screen)
+                                        thereis
+                                        (loop for x below (cl-tty-kit:screen-width screen)
+                                              when (char= #\◄
+                                                          (cl-tty-kit:cell-char
+                                                           (cl-tty-kit:screen-cell
+                                                            screen x y)))
+                                                return (list x y)))))
+                            (and selector-position
+                                 (equal
+                                  (cl-tty-kit:cell-style
+                                   (apply #'cl-tty-kit:screen-cell
+                                          screen selector-position))
+                                  (ntop.ui:presentation-theme-style
+                                   (ntop.shared.application:application-config-theme
+                                    (%wp12b-screen-config))
+                                   :highlighted-border)))))
                          :to-be
                          t))))
                    (cl-weave:it

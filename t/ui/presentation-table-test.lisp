@@ -62,6 +62,7 @@
                                    (reverse (wp7-fake-table-target-fills target))
                                    :to-equal
                                    '(((4 8 16 3) :normal)
+                                     ((4 8 16 1) :header)
                                      ((4 9 16 1) :selected)))
                                   (cl-weave:expect
                                    (mapcar
@@ -72,6 +73,18 @@
                                    '((8 "Name" :header) (8 "PID" :header)
                                      (9 "Alpha    " :selected)
                                      (9 "10   " :selected)))))
+                   (cl-weave:it "adds the BTM table gap at height seven"
+                     (let* ((target (make-wp7-fake-table-target))
+                            (config (ntop.ui:make-table-config :columns *wp7-render-columns*))
+                            (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 16 :height 7)))
+                       (ntop.ui:draw-table target rectangle (ntop.ui:make-table-state) config
+                                          '((:name "one" :pid 1)))
+                       (cl-weave:expect
+                        (mapcar #'second
+                                (remove-if-not
+                                 (lambda (call) (eq (fourth call) :selected))
+                                 (%wp7-table-calls target)))
+                        :to-equal '(2 2))))
                    (cl-weave:it
                     "clips table background rows to nonnegative terminal coordinates"
                     (let ((target

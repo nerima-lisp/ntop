@@ -24,6 +24,19 @@
                      label-style
                      gauge-style))
 
+(defun %fill-gauge-rectangle (target rectangle style)
+  (let ((blank-row
+          (make-string (rectangle-width rectangle) :initial-element #\Space)))
+    (loop for y from (rectangle-y rectangle)
+          below (+ (rectangle-y rectangle) (rectangle-height rectangle))
+          do (cl-tty-kit:screen-write-string target
+                                             (rectangle-x rectangle)
+                                             y
+                                             blank-row
+                                             :style
+                                             style)))
+  target)
+
 (defun draw-pipe-gauge (target rectangle gauge &key (label-limit :none))
   (unless (member label-limit '(:none :bars :start-label))
     (error "Unknown pipe gauge label limit ~S." label-limit))
@@ -35,6 +48,7 @@
            (inner-label (gauge-value-inner-label gauge))
            (label-style (gauge-value-label-style gauge))
            (gauge-style (gauge-value-gauge-style gauge)))
+      (%fill-gauge-rectangle target rectangle label-style)
       (case label-limit
         (:start-label
          (%draw-gauge-text target x y start-label
@@ -116,7 +130,12 @@
                       :y (+ (rectangle-y rectangle) y-offset)
                       :width (max 0 (- column-width 2))
                       :height 1)
-                   do (if (eq label-limit :bars)
+                   do (unless (eq label-limit :none)
+                        (%fill-gauge-rectangle
+                         target
+                         gauge-rectangle
+                         (gauge-value-label-style gauge)))
+                      (if (eq label-limit :bars)
                           (let* ((start-label
                                    (gauge-value-start-label gauge))
                                  (inner-label

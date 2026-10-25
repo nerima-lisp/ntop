@@ -199,17 +199,18 @@
           (if external-frame-p
               (max 0 (1- (ntop.ui:rectangle-height rectangle)))
               (ntop.ui:rectangle-height rectangle)))
-         ;; BTM adds a one-row gap only when the framed table is at least seven rows tall.
+         ;; BTM reserves a gap only when a populated table is at least seven rows tall.
          (body-row-offset
-          (if (and sample external-frame-p (> inner-height 1) (>= outer-height 7)) 1 0))
+          (if (and sample (> inner-height 1) (>= outer-height 7)) 1 0))
          (inner-rectangle
-          (if external-frame-p
-              (ntop.ui:make-rectangle
-               :x (1+ (ntop.ui:rectangle-x rectangle))
-               :y (1+ (ntop.ui:rectangle-y rectangle))
-               :width (max 0 (- (ntop.ui:rectangle-width rectangle) 2))
-               :height (max 0 (- inner-height body-row-offset)))
-              rectangle))
+          (ntop.ui:make-rectangle
+           :x (+ (ntop.ui:rectangle-x rectangle)
+                 (if external-frame-p 1 0))
+           :y (+ (ntop.ui:rectangle-y rectangle)
+                 (if external-frame-p 1 0))
+           :width (max 0 (- (ntop.ui:rectangle-width rectangle)
+                            (if external-frame-p 2 0)))
+           :height (max 0 (- inner-height body-row-offset))))
          (width (ntop.ui:rectangle-width inner-rectangle)))
     (multiple-value-bind (columns rows)
         (%cpu-legend-view sample config width)
@@ -244,7 +245,8 @@
                                               :focused-p t
                                               :show-current-entry-when-unfocused-p t
                                               :empty-message (unless sample "No data"))
-                   (if sample rows nil))))
+                   (if sample rows nil)
+                   :table-gap-p nil)))
             (if (plusp body-row-offset)
                 (mapcar
                  (lambda (area)

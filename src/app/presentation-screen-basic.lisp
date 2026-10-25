@@ -44,7 +44,7 @@
                                   (style
                                     (ntop.ui:presentation-theme-style
                                      theme
-                                     :widget-title)))
+                                     :highlighted-border)))
                              (unless (zerop (length left-text))
                                (cl-tty-kit:screen-write-string target
                                                                left-x

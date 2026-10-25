@@ -63,6 +63,28 @@
                       (cl-weave:expect (cl-tty-kit:screen-row-string screen 0)
                                        :to-equal
                                        expected)))
+                   (cl-weave:it
+                    "styles unused pipe cells with the gauge label role"
+                    (let* ((screen (cl-tty-kit:make-screen 22 1))
+                           (label-style '((:fg 3)))
+                           (gauge-style '((:fg 5))))
+                      (ntop.ui:draw-pipe-gauge
+                       screen
+                       (%chart-test-rectangle 0 0 22 1)
+                       (ntop.ui:make-gauge-value :start-label "CPU"
+                                                 :inner-label "50%"
+                                                 :ratio 0.2d0
+                                                 :label-style label-style
+                                                 :gauge-style gauge-style))
+                      (cl-weave:expect
+                       (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 14 0))
+                       :to-be #\Space)
+                      (cl-weave:expect
+                       (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 14 0))
+                       :to-equal label-style)
+                      (cl-weave:expect
+                       (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 4 0))
+                       :to-equal gauge-style)))
                    (cl-weave:it "rejects unknown pipe label modes"
                                 (cl-weave:expect
                                  (%chart-test-signals-error-p
@@ -212,6 +234,26 @@
                                             (cl-tty-kit:screen-row-string screen 0)))
                                    :to-equal
                                    '(("50%" "50%" "50%" "50%") nil))))
+                   (cl-weave:it
+                    "styles unused narrow CPU gauge cells like their labels"
+                    (let* ((screen (cl-tty-kit:make-screen 36 1))
+                           (style '((:fg 6)))
+                           (gauges
+                            (loop repeat 4
+                                  collect (ntop.ui:make-gauge-value
+                                           :start-label "CPU"
+                                           :inner-label "50%"
+                                           :ratio 0d0
+                                           :label-style style
+                                           :gauge-style style))))
+                      (ntop.ui:draw-basic-cpu-gauges
+                       screen (%chart-test-rectangle 0 0 36 1) gauges)
+                      (cl-weave:expect
+                       (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 5 0))
+                       :to-be #\Space)
+                      (cl-weave:expect
+                       (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 5 0))
+                       :to-equal style)))
                    (cl-weave:it-each ((8 2 8) (8 1 4) (0 2 0))
                                      "draws ~A CPU gauges in a ~A-row area"
                                      (gauge-count height expected-visible)
