@@ -43,6 +43,35 @@
        (>= last-output-at started-at)
        (>= now first-frame-not-before-at)
        (>= (- now last-output-at) quiet-seconds)))
+(defun %pty-visible-screen-output-p (octets)
+  (let ((state :text))
+    (loop for byte across octets
+          do (case state
+               (:text
+                (cond
+                  ((= byte 27)
+                   (setf state :escape))
+                  ((and (<= 32 byte) (/= byte 127))
+                   (return-from %pty-visible-screen-output-p t))))
+               (:escape
+                (setf state
+                      (case byte
+                        (91 :csi)
+                        ((80 93 94 95) :string)
+                        (otherwise :text))))
+               (:csi
+                (when (<= 64 byte 126)
+                  (setf state :text)))
+               (:string
+                (cond
+                  ((= byte 7)
+                   (setf state :text))
+                  ((= byte 27)
+                   (setf state :string-escape))))
+               (:string-escape
+                (setf state
+                      (if (= byte 92) :text :string)))))
+    nil))
 
 (defun %validate-seconds (seconds name)
   (unless
@@ -233,14 +262,15 @@
                                                              deadline-seconds))
                                           (when
                                               (and last-output-at (not awaiting-post-query-output-p)
-                                                   (frame-ready-p
-                                                    (%ticks-to-seconds started-at)
-                                                    (%ticks-to-seconds
-                                                     last-output-at)
-                                                    (%ticks-to-seconds now)
-                                                    (%ticks-to-seconds
-                                                     first-frame-at)
-                                                    quiet-ticks-seconds))
+                                                   (and
+                                                 (or (null first-frame-not-before-seconds)
+                                                     (%pty-visible-screen-output-p output))
+                                                 (frame-ready-p
+                                                  (%ticks-to-seconds started-at)
+                                                  (%ticks-to-seconds last-output-at)
+                                                  (%ticks-to-seconds now)
+                                                  (%ticks-to-seconds first-frame-at)
+                                                  quiet-ticks-seconds)))
                                             (return
                                              (values
                                               (make-array (length output)
@@ -253,8 +283,10 @@
                                               (%elapsed-seconds session now))))
                                           (let* ((idle-deadline
                                                   (when (and last-output-at
-                                                             (not awaiting-post-query-output-p))
-                                                    (+ last-output-at quiet-ticks)))
+                                                (not awaiting-post-query-output-p)
+                                                (or (null first-frame-not-before-seconds)
+                                                    (%pty-visible-screen-output-p output)))
+                                               (+ last-output-at quiet-ticks)))
                                                  (wake-at
                                                   (if idle-deadline
                                                       (min deadline

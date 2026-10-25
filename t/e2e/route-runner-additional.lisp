@@ -470,6 +470,7 @@
                  (not (search "Esc to go back" after :test #'char-equal))
                  (every (lambda (label) (search label after :test #'char-equal))
                         '("CPU" "Memory" "Network"))))
-           ((string-equal context "kill dialog") :manual)
+           ((member context '("kill dialog" "help") :test #'string-equal)
+ :manual)
            (t nil)))
         (t nil))))

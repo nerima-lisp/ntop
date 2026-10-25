@@ -431,10 +431,10 @@
              (reference-grid unmarked)
              (candidate-initial-grid (selection-grid 0))
              (candidate-grid (selection-grid 1))
-             (reference-projection (project-criterion-grid reference-grid))
+             (reference-projection (ntop.e2e::project-criterion-grid reference-grid))
              (candidate-initial-projection
-               (project-criterion-grid candidate-initial-grid))
-             (candidate-projection (project-criterion-grid candidate-grid)))
+               (ntop.e2e::project-criterion-grid candidate-initial-grid))
+             (candidate-projection (ntop.e2e::project-criterion-grid candidate-grid)))
         (multiple-value-bind (passed difference cause status)
             (ntop.e2e::%route-all-expected-actual
              route
@@ -450,5 +450,5 @@
                    :projection candidate-projection))
           (cl-weave:expect passed :to-be nil)
           (cl-weave:expect (not (null difference)) :to-be t)
-          (cl-weave:expect (search "selected-widget focus" cause) :to-be t)
+          (cl-weave:expect (not (null (search "selected-widget focus" cause))) :to-be t)
           (cl-weave:expect status :to-equal :manual)))))))

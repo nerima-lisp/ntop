@@ -232,24 +232,30 @@
                 "btm" #p"/tmp/route.toml" cpu-route cpu-subcase "/tmp")))
         (cl-weave:expect environment :to-equal
                          '("TERM=xterm-256color" "PATH=/bin"))
-        (cl-weave:expect (member "--battery" battery-ntop-args :test #'string=)
-                         :to-be t)
         (cl-weave:expect
- (and (member "--expanded" battery-ntop-args :test #'string=)
-      (search '("--default-widget-type" "battery"
-                "--default-widget-count" "1")
-              battery-ntop-args :test #'equal))
- :to-be t)
+ (not (null (member "--battery" battery-ntop-args :test #'string=)))
+ :to-be
+ t)
+        (cl-weave:expect
+ (not (null
+       (and (member "--expanded" battery-ntop-args :test #'string=)
+            (search '("--default-widget-type" "battery"
+                      "--default-widget-count" "1")
+                    battery-ntop-args :test #'equal))))
+ :to-be
+ t)
         (cl-weave:expect (member "--battery" battery-btm-args :test #'string=)
                          :to-be nil)
         (cl-weave:expect (member "--expanded" battery-btm-args :test #'string=)
                          :to-be nil)
         (cl-weave:expect
- (and (member "--expanded" cpu-ntop-args :test #'string=)
-      (search '("--default-widget-type" "cpu"
-                "--default-widget-count" "1")
-              cpu-ntop-args :test #'equal))
- :to-be t)
+ (not (null
+       (and (member "--expanded" cpu-ntop-args :test #'string=)
+            (search '("--default-widget-type" "cpu"
+                      "--default-widget-count" "1")
+                    cpu-ntop-args :test #'equal))))
+ :to-be
+ t)
         (cl-weave:expect (member "--expanded" cpu-btm-args :test #'string=)
                          :to-be nil)))))
 
@@ -371,8 +377,13 @@
                   "ntop" #p"/tmp/wp15a-route.toml" route subcase "/tmp")))
           (cl-weave:expect (getf subcase :context) :to-equal context)
           (cl-weave:expect
-           layout
-           :to-equal (list (list (list widget nil :default))))
+ layout
+ :to-equal
+ (list
+  (list
+   (list (intern (symbol-name widget) "NTOP.E2E")
+         nil
+         :default))))
           (cl-weave:expect
            (not (null
                  (search
@@ -420,7 +431,10 @@
              (ntop-args
                (ntop.e2e::%route-base-arguments
                 "ntop" #p"/tmp/wp15a-route.toml" route subcase "/tmp")))
-        (cl-weave:expect default-widget :to-equal expected-widget)
+        (cl-weave:expect
+ default-widget
+ :to-equal
+ (intern (symbol-name expected-widget) "NTOP.E2E"))
         (cl-weave:expect
          (not (null (search
                      (list "--default-widget-type"
@@ -428,4 +442,26 @@
                            "--default-widget-count" "1")
                      ntop-args :test (function equal))))
          :to-be t)))))
+ (cl-weave:it
+ "classifies unverified Help Escape as manual with a human check"
+ (let* ((route
+         (find "key-36" (ntop.e2e::route-catalog)
+               :key #'ntop.e2e::route-id
+               :test #'string=))
+        (subcase
+         (find "help" (ntop.e2e::%route-subcases-expanded route)
+               :key (lambda (entry) (getf entry :context))
+               :test #'string-equal))
+        (reason
+         (ntop.e2e::%route-manual-reason route subcase nil nil))
+        (procedure
+         (ntop.e2e::%route-manual-procedure route subcase "Esc" "help")))
+   (cl-weave:expect
+ (let ((grid (ntop.e2e:make-terminal-grid :rows 1 :cols 1)))
+   (ntop.e2e::%route-modal-action-state-p route subcase grid grid))
+ :to-equal
+ :manual)
+   (cl-weave:expect (not (null (search "Both paired BTM captures" reason))) :to-be t)
+   (cl-weave:expect (not (null (search "press Escape once" procedure))) :to-be t)
+   (cl-weave:expect (not (null (search "dashboard returns" procedure))) :to-be t)))
 ))

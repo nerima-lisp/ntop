@@ -288,3 +288,64 @@
                              :to-be
                              t))
                         (ntop.e2e::close-e2e-session session)))))
+(cl-weave:describe
+ "PTY initial screen readiness"
+ (cl-weave:it
+  "ignores terminal mode setup and cursor query bytes"
+  (let ((octets
+         (map '(vector (unsigned-byte 8))
+              #'char-code
+              (format nil "~c[?1049h~c[?2004h~c[?1000h~c[1;1R"
+                      #\Escape #\Escape #\Escape #\Escape))))
+    (cl-weave:expect
+     (ntop.e2e::%pty-visible-screen-output-p octets)
+     :to-be
+     nil)))
+ (cl-weave:it
+  "recognizes printable screen content after ANSI controls"
+  (let ((octets
+         (map '(vector (unsigned-byte 8))
+              #'char-code
+              (format nil "~c[2JVisible screen" #\Escape))))
+    (cl-weave:expect
+     (ntop.e2e::%pty-visible-screen-output-p octets)
+     :to-be
+     t)))
+ (cl-weave:it
+  "waits for the visible frame after terminal setup output"
+  (let* ((command
+          (concatenate
+           'string
+           "import os,time; "
+           "os.write(1,bytes([27,91,63,49,48,52,57,104,"
+           "27,91,63,50,48,48,52,104])); "
+           "time.sleep(0.8); "
+           "os.write(1,bytes([27,91,50,74,86,105,115,105,98,108,101,"
+           "32,115,99,114,101,101,110])); "
+           "time.sleep(0.2)"))
+         (session
+          (ntop.e2e::launch-e2e-process
+           "python3" (list "-c" command) 24 80 :timeout-seconds 3d0))
+         (output nil)
+         (last-output-at nil))
+    (unwind-protect
+         (progn
+           (multiple-value-bind (frame last)
+               (ntop.e2e::pty-read-until-idle
+                session
+                :quiet-seconds 0.1d0
+                :first-frame-not-before 0.2d0
+                :timeout-seconds 2d0)
+             (setf output frame last-output-at last))
+           (cl-weave:expect
+            (ntop.e2e::%pty-visible-screen-output-p output)
+            :to-be
+            t)
+           (cl-weave:expect (> last-output-at 0.6d0) :to-be t)
+           (cl-weave:expect
+ (not (null
+       (search "Visible screen"
+               (ntop.e2e::%octets-to-text output))))
+ :to-be
+ t))
+      (ntop.e2e::close-e2e-session session)))))

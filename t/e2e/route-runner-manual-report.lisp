@@ -183,28 +183,32 @@
                                    "note the selected choice. Action: press Enter."
                                    "After: verify that choice is applied."))))
                          ((string= action "Close current modal")
-                          (cond
-                            ((string-equal context "kill dialog")
-                             (text "Before: confirm the child PID and ntop-owned marker are"
-                                   "on the same row and the prompt names that PID."
-                                   "Action: press Escape. After: verify the prompt closes"
-                                   "and the same child remains alive."))
-                            ((string-equal context "process sort")
-                             (text "Before: open Sort By and note its highlighted option."
-                                   "Action: press Escape. After: verify the menu closes and"
-                                   "the Processes table returns."))
-                            ((string-equal context "process search")
-                             (text "Before: open Process search and enter a visible query."
-                                   "Action: press Escape. After: verify the prompt closes"
-                                   "and the Processes view returns."))
-                            ((string-equal context "help search")
-                             (text "Before: open Help search and enter process."
-                                   "Action: press Escape. After: verify the search prompt"
-                                   "closes and the Help page returns."))
-                            (t
-                             (text "Before: open the" context "modal and note its prompt."
-                                   "Action: press Escape. After: verify it closes and"
-                                   "the underlying view returns."))))
+ (cond
+   ((string-equal context "kill dialog")
+    (text "Before: confirm the child PID and ntop-owned marker are"
+          "on the same row and the prompt names that PID."
+          "Action: press Escape. After: verify the prompt closes"
+          "and the same child remains alive."))
+   ((string-equal context "process sort")
+    (text "Before: open Sort By and note its highlighted option."
+          "Action: press Escape. After: verify the menu closes and"
+          "the Processes table returns."))
+   ((string-equal context "process search")
+    (text "Before: open Process search and enter a visible query."
+          "Action: press Escape. After: verify the prompt closes"
+          "and the Processes view returns."))
+   ((string-equal context "help search")
+    (text "Before: open Help search and enter process."
+          "Action: press Escape. After: verify the search prompt"
+          "closes and the Help page returns."))
+   ((string-equal context "help")
+    (text "Before: open Help with ? and verify Esc to close is shown."
+          "Action: press Escape once. After: verify Help closes and"
+          "the dashboard returns. Record the BTM version and result."))
+   (t
+    (text "Before: open the" context "modal and note its prompt."
+          "Action: press Escape. After: verify it closes and"
+          "the underlying view returns."))))
                          (t
                           (cond
   ((and (or (string= id "key-20") (string= id "key-21"))

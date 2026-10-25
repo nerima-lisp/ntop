@@ -224,7 +224,10 @@
            (concatenate 'string
                         "The kill prompt needs a visible PID and "
                         "ntop-owned marker must share that row before checking the choice."))
-          (t (format nil "~a in ~a lacks a measurable starting state in this run."
-                     action context))))))
+          (t
+ (if (and (string= id "key-36") (string-equal context "help"))
+     "Both paired BTM captures still showed Help after Escape; verify it closes interactively."
+   (format nil "~a in ~a lacks a measurable starting state in this run."
+           action context)))))))
 )
 
