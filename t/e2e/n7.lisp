@@ -34,7 +34,6 @@
 
 (define-n7-pattern-sources *n7-pattern-sources*
                            :hostname
-                           :username
                            :home-path
                            :working-directory
                            :root-path
@@ -77,21 +76,14 @@
 (defun %process-line-patterns (line)
   (let* ((trimmed (string-trim (list #\Space #\Tab #\Return) line))
          (slash-position (position #\/ trimmed :from-end t))
-         (name
-          (subseq trimmed
-                  (if slash-position
-                      (1+ slash-position)
-                      0))))
-    (when
-        (and (plusp (length name))
-             (not
-              (member name
-                      +n7-probe-process-names+
-                      :test
-                      (function string-equal))))
-      (if (string= trimmed name)
-          (list name)
-          (list trimmed name)))))
+         (name (subseq trimmed (if slash-position (1+ slash-position) 0))))
+    (when (and slash-position
+               (plusp (length name))
+               (char= (char trimmed 0) #\/)
+               (not (member name
+                            +n7-probe-process-names+
+                            :test (function string-equal))))
+      (list trimmed))))
 
 (defun %runtime-process-name-patterns ()
   (let* ((result
@@ -115,7 +107,6 @@
 (defun %runtime-source-values (source root)
   (ecase source
     (:hostname (host-kit:hostname))
-    (:username (host-kit:user-name))
     (:home-path (namestring (host-kit:user-home-directory)))
     (:working-directory (namestring (pathname (host-kit:getcwd))))
     (:root-path (namestring root))

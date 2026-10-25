@@ -45,7 +45,6 @@
    :to-equal
    (quote
     (:hostname
-     :username
      :home-path
      :working-directory
      :root-path
@@ -115,12 +114,15 @@
    :to-equal
    expected))
  (cl-weave:it-each
-  ((:ordinary "fixture-worker" ("fixture-worker"))
-   (:path "runtime/fixture-worker" ("runtime/fixture-worker" "fixture-worker"))
+  ((:ordinary "fixture-worker" nil)
+   (:relative-path "runtime/fixture-worker" nil)
+   (:absolute-path "/Applications/fixture.app/fixture-worker"
+                   ("/Applications/fixture.app/fixture-worker"))
    (:probe "grep" nil)
+   (:probe-path "/usr/bin/grep" nil)
    (:lisp-runtime "sbcl" nil)
    (:shell-runtime "bash" nil))
-  "builds process patterns for the ~A command"
+  "keeps only absolute executable paths for the ~A command"
   (case-name line expected-patterns)
   (declare (ignore case-name))
   (cl-weave:expect
