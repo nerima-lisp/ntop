@@ -256,7 +256,9 @@
               {
                 nativeBuildInputs = [
                   pkgs.coreutils
-                  pkgs.python3
+                  (pkgs.python3.withPackages (pythonPackages: [
+                    pythonPackages.pyte
+                  ]))
                   pkgs.sbcl
                 ];
               }
