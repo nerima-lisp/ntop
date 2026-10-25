@@ -259,68 +259,6 @@
       (and grid (getf side :projection) (getf side :evidence)))
      (t nil))))
 
-(defun %route-all-expected-actual (route mode subcase reference candidate)
-  (let* ((difference (%route-projection-first-difference
-                      (getf reference :projection) (getf candidate :projection)))
-         (comparable-p (route-comparable-p route))
-         (reference-state (%route-action-state-p route mode subcase reference :reference))
-         (candidate-state (%route-action-state-p route mode subcase candidate :candidate)))
-    (cond
-     ((and comparable-p difference)
-      (values nil difference
-              (if (string= mode "btm-self") "btm-self condition-A projections differ"
-                "condition-A reference and candidate differ")))
-     ((and (eq reference-state :manual) (eq candidate-state :manual))
-      (values nil nil
-              (cond
-               ((string= (route-id route) "mouse-74")
-                (concatenate (quote string)
-                             "The Processes pane showed No data even with a live "
-                             "harness-owned child; no rows or selected sort marker "
-                             "were available to compare."))
-               ((string= (route-id route) "mouse-75")
-                (concatenate (quote string)
-                             "condition-A stayed equal after the BTM CPU click; verify "
-                             "the selected series manually."))
-               ((string= (route-id route) "mouse-77")
-                "The BTM screen had one Battery panel and no visible selection tabs.")
-               ((and (member (route-id route) '("key-9" "key-10" "key-11")
-                             :test #'string=)
-                     (search "Move widget selection" (route-action route)))
-                (if (string= (route-id route) "key-9")
-                    (format nil "~a ~a ~a ~a"
-                            "The default 60x220 BTM layout showed several widgets."
-                            "Ctrl+Right, Shift+Right, L, and D produced no captured character"
-                            "or ANSI-style change, and the cursor stayed hidden."
-                            "Selected-widget focus could not be observed.")
-                    (concatenate 'string
-                                 "Input reached BTM; condition-A cells and attributes did not "
-                                 "expose focus, and the cursor stayed hidden.")))
-               ((and (string= (route-id route) "key-38")
-                     (%route-widget-no-data-p
-                      (getf reference :initial-grid) "Processes")
-                     (%route-widget-no-data-p
-                      (getf candidate :initial-grid) "Processes")
-                     (null (%route-grid-headers
-                            (getf reference :initial-grid)))
-                     (null (%route-grid-headers
-                            (getf candidate :initial-grid))))
-                (format nil "~a ~a"
-                        "Both BTM Processes panes showed No data and no sort headers."
-                        "The c CPU-sort order could not be observed."))
-               (t
-                (%route-manual-reason route subcase reference candidate)))
-              :manual))
-     ((or (eq reference-state :manual) (eq candidate-state :manual))
-      (values nil difference "the expected route state is not measurable on at least one side"
-              :manual))
-     ((if (and (eq (route-kind route) :extension) (not comparable-p))
-          candidate-state (and reference-state candidate-state))
-      (values t difference
-              (if comparable-p "condition-A projections match"
-                "approved §D extension deviation")))
-     (t (values nil difference
-                "expected route state was not observed on the reference and candidate")))))
 (defun %route-basic-mode-visible-p (grid)
   (let ((text (and grid (%route-grid-text grid))))
     (and text

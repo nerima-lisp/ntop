@@ -380,7 +380,6 @@
             (1+ (second point)))))
   )
 )
-(progn
   (defun %route-help-visible-sections (grid)
     (loop for row below (grid-height grid)
           for line = (criterion-row-text grid row)
@@ -474,19 +473,3 @@
            ((string-equal context "kill dialog") :manual)
            (t nil)))
         (t nil))))
-  (defun %route-key-context-state (route subcase initial grid stable)
-    (let ((id (route-id route))
-          (context (or (getf subcase :context) "")))
-      (cond
-        ((and (string-equal context "help")
-              (member id '("key-12" "key-13" "key-14" "key-15"
-                           "key-16" "key-17" "key-18" "key-19")
-                      :test #'string=))
-         (%route-help-navigation-state-p route subcase initial grid))
-        ((member id '("key-35" "key-36") :test #'string=)
-         (%route-modal-action-state-p route subcase initial grid))
-        (t
-         (or (%route-search-toggle-state route subcase initial grid stable)
-             :manual)))))
-)
-

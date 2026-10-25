@@ -187,7 +187,72 @@
       (cl-weave:expect (length flags) :to-equal 52)
       (cl-weave:expect (every (function %route-flag-spellings-p) flags)
                        :to-be t)
-      (cl-weave:expect (%route-control-flags-p flags) :to-be t))))
+      (cl-weave:expect (%route-control-flags-p flags) :to-be t)))
+   (cl-weave:it
+    "normalizes color environment and matches single-widget route layouts"
+    (labels ((route-for-context (routes context)
+               (find-if
+                (lambda (route)
+                  (some
+                   (lambda (subcase)
+                     (string-equal (or (getf subcase :context) "") context))
+                   (ntop.e2e::%route-subcases-expanded route)))
+                routes))
+             (subcase-for-context (route context)
+               (find-if
+                (lambda (subcase)
+                  (string-equal (or (getf subcase :context) "") context))
+                (ntop.e2e::%route-subcases-expanded route))))
+      (let* ((environment
+               (ntop.e2e::%route-environment
+                '("TERM=screen"
+                  "NO_COLOR=1"
+                  "CLICOLOR=1"
+                  "CLICOLOR_FORCE=1"
+                  "FORCE_COLOR=1"
+                  "COLORTERM=truecolor"
+                  "ANSI_COLORS_DISABLED=1"
+                  "PATH=/bin")))
+             (routes (ntop.e2e::route-catalog))
+             (battery-route (route-for-context routes "battery tabs"))
+             (battery-subcase (subcase-for-context battery-route "battery tabs"))
+             (cpu-route (route-for-context routes "CPU legend"))
+             (cpu-subcase (subcase-for-context cpu-route "CPU legend"))
+             (battery-ntop-args
+               (ntop.e2e::%route-base-arguments
+                "ntop" #p"/tmp/route.toml" battery-route battery-subcase "/tmp"))
+             (battery-btm-args
+               (ntop.e2e::%route-base-arguments
+                "btm" #p"/tmp/route.toml" battery-route battery-subcase "/tmp"))
+             (cpu-ntop-args
+               (ntop.e2e::%route-base-arguments
+                "ntop" #p"/tmp/route.toml" cpu-route cpu-subcase "/tmp"))
+             (cpu-btm-args
+               (ntop.e2e::%route-base-arguments
+                "btm" #p"/tmp/route.toml" cpu-route cpu-subcase "/tmp")))
+        (cl-weave:expect environment :to-equal
+                         '("TERM=xterm-256color" "PATH=/bin"))
+        (cl-weave:expect (member "--battery" battery-ntop-args :test #'string=)
+                         :to-be t)
+        (cl-weave:expect
+ (and (member "--expanded" battery-ntop-args :test #'string=)
+      (search '("--default-widget-type" "battery"
+                "--default-widget-count" "1")
+              battery-ntop-args :test #'equal))
+ :to-be t)
+        (cl-weave:expect (member "--battery" battery-btm-args :test #'string=)
+                         :to-be nil)
+        (cl-weave:expect (member "--expanded" battery-btm-args :test #'string=)
+                         :to-be nil)
+        (cl-weave:expect
+ (and (member "--expanded" cpu-ntop-args :test #'string=)
+      (search '("--default-widget-type" "cpu"
+                "--default-widget-count" "1")
+              cpu-ntop-args :test #'equal))
+ :to-be t)
+        (cl-weave:expect (member "--expanded" cpu-btm-args :test #'string=)
+                         :to-be nil)))))
+
   (cl-weave:describe
  "BTM self subcase manual classifications"
  (cl-weave:it
@@ -281,4 +346,86 @@
      :to-be t)
     (cl-weave:expect
      (ntop.e2e::%route-mouse-target-unavailable-p subcase visible-grid)
-     :to-be nil)))))
+     :to-be nil)))
+ (cl-weave:it
+  "matches special single-widget layouts between BTM and ntop"
+  (let ((routes (ntop.e2e::route-catalog)))
+    (dolist (case
+              (list (list "key-20" 5 "battery tabs" :battery "--battery")
+                    (list "key-20" 6 "battery tabs" :battery "--battery")
+                    (list "mouse-75" 1 "CPU legend" :cpu nil)
+                    (list "mouse-77" 1 "battery widget" :battery "--battery")))
+      (destructuring-bind (route-id subcase-index context widget extra-flag)
+          case
+        (let* ((route (find route-id routes :key #'ntop.e2e::route-id
+                            :test #'string=))
+               (subcase
+                 (nth (1- subcase-index)
+                      (ntop.e2e::%route-subcases-expanded route)))
+               (layout (ntop.e2e::%route-config-layout route subcase))
+               (btm-config
+                 (let ((ntop.e2e::*btm-layout* layout))
+                   (ntop.e2e:btm-config-string 1000)))
+               (ntop-args
+                 (ntop.e2e::%route-base-arguments
+                  "ntop" #p"/tmp/wp15a-route.toml" route subcase "/tmp")))
+          (cl-weave:expect (getf subcase :context) :to-equal context)
+          (cl-weave:expect
+           layout
+           :to-equal (list (list (list widget nil :default))))
+          (cl-weave:expect
+           (not (null
+                 (search
+                  (format nil "type = ~s" (string-downcase (symbol-name widget)))
+                  btm-config)))
+           :to-be t)
+          (cl-weave:expect
+           (not (null
+                 (search
+                  (list "--default-widget-type"
+                        (string-downcase (symbol-name widget))
+                        "--default-widget-count" "1")
+                  ntop-args :test #'equal)))
+           :to-be t)
+          (cl-weave:expect
+           (not (null (member "--expanded" ntop-args :test #'string=)))
+           :to-be t)
+          (when extra-flag
+            (cl-weave:expect
+             (not (null (member extra-flag ntop-args :test #'string=)))
+             :to-be t)))))))
+ (cl-weave:it
+  "matches starting selection layouts between BTM and ntop"
+  (let ((routes (ntop.e2e::route-catalog)))
+    (dolist (id (list "key-9" "key-10" "key-11"))
+      (let* ((route
+               (find id routes :key (function ntop.e2e::route-id)
+                     :test (function string=)))
+             (subcase
+               (find "normal" (ntop.e2e::%route-subcases-expanded route)
+                     :key (lambda (entry) (getf entry :context))
+                     :test (function string-equal)))
+             (layout (ntop.e2e::%route-config-layout route subcase))
+             (default-widget
+               (loop for row in layout
+                     thereis
+                     (loop for widget in row
+                           when (member :default (cddr widget))
+                             return (first widget))))
+             (expected-widget
+               (if (member id (list "key-9" "key-11")
+                           :test (function string=))
+                   :cpu
+                 :proc))
+             (ntop-args
+               (ntop.e2e::%route-base-arguments
+                "ntop" #p"/tmp/wp15a-route.toml" route subcase "/tmp")))
+        (cl-weave:expect default-widget :to-equal expected-widget)
+        (cl-weave:expect
+         (not (null (search
+                     (list "--default-widget-type"
+                           (string-downcase (symbol-name expected-widget))
+                           "--default-widget-count" "1")
+                     ntop-args :test (function equal))))
+         :to-be t)))))
+))

@@ -22,7 +22,7 @@
             evidence-directory)))
          (base-args (progn
                       (%write-text config-path
-                                   (let ((*btm-layout* (%route-config-layout subcase)))
+                                   (let ((*btm-layout* (%route-config-layout route subcase)))
                                      (btm-config-string
                                       (if (member route-id
                                                   '("resize" "mouse-75" "mouse-77") :test #'string=)

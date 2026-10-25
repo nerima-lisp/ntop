@@ -19,12 +19,27 @@
                  (close claim)
                  (return directory)))))
 
-(defun %route-environment ()
-  (cons "TERM=xterm-256color"
-        (remove-if (lambda (entry)
-                     (and (>= (length entry) 5)
-                          (string= entry "TERM=" :end1 5)))
-                   (sb-ext:posix-environ))))
+(progn
+  (defun %route-color-environment-variable-p (entry)
+    (let ((separator (position #\= entry)))
+      (and separator
+           (member (subseq entry 0 separator)
+                   '("ANSI_COLORS_DISABLED"
+                     "CLICOLOR"
+                     "CLICOLOR_FORCE"
+                     "COLORTERM"
+                     "FORCE_COLOR"
+                     "NO_COLOR")
+                   :test #'string=))))
+  (defun %route-environment
+      (&optional (inherited-environment (sb-ext:posix-environ)))
+    (cons "TERM=xterm-256color"
+          (remove-if
+           (lambda (entry)
+             (or (%route-color-environment-variable-p entry)
+                 (and (>= (length entry) 5)
+                      (string= entry "TERM=" :end1 5))))
+           inherited-environment))))
 
 (defun %route-octets (text)
   (sb-ext:string-to-octets text :external-format :utf-8))
