@@ -67,6 +67,11 @@
 
 (defun %render (render state config snapshot columns rows
                 unavailability-reasons)
+  (when (equal (uiop:getenv "NTOP_N6_TEST_EXCEPTION")
+               "raise-on-first-render")
+    (write-line "__NTOP_N6_EXCEPTION_READY__" *error-output*)
+    (finish-output *error-output*)
+    (error "Deliberate N6 test exception after terminal setup."))
   (funcall render state config snapshot columns rows unavailability-reasons))
 
 (defun run-application-loop

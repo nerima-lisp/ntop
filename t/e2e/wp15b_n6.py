@@ -30,6 +30,10 @@ AFTER_END = b"__NTOP_N6_AFTER_END__"
 TARGET_PID = b"__NTOP_N6_TARGET_PID__"
 TARGET_EXIT = b"__NTOP_N6_TARGET_EXIT__"
 REPLY_MARKER = b"__NTOP_N6_QUERY_REPLY__"
+EXCEPTION_ENV = "NTOP_N6_TEST_EXCEPTION"
+EXCEPTION_ENV_VALUE = "raise-on-first-render"
+EXCEPTION_READY = b"__NTOP_N6_EXCEPTION_READY__"
+EXCEPTION_MESSAGE = b"Deliberate N6 test exception after terminal setup."
 READINESS_TIMEOUT = 30.0
 EXIT_TIMEOUT = 15.0
 QUERY_TIMEOUT = 3.0
@@ -81,6 +85,11 @@ def _btm_version(command: list[str]) -> str:
 
 def _set_window_size(fd: int, rows: int, columns: int) -> None:
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
+
+
+def _terminal_snapshot(fd: int) -> tuple[object, ...]:
+    attributes = termios.tcgetattr(fd)
+    return (*attributes[:6], tuple(attributes[6]))
 
 
 def _child_tty_setup() -> None:
@@ -145,6 +154,21 @@ def _wait_for_raw(process: subprocess.Popen[bytes], slave: int, master: int,
             raise TimeoutError("Timed out waiting for target raw mode.")
         if _read_once(master, output, 0.05):
             last_activity = time.monotonic()
+
+
+def _wait_for_exception(process: subprocess.Popen[bytes], master: int,
+                        output: bytearray) -> int:
+    deadline = time.monotonic() + READINESS_TIMEOUT
+    while EXCEPTION_READY not in output:
+        if process.poll() is not None:
+            raise RuntimeError("Target exited before the exception readiness marker.")
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Timed out waiting for the exception readiness marker.")
+        _read_once(master, output, 0.05)
+    target_pid = _marker_integer(bytes(output), TARGET_PID)
+    if target_pid is None:
+        raise RuntimeError("Target PID marker was missing before the exception.")
+    return target_pid
 
 
 def _marked_section(output: bytes, start_marker: bytes,
@@ -261,6 +285,8 @@ def _save_case(directory: Path, name: str, raw: bytes,
 def _run_case(directory: Path, target: str, command: list[str],
               termination: str, signum: int | None) -> dict[str, object]:
     name = f"{target}-{termination.lower()}"
+    exception_case = termination == "lisp-exception"
+    sigkill_case = termination == "SIGKILL"
     output = bytearray()
     process: subprocess.Popen[bytes] | None = None
     master = -1
@@ -269,6 +295,8 @@ def _run_case(directory: Path, target: str, command: list[str],
     target_exit: int | None = None
     before: bytes | None = None
     after: bytes | None = None
+    termios_before: tuple[object, ...] | None = None
+    termios_after: tuple[object, ...] | None = None
     reply_octets: list[int] | None = None
     reply_status: int | None = None
     failure: str | None = None
@@ -278,6 +306,11 @@ def _run_case(directory: Path, target: str, command: list[str],
     metadata: dict[str, object] = {
         "target": target,
         "termination": termination,
+        "acceptance_scope": (
+            "reference" if target == "btm"
+            else "outside-acceptance" if sigkill_case
+            else "acceptance"
+        ),
         "command": command,
         "launch_scope": "PTY session leader shell, synchronous foreground target",
         "signal_scope": "captured target PID only" if signum is not None else None,
@@ -292,9 +325,13 @@ def _run_case(directory: Path, target: str, command: list[str],
     try:
         master, slave = pty.openpty()
         _set_window_size(slave, 48, 160)
+        termios_before = _terminal_snapshot(slave)
         environment = os.environ.copy()
         environment["TERM"] = "xterm-256color"
         environment["NTOP_N6_SHELL_STDERR"] = str(shell_stderr)
+        environment.pop(EXCEPTION_ENV, None)
+        if exception_case:
+            environment[EXCEPTION_ENV] = EXCEPTION_ENV_VALUE
         process = subprocess.Popen(
             ["/bin/sh", "-c", WRAPPER, "ntop-wp15b-n6", *command],
             stdin=slave,
@@ -306,9 +343,22 @@ def _run_case(directory: Path, target: str, command: list[str],
             preexec_fn=_child_tty_setup,
         )
         metadata["wrapper_pid"] = process.pid
-        target_pid = _wait_for_raw(process, slave, master, output, terminal_probes)
+        if exception_case:
+            target_pid = _wait_for_exception(process, master, output)
+            metadata["termination_action"] = (
+                "uncaught test exception on first application-loop render"
+            )
+        else:
+            target_pid = _wait_for_raw(
+                process, slave, master, output, terminal_probes
+            )
         metadata["target_pid"] = target_pid
-        if signum is None:
+        if exception_case:
+            metadata["exception_environment"] = {
+                "name": EXCEPTION_ENV,
+                "value": EXCEPTION_ENV_VALUE,
+            }
+        elif signum is None:
             os.write(master, b"q")
             metadata["termination_action"] = "write q to PTY input"
         else:
@@ -352,6 +402,14 @@ def _run_case(directory: Path, target: str, command: list[str],
                 )
     finally:
         if slave >= 0:
+            try:
+                termios_after = _terminal_snapshot(slave)
+            except Exception as error:
+                if failure is None:
+                    failure = f"{type(error).__name__}: {error}"
+                metadata["termios_snapshot_error"] = (
+                    f"{type(error).__name__}: {error}"
+                )
             os.close(slave)
         if master >= 0:
             os.close(master)
@@ -360,17 +418,30 @@ def _run_case(directory: Path, target: str, command: list[str],
     events = _private_mode_events(raw)
     wrapper_code = process.returncode if process is not None else None
     expected_exit = (
-        target_exit == 0 if signum is None
+        target_exit is not None and target_exit != 0 if exception_case
+        else target_exit == 0 if signum is None
         else target_exit == 128 + signum
     )
+    stty_unchanged = before is not None and before == after
+    stty_changed = None if before is None or after is None else before != after
+    termios_unchanged = (
+        termios_before is not None
+        and termios_after is not None
+        and termios_before == termios_after
+    )
+    termios_changed = (
+        None
+        if termios_before is None or termios_after is None
+        else termios_before != termios_after
+    )
+    exception_ready = EXCEPTION_READY in raw
+    exception_message_seen = EXCEPTION_MESSAGE in raw
     checks = {
         "both_stty_snapshots": before is not None and after is not None,
-        "stty_unchanged": before is not None and before == after,
+        "both_termios_snapshots": (
+            termios_before is not None and termios_after is not None
+        ),
         "expected_exit_status": expected_exit,
-        "query_seen": QUERY in raw,
-        "recognized_query_reply": reply_status in (1, 2, 3, 4),
-        "cursor_visible_after_run": reply_status == 1,
-        "dec_mode_reset_seen": any(e["action"] == "reset" for e in events),
         "target_pid_recorded": target_pid is not None,
         "harness_completed": process is not None and wrapper_code is not None,
         "no_runner_error": failure is None,
@@ -379,17 +450,46 @@ def _run_case(directory: Path, target: str, command: list[str],
             and (process is None or process.poll() is not None)
         ),
     }
+    if sigkill_case:
+        checks["sigkill_sent_to_captured_target"] = (
+            signum == signal.SIGKILL
+            and metadata.get("signal_scope") == "captured target PID only"
+        )
+    else:
+        checks.update(
+            {
+                "stty_unchanged": stty_unchanged,
+                "termios_unchanged": termios_unchanged,
+                "query_seen": QUERY in raw,
+                "recognized_query_reply": reply_status in (1, 2, 3, 4),
+                "cursor_visible_after_run": reply_status == 1,
+                "dec_mode_reset_seen": any(
+                    e["action"] == "reset" for e in events
+                ),
+            }
+        )
+    if exception_case:
+        checks["exception_readiness_marker_seen"] = exception_ready
+        checks["exception_message_seen"] = exception_message_seen
     metadata.update(
         {
             "target_exit_code": target_exit,
             "wrapper_returncode": wrapper_code,
             "stty_before": before.decode("utf-8", errors="replace") if before else None,
             "stty_after": after.decode("utf-8", errors="replace") if after else None,
+            "termios_before": repr(termios_before) if termios_before is not None else None,
+            "termios_after": repr(termios_after) if termios_after is not None else None,
+            "stty_unchanged": stty_unchanged,
+            "stty_remains_changed": stty_changed,
+            "termios_unchanged": termios_unchanged,
+            "terminal_mode_remains_changed": termios_changed,
             "private_mode_events": events,
             "terminal_probe_exchanges": terminal_probes,
             "cursor_status_before_reply": _cursor_status(events),
-            "dec_mode_reset_seen": checks["dec_mode_reset_seen"],
-            "query_seen": checks["query_seen"],
+            "dec_mode_reset_seen": any(
+                e["action"] == "reset" for e in events
+            ),
+            "query_seen": QUERY in raw,
             "reply_octets": reply_octets,
             "reply_status": reply_status,
             "checks": checks,
@@ -397,9 +497,15 @@ def _run_case(directory: Path, target: str, command: list[str],
             "shell_job_control_stderr_bytes": (
                 shell_stderr.stat().st_size if shell_stderr.exists() else 0
             ),
-            "status": "PASS" if all(checks.values()) else "FAIL",
         }
     )
+    if sigkill_case:
+        metadata["status"] = "outside-acceptance"
+        metadata["diagnostic_status"] = (
+            "PASS" if all(checks.values()) else "FAIL"
+        )
+    else:
+        metadata["status"] = "PASS" if all(checks.values()) else "FAIL"
     if failure:
         metadata["error"] = failure
     _save_case(directory, name, raw, metadata)
@@ -446,13 +552,12 @@ def main() -> int:
     btm.extend(["-C", str(config)])
     results: list[dict[str, object]] = []
     unavailable = (
-        ("ntop-lisp-exception", "ntop-built-executable", "not-generated",
-         "No exception injection seam exists in the built ntop executable.", ntop),
         ("btm-lisp-exception", "btm", "not-applicable",
          "btm is Rust; the source-runtime Lisp exception case is separate.", btm),
     )
     for name, target, status, reason, command in unavailable:
         record = {"target": target, "termination": "lisp-exception",
+                  "acceptance_scope": "reference",
                   "status": status, "reason": reason, "command_not_run": command,
                   "raw_output": f"{name}.raw"}
         _save_case(directory, name, b"", record)
@@ -471,20 +576,57 @@ def main() -> int:
                 _save_case(directory, raw_path.stem, raw_path.read_bytes(), result)
             results.append(result)
 
+    results.append(
+        _run_case(directory, "ntop", ntop, "lisp-exception", None)
+    )
+    results.append(
+        _run_case(directory, "ntop", ntop, "SIGKILL", signal.SIGKILL)
+    )
+
     from wp15b_n6_exception import run_exception_case
 
-    results.append(run_exception_case(directory, ROOT, sbcl))
-    failures = sum(result.get("status") == "FAIL" for result in results)
-    incomplete = sum(result.get("status") == "not-generated" for result in results)
+    source_exception = run_exception_case(directory, ROOT, sbcl)
+    source_exception["acceptance_scope"] = "reference"
+    results.append(source_exception)
+    acceptance_results = [
+        result for result in results
+        if result.get("acceptance_scope") not in ("reference", "outside-acceptance")
+    ]
+    references = [
+        result for result in results
+        if result.get("acceptance_scope") == "reference"
+    ]
+    diagnostics = [
+        result for result in results
+        if result.get("acceptance_scope") == "outside-acceptance"
+    ]
+    failures = sum(result.get("status") == "FAIL" for result in acceptance_results)
+    incomplete = sum(
+        result.get("status") == "not-generated" for result in acceptance_results
+    )
     summary = {
         "results": results,
         "counts": {
-            "pass": sum(result.get("status") == "PASS" for result in results),
+            "pass": sum(
+                result.get("status") == "PASS" for result in acceptance_results
+            ),
             "fail": failures,
             "not_applicable": sum(
                 result.get("status") == "not-applicable" for result in results
             ),
             "not_generated": incomplete,
+            "reference_cases": len(references),
+            "reference_pass": sum(
+                result.get("status") == "PASS" for result in references
+            ),
+            "reference_fail": sum(
+                result.get("status") == "FAIL" for result in references
+            ),
+            "outside_acceptance_diagnostics": len(diagnostics),
+            "diagnostic_fail": sum(
+                result.get("diagnostic_status") == "FAIL"
+                for result in diagnostics
+            ),
         },
         "overall": "FAIL" if failures else "INCOMPLETE" if incomplete else "PASS",
     }
