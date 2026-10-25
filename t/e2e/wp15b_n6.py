@@ -27,6 +27,7 @@ BEFORE_BEGIN = b"__NTOP_N6_BEFORE_BEGIN__"
 BEFORE_END = b"__NTOP_N6_BEFORE_END__"
 AFTER_BEGIN = b"__NTOP_N6_AFTER_BEGIN__"
 AFTER_END = b"__NTOP_N6_AFTER_END__"
+TERMIOS_READY = b"__NTOP_N6_TERMIOS_READY__"
 TARGET_PID = b"__NTOP_N6_TARGET_PID__"
 TARGET_EXIT = b"__NTOP_N6_TARGET_EXIT__"
 REPLY_MARKER = b"__NTOP_N6_QUERY_REPLY__"
@@ -53,6 +54,8 @@ printf '\n%s%s\n' '__NTOP_N6_TARGET_EXIT__' "$target_status"
 printf '%s\n' '__NTOP_N6_AFTER_BEGIN__'
 stty -a </dev/tty
 printf '%s\n' '__NTOP_N6_AFTER_END__'
+printf '%s\n' '__NTOP_N6_TERMIOS_READY__'
+IFS= read -r _ </dev/tty || exit 125
 saved=$(stty -g </dev/tty) || exit 125
 stty raw -echo </dev/tty || exit 125
 printf '\033[?25$p'
@@ -366,12 +369,24 @@ def _run_case(directory: Path, target: str, command: list[str],
             metadata["termination_action"] = f"os.kill({target_pid}, {termination})"
             metadata["signal_number"] = signum
         deadline = time.monotonic() + EXIT_TIMEOUT
-        while TARGET_EXIT not in output or AFTER_END not in output:
+        while (TARGET_EXIT not in output or AFTER_END not in output
+               or TERMIOS_READY not in output):
             if process.poll() is not None:
                 raise RuntimeError("PTY wrapper exited before the after-stty marker.")
             if time.monotonic() >= deadline:
                 raise TimeoutError("Timed out waiting for target restoration markers.")
             _read_once(master, output, 0.05)
+        try:
+            termios_after = _terminal_snapshot(slave)
+        except Exception as error:
+            metadata["termios_snapshot_error"] = (
+                f"{type(error).__name__}: {error}"
+            )
+            raise
+        metadata["termios_snapshot_point"] = (
+            "post-target-stty-before-cursor-query"
+        )
+        os.write(master, b"\n")
         target_exit = _marker_integer(bytes(output), TARGET_EXIT)
         if target_exit is None:
             raise RuntimeError("Target exit marker did not contain an integer status.")
@@ -402,14 +417,6 @@ def _run_case(directory: Path, target: str, command: list[str],
                 )
     finally:
         if slave >= 0:
-            try:
-                termios_after = _terminal_snapshot(slave)
-            except Exception as error:
-                if failure is None:
-                    failure = f"{type(error).__name__}: {error}"
-                metadata["termios_snapshot_error"] = (
-                    f"{type(error).__name__}: {error}"
-                )
             os.close(slave)
         if master >= 0:
             os.close(master)
