@@ -250,23 +250,30 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
                                 stable_since, stable_snapshot_count = now, 1
                         else:
                             layout_signature, stable_since, stable_snapshot_count = None, None, 0
-                        app_snapshot = (
-                            None if cli_error_detected else application_render_signature(text)
-                        )
-                        if app_snapshot:
-                            if app_snapshot == application_layout_signature:
-                                application_snapshot_count += 1
-                            else:
-                                application_layout_signature = app_snapshot
-                                application_stable_since = now
-                                application_snapshot_count = 1
-                        else:
-                            application_layout_signature = application_stable_since = None
-                            application_snapshot_count = 0
+
                 child_done, raw_status = wait_child(pid, 0.0)
                 if child_done:
                     break
                 now = time.monotonic()
+                if (mode == "d11" and last_output_at is not None
+                    and now-last_output_at >= 0.2 and not decoder.getstate()[0]):
+                    text = screen_text(screen)
+                    cli_error_detected = (
+                        cli_error_detected or cli_error_output_detected(text)
+                    )
+                    app_snapshot = (
+                        None if cli_error_detected else application_render_signature(text)
+                    )
+                    if app_snapshot:
+                        if app_snapshot == application_layout_signature:
+                            application_snapshot_count += 1
+                        else:
+                            application_layout_signature = app_snapshot
+                            application_stable_since = now
+                            application_snapshot_count = 1
+                    else:
+                        application_layout_signature = application_stable_since = None
+                        application_snapshot_count = 0
                 if (mode == "d11" and stable_since is not None and stable_snapshot_count >= 2
                     and now-stable_since >= 1.2 and last_output_at is not None
                     and now-last_output_at >= 0.2 and not decoder.getstate()[0]):
