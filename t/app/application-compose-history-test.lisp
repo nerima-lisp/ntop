@@ -345,4 +345,149 @@
              record
              1d0))
            :to-be
-           t)))))
+           t)
+          (progn
+            (let* ((help-composition (%make-composition-test-instance))
+                   (state (ntop.app.domain:make-app-state
+                           :selected-widget :cpu
+                           :active-dialog :help-search))
+                   (help-state
+                     (ntop.app.presentation:make-help-state
+                      :selected-widget :cpu
+                      :query "needle"
+                      :search-active-p t))
+                   (on-action
+                     (ntop.app.application:application-composition-on-action
+                      help-composition)))
+              (setf (gethash :help (ntop.app.domain:app-state-widget-v-states state))
+                    help-state)
+              (funcall on-action
+                       state
+                       (ntop.app.domain:make-app-action
+                        :kind :dialog
+                        :value (list :close :help-search)))
+              (cl-weave:expect
+               (ntop.app.domain:app-state-active-dialog state)
+               :to-be
+               nil)
+              (cl-weave:expect
+               (ntop.app.presentation:help-state-search-active-p
+                (gethash
+                 :help
+                 (ntop.app.domain:app-state-widget-v-states state)))
+               :to-be
+               nil)
+              (funcall on-action
+                       state
+                       (ntop.app.domain:make-app-action :kind :search :value :help))
+              (funcall on-action
+                       state
+                       (ntop.app.domain:make-app-action :kind :dialog :value :unknown))
+              (cl-weave:expect
+               (ntop.app.domain:app-state-active-dialog state)
+               :to-be
+               :help-search)
+              (cl-weave:expect
+               (ntop.app.presentation:help-state-search-active-p
+                (gethash
+                 :help
+                 (ntop.app.domain:app-state-widget-v-states state)))
+               :to-be
+               t)
+              (funcall on-action
+                       state
+                       (ntop.app.domain:make-app-action :kind :dialog :value :help))
+              (cl-weave:expect
+               (ntop.app.domain:app-state-active-dialog state)
+               :to-be
+               :help)
+              (cl-weave:expect
+               (ntop.app.presentation:help-state-search-active-p
+                (gethash
+                 :help
+                 (ntop.app.domain:app-state-widget-v-states state)))
+               :to-be
+               nil)
+              (cl-weave:expect
+               (ntop.app.presentation:help-state-query
+                (gethash
+                 :help
+                 (ntop.app.domain:app-state-widget-v-states state)))
+               :to-equal
+               "needle"))
+            (let* ((config
+                     (ntop.shared.application:make-application-config
+                      :process-default-grouped-p nil
+                      :process-columns (list :pid-or-count :name-or-command :time)))
+                   (composition
+                     (ntop.app.application:make-application-composition config))
+                   (state
+                     (ntop.app.domain:make-app-state
+                      :selected-widget :process
+                      :expanded-p t))
+                   (snapshot
+                     (ntop.app.domain:make-collection-snapshot
+                      :sampled-at 3d0
+                      :process-sample
+                      (ntop.process.domain:make-process-sample
+                       :sampled-at 3d0
+                       :processes
+                       (list
+                        (ntop.process.domain:make-process-record
+                         :pid 100
+                         :ppid 1
+                         :name "alpha"
+                         :command "alpha --serve"
+                         :start-time-unix-seconds 100))))))
+              (let ((output
+                      (with-output-to-string (stream)
+                        (let ((*standard-output* stream))
+                          (funcall
+                           (ntop.app.application:application-composition-render
+                            composition)
+                           state config snapshot 80 24 nil 175)))))
+                (cl-weave:expect
+                 (not (null (search "1m 15.00s" output)))
+                 :to-be
+                 t)))
+            (let* ((called-p nil)
+                   (composition
+                     (%make-composition-test-instance
+                      :on-render
+                      (lambda (series-by-widget)
+                        (declare (ignore series-by-widget))
+                        (setf called-p t)
+                        nil)))
+                   (state (ntop.app.domain:make-app-state :selected-widget :cpu))
+                   (config (ntop.shared.application:make-application-config)))
+              (with-output-to-string (stream)
+                (let ((*standard-output* stream))
+                  (funcall
+                   (ntop.app.application:application-composition-render composition)
+                   state config nil 80 24 nil 175)))
+              (cl-weave:expect called-p :to-be t))
+            (let* ((render-diff-symbol (find-symbol "RENDER-DIFF" "CL-TTY-KIT"))
+                   (original-render-diff (symbol-function render-diff-symbol))
+                   (composition (%make-composition-test-instance))
+                   (state (ntop.app.domain:make-app-state :selected-widget :cpu))
+                   (config (ntop.shared.application:make-application-config))
+                   (raw-diff (format nil "head~%middle~C~%tail~%" #\Return))
+                   (expected
+                     (format nil "head~C~%middle~C~%tail~C~%"
+                             #\Return #\Return #\Return)))
+              (let ((actual
+                      (unwind-protect
+                           (progn
+                             (setf (symbol-function render-diff-symbol)
+                                   (lambda (screen previous output)
+                                     (declare (ignore screen previous))
+                                     (write-string raw-diff output)))
+                             (with-output-to-string (stream)
+                               (let ((*standard-output* stream))
+                                 (funcall
+                                  (ntop.app.application:application-composition-render
+                                   composition)
+                                  state config nil 80 24 nil))))
+                         (setf (symbol-function render-diff-symbol)
+                               original-render-diff))))
+                (cl-weave:expect actual :to-equal expected))))))))

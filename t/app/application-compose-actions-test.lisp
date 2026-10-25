@@ -428,4 +428,35 @@
                        (ntop.app.application::%gpu-memory-series-data
                         composition)
                        :to-be
-                       nil)))))
+                       nil)))
+                   (cl-weave:it
+                    "rejects invalid composition callbacks"
+                    (let ((config
+                            (ntop.shared.application:make-application-config)))
+                      (flet ((error-message (thunk)
+                               (handler-case
+                                   (progn (funcall thunk) "")
+                                 (error (condition)
+                                   (format nil "~A" condition)))))
+                        (cl-weave:expect
+                         (not
+                          (null
+                           (search
+                            "ON-ACTION must be a function or NIL."
+                            (error-message
+                             (lambda ()
+                               (ntop.app.application:make-application-composition
+                                config :on-action t))))))
+                         :to-be
+                         t)
+                        (cl-weave:expect
+                         (not
+                          (null
+                           (search
+                            "DRAW-SCREEN must be a function."
+                            (error-message
+                             (lambda ()
+                               (ntop.app.application:make-application-composition
+                                config :draw-screen t))))))
+                         :to-be
+                         t))))))
