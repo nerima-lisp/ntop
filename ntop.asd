@@ -334,6 +334,7 @@
    (:file "t/app/application-compose-test")
    (:file "t/app/application-compose-history-test")
    (:file "t/app/application-compose-dialogs-test")
+   (:file "t/app/application-compose-help-test")
    (:file "t/app/presentation-help-test")
    (:file "t/app/presentation-screen-test")
    (:file "t/app/presentation-screen-composition-test")
