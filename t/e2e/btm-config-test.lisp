@@ -4,38 +4,37 @@
   (not (null (search fragment text))))
 
 (defun btm-config-test-count (text fragment)
-  (loop with
-    position
-    =
-    0
-    for
-    found
-    =
-    (search fragment text :start2 position)
-    while
-    found
-    count
-    t
-    do
-    (setf position (+ found (length fragment)))))
+  (loop with position = 0
+        for found = (search fragment text :start2 position)
+        while found
+        count t
+        do (setf position (+ found (length fragment)))))
 
 (defun btm-config-test-layout-order-p (text)
-  (let ((positions
-         (mapcar
-          (lambda (type)
-            (search (format nil "type = ~s" type) text))
-          '("cpu" "mem" "net" "disk" "temp" "proc"))))
+  (let* ((positions
+          (mapcar
+           (lambda (type)
+             (search (format nil "type = ~s" type) text))
+           '("cpu" "mem" "net" "disk" "temp" "proc")))
+         (first-row (search (format nil "[[row]]~%ratio = 1") text))
+         (second-row
+          (when first-row
+            (search (format nil "[[row]]~%ratio = 1")
+                    text
+                    :start2 (1+ first-row))))
+         (third-row
+          (when second-row
+            (search (format nil "[[row]]~%ratio = 2")
+                    text
+                    :start2 (1+ second-row)))))
     (and (every #'integerp positions)
-         (loop for
-           previous
-           in
-           positions
-           for
-           next
-           in
-           (cdr positions)
-           always
-           (< previous next)))))
+         (loop for previous in positions
+               for next in (cdr positions)
+               always (< previous next))
+         first-row
+         second-row
+         third-row
+         (< first-row second-row third-row))))
 
 (cl-weave:describe "btm configuration projection"
                    (cl-weave:it "expands declarative layout rows"
@@ -83,9 +82,34 @@
                        (btm-config-test-count text "[[row.child]]")
                        :to-be
                        6)
-                      (cl-weave:expect (btm-config-test-count text "ratio = 2")
-                                       :to-be
-                                       4)
+                      (progn
+                        (cl-weave:expect
+                         (btm-config-test-count text "ratio = 2")
+                         :to-be
+                         5)
+                        (cl-weave:expect
+                         (btm-config-test-count text
+                                                (format nil
+                                                        "[[row]]~%ratio = 1"))
+                         :to-be
+                         2)
+                        (cl-weave:expect
+                         (btm-config-test-count text
+                                                (format nil
+                                                        "[[row]]~%ratio = 2"))
+                         :to-be
+                         1)
+                        (let* ((ntop.e2e::*btm-layout*
+                                (list
+                                 (list (list (intern "CPU" :ntop.e2e) nil))))
+                               (single-row-text
+                                (ntop.e2e:btm-config-string rate)))
+                          (cl-weave:expect
+                           (btm-config-test-count single-row-text
+                                                  (format nil
+                                                          "[[row]]~%ratio = 1"))
+                           :to-be
+                           1)))
                       (cl-weave:expect
                        (btm-config-test-count text "default = true")
                        :to-be
