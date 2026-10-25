@@ -1,3 +1,4 @@
+import importlib
 import sys
 import unittest
 from pathlib import Path
@@ -55,6 +56,14 @@ def memory_screen(
 
 
 class D11ScreenComparisonTests(unittest.TestCase):
+    def test_module_import_skips_libsystem_off_macos(self):
+        with patch.object(d11_support.sys, "platform", "linux"):
+            with patch.object(d11_support.ctypes, "CDLL") as load_library:
+                importlib.reload(d11_support)
+
+        load_library.assert_not_called()
+        importlib.reload(d11_support)
+
     def test_dynamic_values_and_graph_strokes_do_not_change_signature(self):
         without = memory_screen(used=24, free=75, swap_used=25, graph="─│─")
         with_flag = memory_screen(used=33, free=66, swap_used=42, graph="│─│")

@@ -13,8 +13,10 @@ import select
 import signal
 import struct
 import subprocess
+import sys
 import termios
 import time
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -29,17 +31,26 @@ CPU_LOAD_INFO = 2
 CPU_ACTIVE_STATES = (0, 1, 3)
 MAX_LOAD_ATTEMPTS = 5
 
-LIBSYSTEM = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
 U32 = ctypes.c_uint32
 PTR_U32 = ctypes.POINTER(U32)
-LIBSYSTEM.mach_host_self.restype = U32
-LIBSYSTEM.mach_task_self.restype = U32
-LIBSYSTEM.host_processor_info.argtypes = [
-    U32, ctypes.c_int, PTR_U32, ctypes.POINTER(PTR_U32), PTR_U32,
-]
-LIBSYSTEM.host_processor_info.restype = ctypes.c_int
-LIBSYSTEM.vm_deallocate.argtypes = [U32, ctypes.c_ulong, ctypes.c_ulong]
-LIBSYSTEM.vm_deallocate.restype = ctypes.c_int
+
+
+@cache
+def _libsystem() -> Any:
+    library = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+    library.mach_host_self.restype = U32
+    library.mach_task_self.restype = U32
+    library.host_processor_info.argtypes = [
+        U32, ctypes.c_int, PTR_U32, ctypes.POINTER(PTR_U32), PTR_U32,
+    ]
+    library.host_processor_info.restype = ctypes.c_int
+    library.vm_deallocate.argtypes = [U32, ctypes.c_ulong, ctypes.c_ulong]
+    library.vm_deallocate.restype = ctypes.c_int
+    return library
+
+
+if sys.platform == "darwin":
+    _libsystem()
 
 
 def utc_now() -> str:
@@ -51,17 +62,18 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def cpu_counters() -> list[list[int]]:
+    library = _libsystem()
     processor_count, info_count, info = U32(), U32(), PTR_U32()
-    result = LIBSYSTEM.host_processor_info(
-        LIBSYSTEM.mach_host_self(), CPU_LOAD_INFO, ctypes.byref(processor_count),
+    result = library.host_processor_info(
+        library.mach_host_self(), CPU_LOAD_INFO, ctypes.byref(processor_count),
         ctypes.byref(info), ctypes.byref(info_count),
     )
     if result != 0:
         raise RuntimeError(f"host_processor_info returned {result}")
     values = [int(info[index]) for index in range(info_count.value)]
     address = ctypes.cast(info, ctypes.c_void_p).value
-    deallocated = LIBSYSTEM.vm_deallocate(
-        LIBSYSTEM.mach_task_self(), address, info_count.value * ctypes.sizeof(U32)
+    deallocated = library.vm_deallocate(
+        library.mach_task_self(), address, info_count.value * ctypes.sizeof(U32)
     )
     if deallocated != 0:
         raise RuntimeError(f"vm_deallocate returned {deallocated}")
