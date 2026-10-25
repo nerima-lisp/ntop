@@ -3,6 +3,19 @@
 (defgeneric draw-table-text (target x y text role)
   (:documentation
    "Draw TEXT at absolute 0-based terminal-cell X/Y; roles :NORMAL, :HEADER, :SELECTED, :TITLE."))
+(defgeneric draw-table-background (target rectangle role))
+(defmethod draw-table-background (target rectangle role)
+  (let* ((left (max 0 (rectangle-x rectangle)))
+         (top (max 0 (rectangle-y rectangle)))
+         (right (max left
+                     (+ (rectangle-x rectangle)
+                        (max 0 (rectangle-width rectangle)))))
+         (bottom (max top
+                      (+ (rectangle-y rectangle)
+                         (max 0 (rectangle-height rectangle)))))
+         (blank-line (make-string (- right left) :initial-element #\Space)))
+    (loop for y from top below bottom
+          do (draw-table-text target left y blank-line role))))
 
 (defstruct
     (table-config
@@ -151,6 +164,13 @@
                                  :rows
                                  row-list))
          (areas nil))
+    (draw-table-background target
+                           (make-rectangle :x (rectangle-x rectangle)
+                                           :y (+ (rectangle-y rectangle) title-height)
+                                           :width (rectangle-width rectangle)
+                                           :height (max 0 (- (rectangle-height rectangle)
+                                                             title-height)))
+                           :normal)
     (when title-row-p
       (let ((title
               (format-table-title (table-config-title config)
@@ -206,6 +226,14 @@
                             (= row-index (table-state-selected-index state))
                             (or (table-config-focused-p config)
                                 (table-config-show-current-entry-when-unfocused-p config)))))
+                 (when selected-p
+                   (draw-table-background
+                    target
+                    (make-rectangle :x (rectangle-x rectangle)
+                                    :y y
+                                    :width (rectangle-width rectangle)
+                                    :height 1)
+                    :selected))
                  (dolist (column-layout layout)
                    (let* ((column
                             (find (table-column-layout-id column-layout)

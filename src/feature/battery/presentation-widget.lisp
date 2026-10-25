@@ -30,6 +30,11 @@
                                 (= y (%battery-color-target-charge-y target)))
                                (%battery-color-target-charge-role target)
                                role)))
+(defmethod ntop.ui::draw-table-background
+           ((target %battery-color-target) rectangle role)
+  (ntop.ui::draw-table-background (%battery-color-target-target target)
+                                  rectangle
+                                  role))
 
 (defun %battery-table-config (columns &key
                                       (selectable-p nil)

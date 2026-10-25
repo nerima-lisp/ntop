@@ -1,10 +1,20 @@
 (in-package #:ntop.test)
 
-(defstruct wp7-fake-table-target
-  calls)
+(defstruct wp7-fake-table-target calls fills forward-background-p)
 
 (defmethod ntop.ui:draw-table-text ((target wp7-fake-table-target) x y text role)
   (push (list x y text role) (wp7-fake-table-target-calls target)))
+(defmethod ntop.ui::draw-table-background ((target wp7-fake-table-target)
+                                          rectangle
+                                          role)
+  (push (list (list (ntop.ui:rectangle-x rectangle)
+                    (ntop.ui:rectangle-y rectangle)
+                    (ntop.ui:rectangle-width rectangle)
+                    (ntop.ui:rectangle-height rectangle))
+              role)
+        (wp7-fake-table-target-fills target))
+  (when (wp7-fake-table-target-forward-background-p target)
+    (call-next-method)))
 
 (ntop.ui:define-table-columns *wp7-render-columns*
                               (:name "Name" :hard :width 6 :sortable-p t)
@@ -49,6 +59,11 @@
                                                        config
                                                        '((:name "Alpha" :pid 10)))
                                   (cl-weave:expect
+                                   (reverse (wp7-fake-table-target-fills target))
+                                   :to-equal
+                                   '(((4 8 16 3) :normal)
+                                     ((4 9 16 1) :selected)))
+                                  (cl-weave:expect
                                    (mapcar
                                     (lambda (call)
                                       (list (second call) (third call) (fourth call)))
@@ -57,6 +72,20 @@
                                    '((8 "Name" :header) (8 "PID" :header)
                                      (9 "Alpha    " :selected)
                                      (9 "10   " :selected)))))
+                   (cl-weave:it
+                    "clips table background rows to nonnegative terminal coordinates"
+                    (let ((target
+                            (make-wp7-fake-table-target
+                             :forward-background-p t)))
+                      (ntop.ui::draw-table-background
+                       target
+                       (ntop.ui:make-rectangle :x -2 :y -1 :width 4 :height 3)
+                       :normal)
+                      (cl-weave:expect
+                       (reverse (wp7-fake-table-target-calls target))
+                       :to-equal
+                       (quote ((0 0 "  " :normal)
+                               (0 1 "  " :normal))))))
                    (cl-weave:it
                     "matches BTM sortable.rs:107-127 sorted-header truncation"
                     (let* ((target (make-wp7-fake-table-target))

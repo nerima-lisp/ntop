@@ -47,6 +47,11 @@
                                     text
                                     :style
                                     style)))
+(defmethod ntop.ui::draw-table-background
+           ((target %cpu-legend-target) rectangle role)
+  (ntop.ui::draw-table-background (%cpu-legend-target-target target)
+                                  rectangle
+                                  role))
 
 (defun %cpu-sample (series)
   (let ((sample (getf series :sample)))
