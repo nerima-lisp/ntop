@@ -39,6 +39,29 @@
      (ntop.ui:make-rectangle :x x :y y :width width :height body-height)
      (ntop.ui:make-rectangle :x search-x :y (+ y body-height)
                              :width search-width :height search-height))))
+(defun %screen-process-sort-layout (rectangle config)
+  (let* ((basic-p
+           (ntop.shared.application:application-config-basic-p config))
+         (x (ntop.ui:rectangle-x rectangle))
+         (y (ntop.ui:rectangle-y rectangle))
+         (width (ntop.ui:rectangle-width rectangle))
+         (height (ntop.ui:rectangle-height rectangle))
+         (menu-width (min 11 width))
+         (menu-pane
+           (ntop.ui:make-rectangle :x x :y y
+                                   :width menu-width :height height))
+         (table-pane
+           (ntop.ui:make-rectangle :x (+ x menu-width) :y y
+                                   :width (- width menu-width) :height height))
+         (table-rectangle
+           (if basic-p table-pane (%screen-inner-rectangle table-pane)))
+         (menu-rectangle
+           (if basic-p menu-pane
+               (ntop.ui:make-rectangle
+                :x (1+ x) :y (1+ y)
+                :width (max 0 (- menu-width 2))
+                :height (max 0 (- height 2))))))
+    (values table-rectangle menu-rectangle table-pane menu-pane)))
 
 (defun %screen-process-widget-config (snapshot state config selected-p sort-state)
   (let* ((gpu-sample
@@ -285,44 +308,36 @@
               config
               nil)))))
       (:process-sort
-       (let ((sort-state (%screen-process-sort-state config state)))
-         (multiple-value-bind (table-state process-config)
-             (%screen-process-widget-config snapshot
-                                            state
-                                            config
-                                            nil
-                                            sort-state)
-           (declare (ignore table-state))
-           (let* ((choices
-                    (ntop.process.presentation:process-table-sort-options
-                     process-config))
-                  (width
-                    (min columns
-                         (loop for choice in choices
-                               maximize
-                                 (ntop.ui:measure-table-text (cdr choice))
-                                 into choice-width
-                               finally
-                                 (return (max 7 (or choice-width 0))))))
-                  (height (min rows (1+ (length choices))))
-                  (rectangle
-                    (ntop.ui:make-rectangle
-                     :x (max 0 (floor (- columns width) 2))
-                     :y (max 0 (floor (- rows height) 2))
-                     :width width
-                     :height height))
-                  (stored-state (gethash :process-sort widget-states))
-                  (menu-state
-                    (if (typep stored-state (quote ntop.ui:table-state))
-                        stored-state
-                        (ntop.process.presentation:make-process-sort-menu-state
-                         process-config))))
-             (ntop.ui:draw-widget :process-sort-menu
-                                  target
-                                  rectangle
-                                  menu-state
-                                  process-config
-                                  nil)))))
+       (let* ((mode (%screen-layout-mode state config))
+              (placements
+                (nth-value 0
+                           (%screen-layout-placements
+                            columns rows state mode)))
+              (process-placement (assoc :process placements :test #'eq)))
+         (when process-placement
+           (multiple-value-bind (table-rectangle menu-rectangle)
+               (%screen-process-sort-layout (cdr process-placement) config)
+             (declare (ignore table-rectangle))
+             (let* ((sort-state (%screen-process-sort-state config state)))
+               (multiple-value-bind (table-state process-config)
+                   (%screen-process-widget-config snapshot
+                                                  state
+                                                  config
+                                                  nil
+                                                  sort-state)
+                 (declare (ignore table-state))
+                 (let* ((stored-state (gethash :process-sort widget-states))
+                        (menu-state
+                          (if (typep stored-state 'ntop.ui:table-state)
+                              stored-state
+                              (ntop.process.presentation:make-process-sort-menu-state
+                               process-config))))
+                   (ntop.ui:draw-widget :process-sort-menu
+                                        target
+                                        menu-rectangle
+                                        menu-state
+                                        process-config
+                                        nil))))))))
       (:process-kill
        (let ((dialog-state (gethash :process-kill widget-states)))
          (when dialog-state

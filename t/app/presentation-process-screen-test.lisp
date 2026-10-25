@@ -135,39 +135,6 @@
         (list (list 3 20 30 0) (list 3 20 30 2))
         (list (list 7 8 24 0) (list 8 8 22 1))))))))
  (cl-weave:it
-  "centers the sort menu and returns its clickable choices"
-  (let* ((state (ntop.app.domain:make-app-state))
-         (*wp12b-screen-widget-calls* nil)
-         (*wp12b-screen-recording-p* t))
-    (setf (ntop.app.domain:app-state-active-dialog state) :process-sort)
-    (multiple-value-bind (areas screen)
-        (%wp12b-screen-render 80 24 :state state)
-      (declare (ignore screen))
-      (setf *wp12b-screen-widget-calls*
-            (nreverse *wp12b-screen-widget-calls*))
-      (let* ((sort-call
-               (find :process-sort-menu
-                     *wp12b-screen-widget-calls*
-                     :key (function first)
-                     :test (function eq)))
-             (rectangle (second sort-call)))
-        (cl-weave:expect
-         (ntop.ui:rectangle-x rectangle)
-         :to-equal
-         (floor (- 80 (ntop.ui:rectangle-width rectangle)) 2))
-        (cl-weave:expect
-         (ntop.ui:rectangle-y rectangle)
-         :to-equal
-         (floor (- 24 (ntop.ui:rectangle-height rectangle)) 2))
-        (cl-weave:expect
-         (not
-          (null
-           (find :sort-choice areas
-                 :key (function ntop.ui:clickable-area-action)
-                 :test (function eq))))
-         :to-be
-         t)))))
- (cl-weave:it
   "draws the centered process termination dialog and returns its choices"
   (let* ((state (ntop.app.domain:make-app-state))
          (config (%wp12b-screen-config))

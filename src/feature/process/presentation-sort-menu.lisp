@@ -61,7 +61,7 @@
                               (height (ntop.ui:rectangle-height rectangle))
                               (x (ntop.ui:rectangle-x rectangle))
                               (y (ntop.ui:rectangle-y rectangle))
-                              (body-height (max 0 (1- height)))
+                              (body-height (max 0 (- height 2)))
                               (areas nil))
                          (when
                            (and (plusp width) (plusp height))
@@ -92,7 +92,7 @@
                                for
                                row-y
                                from
-                               (1+ y)
+                               (+ y 2)
                                do
                                (%draw-process-sort-choice target
                                                           x

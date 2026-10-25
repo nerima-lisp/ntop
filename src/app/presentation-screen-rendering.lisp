@@ -108,23 +108,35 @@
            (and (eq widget :process-table)
                 (eq (ntop.app.domain:app-state-active-dialog state)
                     :process-search)))
+         (process-sort-p
+           (and (eq widget :process-table)
+                (eq (ntop.app.domain:app-state-active-dialog state)
+                    :process-sort)))
          (search-body-rectangle
            (when process-search-p
              (nth-value 0
                         (%screen-process-search-layout rectangle config))))
+         (sort-layout
+           (when process-sort-p
+             (multiple-value-list
+              (%screen-process-sort-layout rectangle config))))
          (widget-rectangle
-           (if process-search-p
-               (if (or (not basic-p) basic-table-frame-p)
-                   (%screen-inner-rectangle search-body-rectangle
-                                            basic-table-frame-p)
-                   search-body-rectangle)
-               (if (or (not basic-p) basic-table-frame-p)
-                   (%screen-inner-rectangle rectangle basic-table-frame-p)
-                   rectangle)))
+           (cond
+             (process-search-p
+              (if (or (not basic-p) basic-table-frame-p)
+                  (%screen-inner-rectangle search-body-rectangle
+                                           basic-table-frame-p)
+                  search-body-rectangle))
+             (process-sort-p (first sort-layout))
+             ((or (not basic-p) basic-table-frame-p)
+              (%screen-inner-rectangle rectangle basic-table-frame-p))
+             (t rectangle)))
          (frame-rectangles
            (cond
              ((and process-search-p (not basic-p))
               (list search-body-rectangle))
+             ((and process-sort-p (not basic-p))
+              (list (fourth sort-layout) (third sort-layout)))
              ((or (not basic-p) basic-table-frame-p)
               (list rectangle))
              (t nil)))

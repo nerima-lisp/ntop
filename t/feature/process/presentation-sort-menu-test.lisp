@@ -188,13 +188,13 @@
       (cl-weave:expect
         (mapcar #'ntop.ui:clickable-area-action areas)
         :to-equal
-        (make-list (min 3 (length choices)) :initial-element :sort-choice))
+        (make-list (min 2 (length choices)) :initial-element :sort-choice))
       (cl-weave:expect
         (mapcar #'ntop.ui:clickable-area-value areas)
         :to-equal
-        (mapcar #'car (subseq choices 0 (min 3 (length choices)))))
+        (mapcar #'car (subseq choices 0 (min 2 (length choices)))))
       (cl-weave:expect
-        (aref (%f8b-sort-target-roles target) 2 0)
+        (aref (%f8b-sort-target-roles target) 3 0)
         :to-be
         :selected)))
   (cl-weave:it

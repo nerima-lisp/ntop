@@ -341,6 +341,7 @@
    (:file "t/app/presentation-screen-layout-test")
    (:file "t/app/presentation-screen-config-test")
    (:file "t/app/presentation-process-screen-test")
+   (:file "t/app/presentation-process-sort-layout-test")
 
    ;; WP13: CLI parity parser and configuration tests.
    (:file "t/cli/presentation-cli-test")
