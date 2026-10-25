@@ -5,6 +5,7 @@ from pathlib import Path
 ROWS, COLUMNS, RATE_MS = 48, 160, 700
 N1_RUNS, N1_SECONDS = 5, 60
 N2_SECONDS, N2_CADENCE, RSS_LIMIT_KIB = 1800, 30, 200 * 1024
+N2_LOAD_LIMIT_1M = 40
 def write_json(path, value): path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
 def executable(value):
     path = Path(shutil.which(value) or value).resolve(strict=True)
@@ -210,11 +211,13 @@ def run_n1(ntop, btm, raw_dir):
     write_json(output, result)
     return result
 def sample_rss(session, group_id, target, started):
-    before = time.perf_counter(); rss, count, raw = group_values(group_id, "rss", int)
+    before = time.perf_counter(); load = system_load()
+    rss, count, raw = group_values(group_id, "rss", int)
     after = time.perf_counter()
     return {"target_seconds": target, "sample_started_seconds": before - started,
             "sample_completed_seconds": after - started, "rss_kib": rss,
-            "process_count": count, "raw_ps": raw}
+            "process_count": count, "raw_ps": raw, "load": load,
+            "one_minute_load_average": load["values"][0]}
 def run_n2(ntop, raw_dir):
     argv = terminal_command("ntop", ntop, None, raw_dir, retention="10m")
     session = begin_session(argv, raw_dir / "n2.ansi")
@@ -235,16 +238,33 @@ def run_n2(ntop, raw_dir):
                 if delay > 0: session.read_for(delay, sink)
                 result["samples"].append(sample_rss(session, group, target, started))
                 write_json(output, result)
-        values = {x["target_seconds"]: x["rss_kib"] for x in result["samples"]}
+        eligible = [sample for sample in result["samples"]
+                    if sample["one_minute_load_average"] < N2_LOAD_LIMIT_1M]
+        values = {sample["target_seconds"]: sample["rss_kib"]
+                  for sample in eligible}
         at_two, at_end = values.get(120), values.get(N2_SECONDS)
-        maximum = max(values.values())
-        growth = 100 * (at_end - at_two) / at_two if at_two and at_end is not None else None
-        passed = maximum <= RSS_LIMIT_KIB and growth is not None and growth <= 5
-        result.update({"status": "complete", "rss_at_2_minutes_kib": at_two,
-            "rss_at_30_minutes_kib": at_end, "maximum_rss_kib": maximum,
+        maximum = max(values.values()) if values else None
+        growth = (100 * (at_end - at_two) / at_two
+                  if at_two not in (None, 0) and at_end is not None else None)
+        endpoints_qualified = at_two is not None and at_end is not None
+        passed = (endpoints_qualified
+                  and maximum is not None and maximum <= RSS_LIMIT_KIB
+                  and growth is not None and growth <= 5)
+        result.update({"status": "complete" if endpoints_qualified else "incomplete",
+            "rss_at_2_minutes_kib": at_two,
+            "rss_at_30_minutes_kib": at_end,
+            "maximum_rss_kib": maximum,
             "growth_from_2_to_30_minutes_percent": growth,
-            "acceptance": {"rss_limit_kib": RSS_LIMIT_KIB,
-            "rss_always_at_or_below_limit": maximum <= RSS_LIMIT_KIB,
+            "incomplete_reason": (None if endpoints_qualified else
+                "No load-qualified RSS sample at exactly 2 or 30 minutes."),
+            "acceptance": {"load_limit_1_minute": N2_LOAD_LIMIT_1M,
+            "sample_selection": f"one-minute load < {N2_LOAD_LIMIT_1M}",
+            "qualified_samples": len(eligible),
+            "excluded_high_load_samples": len(result["samples"]) - len(eligible),
+            "endpoints_qualified": endpoints_qualified,
+            "rss_limit_kib": RSS_LIMIT_KIB,
+            "rss_always_at_or_below_limit": (maximum is not None
+                and maximum <= RSS_LIMIT_KIB),
             "growth_limit_percent": 5, "growth_at_or_below_limit": growth is not None
             and growth <= 5, "passed": passed}, "raw_pty": "n2.ansi"})
         write_json(output, result); return result
