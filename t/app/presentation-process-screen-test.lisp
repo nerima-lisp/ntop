@@ -51,13 +51,26 @@
                (ntop.ui:rectangle-height search-rectangle))
          :to-equal
          (list 0 43 80 5))
-        (cl-weave:expect
-         (list (ntop.ui:rectangle-x process-rectangle)
-               (ntop.ui:rectangle-y process-rectangle)
-               (ntop.ui:rectangle-width process-rectangle)
-               (ntop.ui:rectangle-height process-rectangle))
-         :to-equal
-         (list 1 24 78 18))
+        (progn
+          (cl-weave:expect
+           (list (ntop.ui:rectangle-x process-rectangle)
+                 (ntop.ui:rectangle-y process-rectangle)
+                 (ntop.ui:rectangle-width process-rectangle)
+                 (ntop.ui:rectangle-height process-rectangle))
+           :to-equal
+           (list 1 24 78 18))
+          (cl-weave:expect
+           (ntop.process.presentation:process-table-config-focused-p
+            (fifth process-call))
+           :to-be nil)
+          (cl-weave:expect
+           (cl-tty-kit:cell-style
+            (cl-tty-kit:screen-cell
+             screen
+             (1- (ntop.ui:rectangle-x process-rectangle))
+             (ntop.ui:rectangle-y process-rectangle)))
+           :to-equal
+           (ntop.ui:presentation-theme-style :default :border)))
         (cl-weave:expect
          (and
           (equal (mapcar #'ntop.process.domain:process-row-name rows)

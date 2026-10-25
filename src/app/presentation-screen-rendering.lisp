@@ -82,10 +82,11 @@
        (multiple-value-bind (table-state table-config)
            (%screen-process-widget-config
             snapshot state config
-            (eq (if (eq (%screen-layout-mode state config) :basic)
-                    (%screen-basic-table-selection state)
-                    (ntop.app.domain:app-state-selected-widget state))
-                :process)
+            (and selected-p
+                 (not
+                  (member (ntop.app.domain:app-state-active-dialog state)
+                          (list :process-search :process-sort)
+                          :test (function eq))))
             sort-state)
          (values table-state table-config rows))))))
 
@@ -101,6 +102,11 @@
   (let* ((basic-p (ntop.shared.application:application-config-basic-p config))
          (basic-table-frame-p
            (and basic-p selected-p
+                (not
+                 (and (eq widget :process-table)
+                      (member (ntop.app.domain:app-state-active-dialog state)
+                              (list :process-search :process-sort)
+                              :test (function eq))))
                 (member widget
                         (list :disk :temperature :process-table)
                         :test (function eq))))
@@ -112,33 +118,52 @@
            (and (eq widget :process-table)
                 (eq (ntop.app.domain:app-state-active-dialog state)
                     :process-sort)))
+         (process-sort-background-p
+           (and process-search-p
+                (gethash :process-sort-background-p
+                         (ntop.app.domain:app-state-widget-v-states state))))
          (search-body-rectangle
            (when process-search-p
-             (nth-value 0
-                        (%screen-process-search-layout rectangle config))))
+             (nth-value 0 (%screen-process-search-layout rectangle config))))
          (sort-layout
-           (when process-sort-p
-             (multiple-value-list
-              (%screen-process-sort-layout rectangle config))))
+           (cond
+             (process-sort-p
+              (multiple-value-list
+               (%screen-process-sort-layout rectangle config)))
+             (process-sort-background-p
+              (multiple-value-list
+               (%screen-process-sort-layout search-body-rectangle config)))))
          (widget-rectangle
            (cond
              (process-search-p
-              (if (or (not basic-p) basic-table-frame-p)
-                  (%screen-inner-rectangle search-body-rectangle
-                                           basic-table-frame-p)
-                  search-body-rectangle))
+              (if process-sort-background-p
+                  (first sort-layout)
+                  (if (or (not basic-p) basic-table-frame-p)
+                      (%screen-inner-rectangle search-body-rectangle
+                                               basic-table-frame-p)
+                      search-body-rectangle)))
              (process-sort-p (first sort-layout))
              ((or (not basic-p) basic-table-frame-p)
               (%screen-inner-rectangle rectangle basic-table-frame-p))
              (t rectangle)))
          (frame-rectangles
            (cond
+             (process-sort-background-p
+              (if basic-p
+                  (list (list (fourth sort-layout) nil))
+                  (list
+                   (list (fourth sort-layout) nil)
+                   (list (third sort-layout) nil))))
              ((and process-search-p (not basic-p))
-              (list search-body-rectangle))
-             ((and process-sort-p (not basic-p))
-              (list (fourth sort-layout) (third sort-layout)))
+              (list (list search-body-rectangle nil)))
+             (process-sort-p
+              (if basic-p
+                  (list (list (fourth sort-layout) selected-p))
+                  (list
+                   (list (fourth sort-layout) selected-p)
+                   (list (third sort-layout) nil))))
              ((or (not basic-p) basic-table-frame-p)
-              (list rectangle))
+              (list (list rectangle selected-p)))
              (t nil)))
          (clickable-areas nil))
     (multiple-value-bind (widget-state widget-config widget-series)
@@ -150,10 +175,13 @@
                                unavailability-reasons
                                current-time-unix-seconds
                                selected-p)
-      (dolist (frame-rectangle frame-rectangles)
-        (%screen-draw-frame target frame-rectangle config
-                            selected-p
-                            nil (and basic-p basic-table-frame-p)))
+      (loop for (frame-rectangle frame-selected-p) in frame-rectangles
+            do (%screen-draw-frame target
+                                   frame-rectangle
+                                   config
+                                   frame-selected-p
+                                   nil
+                                   (and basic-p basic-table-frame-p)))
       (when (and (plusp (ntop.ui:rectangle-width widget-rectangle))
                  (plusp (ntop.ui:rectangle-height widget-rectangle)))
         (setf clickable-areas

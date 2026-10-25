@@ -114,8 +114,15 @@
      (setf (ntop.app.domain:app-state-active-dialog state) :help-search)
      (values state nil nil))
     (:process
-     (setf (ntop.app.domain:app-state-active-dialog state) :process-search)
-     (values state nil nil))
+     (let ((states (ntop.app.domain:app-state-widget-v-states state)))
+       (cond
+         ((eq (ntop.app.domain:app-state-active-dialog state) :process-sort)
+          (setf (gethash :process-sort-background-p states) t))
+         ((not (eq (ntop.app.domain:app-state-active-dialog state)
+                   :process-search))
+          (remhash :process-sort-background-p states)))
+       (setf (ntop.app.domain:app-state-active-dialog state) :process-search)
+       (values state nil nil)))
     (otherwise (values state action nil))))
 
 (defun %transition-dialog (state action)

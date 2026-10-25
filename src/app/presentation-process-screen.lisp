@@ -56,11 +56,10 @@
          (table-rectangle
            (if basic-p table-pane (%screen-inner-rectangle table-pane)))
          (menu-rectangle
-           (if basic-p menu-pane
-               (ntop.ui:make-rectangle
-                :x (1+ x) :y (1+ y)
-                :width (max 0 (- menu-width 2))
-                :height (max 0 (- height 2))))))
+           (ntop.ui:make-rectangle :x (1+ x)
+                               :y (1+ y)
+                               :width (max 0 (- menu-width 2))
+                               :height (max 0 (- height 2)))))
     (values table-rectangle menu-rectangle table-pane menu-pane)))
 
 (defun %screen-process-widget-config (snapshot state config selected-p sort-state)
@@ -294,12 +293,32 @@
               (placements
                 (nth-value 0
                            (%screen-layout-placements
-                            columns rows state mode)))
+                            columns rows state mode snapshot config)))
               (process-placement (assoc :process placements :test #'eq)))
          (when process-placement
            (multiple-value-bind (body-rectangle search-rectangle)
                (%screen-process-search-layout (cdr process-placement) config)
-             (declare (ignore body-rectangle))
+             (when (gethash :process-sort-background-p widget-states)
+               (multiple-value-bind (table-rectangle menu-rectangle)
+                   (%screen-process-sort-layout body-rectangle config)
+                 (declare (ignore table-rectangle))
+                 (let* ((sort-state (%screen-process-sort-state config state)))
+                   (multiple-value-bind (table-state process-config)
+                       (%screen-process-widget-config
+                        snapshot state config nil sort-state)
+                     (declare (ignore table-state))
+                     (let* ((stored-state (gethash :process-sort widget-states))
+                            (menu-state
+                              (if (typep stored-state 'ntop.ui:table-state)
+                                  stored-state
+                                  (ntop.process.presentation:make-process-sort-menu-state
+                                   process-config))))
+                       (ntop.ui:draw-widget :process-sort-menu
+                                            target
+                                            menu-rectangle
+                                            menu-state
+                                            process-config
+                                            nil))))))
              (ntop.ui:draw-widget
               :process-search
               target
@@ -312,7 +331,7 @@
               (placements
                 (nth-value 0
                            (%screen-layout-placements
-                            columns rows state mode)))
+                            columns rows state mode snapshot config)))
               (process-placement (assoc :process placements :test #'eq)))
          (when process-placement
            (multiple-value-bind (table-rectangle menu-rectangle)
