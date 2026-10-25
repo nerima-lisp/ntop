@@ -23,7 +23,7 @@
              (ntop.app.domain:make-app-action :kind :search :value "alpha"))
     (multiple-value-bind (areas screen)
         (%wp12b-screen-render 80 48 :state state :config config)
-      (declare (ignore screen))
+      (declare (ignorable screen))
       (setf *wp12b-screen-widget-calls*
             (nreverse *wp12b-screen-widget-calls*))
       (let* ((search-call
@@ -50,7 +50,7 @@
                (ntop.ui:rectangle-width search-rectangle)
                (ntop.ui:rectangle-height search-rectangle))
          :to-equal
-         (list 0 43 80 5))
+         (list 40 43 40 5))
         (progn
           (cl-weave:expect
            (list (ntop.ui:rectangle-x process-rectangle)
@@ -58,7 +58,7 @@
                  (ntop.ui:rectangle-width process-rectangle)
                  (ntop.ui:rectangle-height process-rectangle))
            :to-equal
-           (list 1 24 78 18))
+           (list 41 34 38 8))
           (cl-weave:expect
            (ntop.process.presentation:process-table-config-focused-p
             (fifth process-call))
@@ -90,9 +90,9 @@
                    (cl-tty-kit:screen-row-string
                     screen
                     (ntop.ui:rectangle-y search-rectangle))))
-            (and (char= (char body-bottom-row 0) #\└)
+            (and (char= (char body-bottom-row 40) #\└)
                  (char= (char body-bottom-row 79) #\┘)
-                 (char= (char search-top-row 0) #\┌)
+                 (char= (char search-top-row 40) #\┌)
                  (char= (char search-top-row 79) #\┐))))
          :to-be t)
         (cl-weave:expect (not (null row-area)) :to-be t)

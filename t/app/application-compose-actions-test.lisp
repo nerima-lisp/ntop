@@ -195,7 +195,7 @@
                     (let ((config
                            (ntop.shared.application:make-application-config)))
                       (dolist
-                          (case '((:disks :left :network) (:process :up :disks)))
+                          (case '((:disks :left :memory) (:process :up :disks)))
                         (destructuring-bind (selected direction expected) case
                           (let ((state
                                  (ntop.app.domain:make-app-state
@@ -264,7 +264,7 @@
                         (cl-weave:expect
                          (ntop.app.domain:app-state-selected-widget state)
                          :to-be
-                         :memory))))
+                         :temperature))))
                    (cl-weave:it
                     "pauses new history stores and trims the retention boundary"
                     (let* ((composition

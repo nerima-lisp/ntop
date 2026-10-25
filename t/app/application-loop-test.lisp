@@ -50,12 +50,12 @@
            (ntop.app.application::%layout-widgets-for-state
             state config 80 24))
           (expected
-            (quote ((:cpu 0 0 53 6)
-                    (:memory 53 0 27 6)
-                    (:network 0 6 32 6)
-                    (:disks 32 6 32 6)
-                    (:temperature 64 6 16 6)
-                    (:process 0 12 80 12)))))
+            (quote ((:cpu 0 0 80 7)
+                    (:memory 0 7 46 10)
+                    (:temperature 46 7 34 5)
+                    (:disks 46 12 34 5)
+                    (:network 0 17 40 7)
+                    (:process 40 17 40 7)))))
      (flet ((layout-values (placements)
               (mapcar
                (lambda (entry)
@@ -72,7 +72,7 @@
      (cl-weave:expect
       (ntop.app.domain:app-state-selected-widget state)
       :to-equal
-      :network)))
+      :memory)))
   (cl-weave:it "pauses and resumes composition history"
     (let* ((config
              (ntop.shared.application:make-application-config

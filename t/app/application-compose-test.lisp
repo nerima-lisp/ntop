@@ -312,7 +312,7 @@
       (cl-weave:expect (second (first forwarded)) :to-be reverse-sort-action)
       (funcall on-action state navigation-action)
       (cl-weave:expect
-       (ntop.app.domain:app-state-selected-widget state) :to-be :memory)
+       (ntop.app.domain:app-state-selected-widget state) :to-be :temperature)
       (cl-weave:expect
        (ntop.app.application::application-composition-selection-active-p composition)
        :to-be t)

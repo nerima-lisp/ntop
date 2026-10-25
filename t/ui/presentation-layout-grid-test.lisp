@@ -10,75 +10,71 @@
                      '(defparameter example
                         '(:widget :cpu))))
                    (cl-weave:it-each
-                    ((40 27 13 16 16 8) (50 33 17 20 20 10)
-                     (60 40 20 24 24 12)
-                     (70 47 23 28 28 14)
-                     (80 53 27 32 32 16)
-                     (90 60 30 36 36 18)
-                     (100 67 33 40 40 20)
-                     (110 73 37 44 44 22)
-                     (120 80 40 48 48 24)
-                     (130 87 43 52 52 26)
-                     (140 93 47 56 56 28)
-                     (150 100 50 60 60 30)
-                     (160 107 53 64 64 32)
-                     (170 113 57 68 68 34)
-                     (180 120 60 72 72 36)
-                     (190 127 63 76 76 38)
-                     (200 133 67 80 80 40)
-                     (210 140 70 84 84 42)
-                     (220 147 73 88 88 44))
-                    "matches btm horizontal spans at width ~A"
-                    (width cpu-width
-                           memory-width
-                           network-width
-                           disk-width
-                           temperature-width)
+                    ((40 40 23 17 20 20) (50 50 29 21 25 25)
+                     (60 60 34 26 30 30) (70 70 40 30 35 35)
+                     (80 80 46 34 40 40) (90 90 51 39 45 45)
+                     (100 100 57 43 50 50) (110 110 63 47 55 55)
+                     (120 120 69 51 60 60) (130 130 74 56 65 65)
+                     (140 140 80 60 70 70) (150 150 86 64 75 75)
+                     (160 160 91 69 80 80) (170 170 97 73 85 85)
+                     (180 180 103 77 90 90) (190 190 109 81 95 95)
+                     (200 200 114 86 100 100) (210 210 120 90 105 105)
+                     (220 220 126 94 110 110))
+                    "matches BTM 0.14.9 built-in horizontal spans at width ~A"
+                    (width cpu-panel-width memory-width side-width network-width process-width)
                     (let ((layout (ntop.ui:layout-widgets width 18)))
-                      (cl-weave:expect (layout-test-width-fields layout)
-                                       :to-equal
-                                       (list cpu-width
-                                             memory-width
-                                             network-width
-                                             disk-width
-                                             temperature-width
-                                             width))))
+                      (cl-weave:expect
+                       (layout-test-width-fields layout)
+                       :to-equal
+                       (list cpu-panel-width memory-width side-width
+                             network-width process-width))))
                    (cl-weave:it-each
- ((12 3 3 6) (18 5 4 9) (24 6 6 12)
-  (30 8 7 15) (36 9 9 18) (42 11 10 21)
-  (48 12 12 24) (54 14 13 27) (60 15 15 30))
- "matches the effective BTM 1:1:2 row spans at height ~A"
- (height top-row-height middle-row-height process-height)
- (let ((layout (ntop.ui:layout-widgets 80 height)))
-   (cl-weave:expect
-    (list
-     (list 0 0
-           (first (layout-test-width-fields layout))
-           top-row-height)
-     (layout-test-rectangle-fields
-      (layout-test-rectangle layout :network))
-     (layout-test-rectangle-fields
-      (layout-test-rectangle layout :process)))
-    :to-equal
-    (list
-     (list 0 0 53 top-row-height)
-     (list 0 top-row-height 32 middle-row-height)
-     (list 0 (+ top-row-height middle-row-height)
-           80 process-height)))))
+                    ((12 4 4 4) (18 5 8 5) (24 7 10 7)
+                     (30 9 12 9) (36 11 14 11) (42 13 16 13)
+                     (48 14 20 14) (54 16 22 16) (60 18 24 18))
+                    "matches BTM 0.14.9 built-in 30:40:30 row spans at height ~A"
+                    (height top-row-height middle-row-height bottom-row-height)
+                    (let ((layout (ntop.ui:layout-widgets 80 height)))
+                      (cl-weave:expect
+                       (list
+                        (ntop.ui:rectangle-height
+                         (layout-test-rectangle layout :cpu))
+                        (ntop.ui:rectangle-y
+                         (layout-test-rectangle layout :memory))
+                        (ntop.ui:rectangle-height
+                         (layout-test-rectangle layout :memory))
+                        (ntop.ui:rectangle-y
+                         (layout-test-rectangle layout :network))
+                        (ntop.ui:rectangle-height
+                         (layout-test-rectangle layout :network))
+                        (ntop.ui:rectangle-y
+                         (layout-test-rectangle layout :process))
+                        (ntop.ui:rectangle-height
+                         (layout-test-rectangle layout :process)))
+                       :to-equal
+                       (list top-row-height top-row-height middle-row-height
+                             (+ top-row-height middle-row-height)
+                             bottom-row-height
+                             (+ top-row-height middle-row-height)
+                             bottom-row-height))))
                    (cl-weave:it
- "matches the effective BTM 1:1:2 outer split at 40x12"
- (let* ((layout (ntop.ui:layout-widgets 40 12))
-        (cpu (layout-test-rectangle layout :cpu))
-        (network (layout-test-rectangle layout :network))
-        (process (layout-test-rectangle layout :process)))
-   (cl-weave:expect
-    (list (1- (ntop.ui:rectangle-height cpu))
-          (ntop.ui:rectangle-y network)
-          (ntop.ui:rectangle-height network)
-          (ntop.ui:rectangle-y process)
-          (ntop.ui:rectangle-height process))
-    :to-equal
-    (quote (2 3 3 6 6)))))
+                    "matches BTM 0.14.9 DEFAULT_LAYOUT at 220x60"
+                    (let ((layout (ntop.ui:layout-widgets 220 60)))
+                      (cl-weave:expect
+                       (mapcar
+                        (lambda (widget)
+                          (layout-test-rectangle-fields
+                           (layout-test-rectangle layout widget)))
+                        '(:cpu :cpu-legend :memory :temperature :disks
+                          :network :process))
+                       :to-equal
+                       '((0 0 187 18)
+                         (187 0 33 18)
+                         (0 18 126 24)
+                         (126 18 94 12)
+                         (126 30 94 12)
+                         (0 42 110 18)
+                         (110 42 110 18)))))
                    (cl-weave:it "matches the full 171-size btm rectangle grid"
                                 (let ((count 0)
                                       (differences nil))
@@ -395,39 +391,32 @@
                      :to-equal
                      nil))
                    (cl-weave:it
-                    "matches Ratatui Fill boundaries rounded independently"
-                    (let ((layout (ntop.ui:layout-widgets 6 3)))
-                      (cl-weave:expect
-                       (list
-                        (ntop.ui:rectangle-width
-                         (layout-test-rectangle layout :network))
-                        (ntop.ui:rectangle-width
-                         (layout-test-rectangle layout :disks))
-                        (ntop.ui:rectangle-width
-                         (layout-test-rectangle layout :temperature)))
-                       :to-equal
-                       (list 2 3 1))))
-                   (cl-weave:it-property
-                    "all horizontal Fill splits conserve their widths"
-                    ((width (cl-weave:gen-integer :min 0 :max 500)))
-                    (let* ((layout (ntop.ui:layout-widgets width 18))
+                    "matches BTM Fill boundaries for the default split ratios"
+                    (let* ((layout (ntop.ui:layout-widgets 6 3))
                            (widths (layout-test-width-fields layout)))
+                      (cl-weave:expect widths :to-equal '(6 3 3 3 3))))
+                   (cl-weave:it-property
+                    "conserves each horizontal default-layout split"
+                    ((width (cl-weave:gen-integer :min 0 :max 500)))
+                    (let ((widths
+                           (layout-test-width-fields
+                            (ntop.ui:layout-widgets width 18))))
                       (cl-weave:expect
-                       (list (+ (first widths) (second widths))
-                             (+ (third widths) (fourth widths) (fifth widths))
-                             (sixth widths))
+                       (list (first widths)
+                             (+ (second widths) (third widths))
+                             (+ (fourth widths) (fifth widths)))
                        :to-equal
                        (list width width width))))
                    (cl-weave:it-property
-                    "higher Fill weights receive at least as much width"
+                    "default Fill ratios preserve their relative widths"
                     ((width (cl-weave:gen-integer :min 0 :max 500)))
                     (let ((widths
                            (layout-test-width-fields
                             (ntop.ui:layout-widgets width 18))))
                       (cl-weave:expect
                        (and (>= (first widths) (second widths))
-                            (>= (third widths) (fifth widths))
-                            (>= (fourth widths) (fifth widths)))
+                            (>= (second widths) (third widths))
+                            (<= (abs (- (fourth widths) (fifth widths))) 1))
                        :to-be
                        t)))
                    (cl-weave:it

@@ -296,8 +296,8 @@
         (%wp12b-screen-render 80 24)
       (declare (ignore areas))
       (cl-weave:expect
-       (loop for (x y) in '((2 0) (0 0) (0 5) (45 0) (46 0) (47 0)
-                            (45 5) (46 5))
+       (loop for (x y) in '((2 0) (0 0) (0 6) (67 0)
+                            (68 0) (69 0) (67 6) (68 6))
              collect (cl-tty-kit:cell-char
                       (cl-tty-kit:screen-cell screen x y)))
        :to-equal '(#\C #\┌ #\└ #\┐ #\┌ #\─ #\┘ #\└))
@@ -319,7 +319,7 @@
         (cl-weave:expect
          (and
           (equal
-           (loop for (x y) in (quote ((6 0) (7 0) (6 5) (7 5)))
+           (loop for (x y) in (quote ((11 0) (12 0) (11 6) (12 6)))
                  collect (cl-tty-kit:cell-char
                           (cl-tty-kit:screen-cell screen x y)))
            (quote (#\┐ #\┌ #\┘ #\└)))
@@ -336,10 +336,12 @@
         :direction :input :element-type '(unsigned-byte 8))
     (let ((bytes (make-array (file-length stream) :element-type '(unsigned-byte 8))))
       (read-sequence bytes stream) (coerce bytes 'list))))
-(defun %wp12b-screen-memory-legend-summary (columns rows screen)  (case columns
-    (80 (loop for y below rows
-              always (let ((line (cl-tty-kit:screen-row-string screen y)))
-                       (not (or (search "RAM:" line) (search "SWP:" line))))))
-    (160 (mapcar (lambda (y) (subseq
-                              (cl-tty-kit:screen-row-string screen y) 133 159))
-                 '(2 3)))))
+(defun %wp12b-screen-memory-legend-summary (columns rows screen)
+  (declare (ignore rows))
+  (case columns
+    (80 (mapcar (lambda (y)
+                  (subseq (cl-tty-kit:screen-row-string screen y) 19 45))
+                '(9 10)))
+    (160 (mapcar (lambda (y)
+                   (subseq (cl-tty-kit:screen-row-string screen y) 64 90))
+                 '(16 17)))))
