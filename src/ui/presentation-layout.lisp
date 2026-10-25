@@ -6,18 +6,16 @@
 
 (define-layout *default-layout*
                (:split :vertical
-                       (((:fill 3) (:widget :cpu-container))
-                        ((:fill 4)
+                       (((:fill 1)
                          (:split :horizontal
-                                 (((:fill 4) (:widget :memory))
-                                  ((:fill 3)
-                                   (:split :vertical
-                                           (((:fill 1) (:widget :temperature))
-                                            ((:fill 1) (:widget :disks))))))))
-                        ((:fill 3)
+                                 (((:fill 2) (:widget :cpu-container))
+                                  ((:fill 1) (:widget :memory)))))
+                        ((:fill 1)
                          (:split :horizontal
-                                 (((:fill 1) (:widget :network))
-                                  ((:fill 1) (:widget :process))))))))
+                                 (((:fill 2) (:widget :network))
+                                  ((:fill 2) (:widget :disks))
+                                  ((:fill 1) (:widget :temperature)))))
+                        ((:fill 2) (:widget :process)))))
 
 (define-layout *basic-layout*
                (:split :vertical

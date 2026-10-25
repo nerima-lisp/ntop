@@ -1,26 +1,38 @@
 (in-package #:ntop.test)
 (defparameter *btm-layout-width-reference*
-  ;; BTM 0.14.9 DEFAULT_LAYOUT groups CPU across the first row, Memory 4:3
-  ;; against the stacked Temperature/Disk area, and Network:Process as 1:1.
-  ;; Source: bottom-0.14.9/src/constants.rs:195-218 and src/canvas.rs:432-445.
-  '((40 40 23 17 20 20) (50 50 29 21 25 25)
-    (60 60 34 26 30 30) (70 70 40 30 35 35)
-    (80 80 46 34 40 40) (90 90 51 39 45 45)
-    (100 100 57 43 50 50) (110 110 63 47 55 55)
-    (120 120 69 51 60 60) (130 130 74 56 65 65)
-    (140 140 80 60 70 70) (150 150 86 64 75 75)
-    (160 160 91 69 80 80) (170 170 97 73 85 85)
-    (180 180 103 77 90 90) (190 190 109 81 95 95)
-    (200 200 114 86 100 100) (210 210 120 90 105 105)
-    (220 220 126 94 110 110)))
+  ;; The active config is preferred over DEFAULT_LAYOUT in
+  ;; bottom/src/options.rs:860-870. Its configured widget ratios are applied in
+  ;; bottom/src/options/config/layout.rs:74-76,125-203 and become Fill
+  ;; constraints in bottom/src/app/layout_manager.rs:729-731,764-766.
+  ;; bottom/src/canvas.rs:432-445 splits each level with Ratatui Layout.
+  '((40 27 13 16 16 8) (50 33 17 20 20 10)
+    (60 40 20 24 24 12)
+    (70 47 23 28 28 14)
+    (80 53 27 32 32 16)
+    (90 60 30 36 36 18)
+    (100 67 33 40 40 20)
+    (110 73 37 44 44 22)
+    (120 80 40 48 48 24)
+    (130 87 43 52 52 26)
+    (140 93 47 56 56 28)
+    (150 100 50 60 60 30)
+    (160 107 53 64 64 32)
+    (170 113 57 68 68 34)
+    (180 120 60 72 72 36)
+    (190 127 63 76 76 38)
+    (200 133 67 80 80 40)
+    (210 140 70 84 84 42)
+    (220 147 73 88 88 44)))
 
 (defparameter *btm-layout-height-reference*
-  ;; BTM 0.14.9 DEFAULT_LAYOUT uses three outer row ratios 30:40:30.
-  ;; Source: bottom-0.14.9/src/constants.rs:195-218; row splits use Ratatui
-  ;; Layout in src/canvas.rs:432-445.
-  '((12 4 4 4) (18 5 8 5) (24 7 10 7)
-    (30 9 12 9) (36 11 14 11) (42 13 16 13)
-    (48 14 20 14) (54 16 22 16) (60 18 24 18)))
+  ;; The effective FR-001 profile sets outer row ratios to 1:1:2: CPU+Mem,
+  ;; Net+Disks+Temp, Process. BTM defaults omitted ratios to 1 and applies
+  ;; BottomRow ratios in layout.rs:64-76,209-211; layout_manager.rs:729-731
+  ;; maps them to Fill constraints, split vertically in canvas.rs:432-433.
+  ;; Ratatui Fill boundaries yield the weighted cell heights below.
+  (quote ((12 3 3 6) (18 5 4 9) (24 6 6 12)
+          (30 8 7 15) (36 9 9 18) (42 11 10 21)
+          (48 12 12 24) (54 14 13 27) (60 15 15 30))))
 
 (defun layout-test-rectangle (layout widget)
   (cdr (assoc widget layout)))
@@ -38,44 +50,49 @@
                 (layout-test-rectangle layout :cpu-legend))
                0))
         (ntop.ui:rectangle-width (layout-test-rectangle layout :memory))
-        (ntop.ui:rectangle-width (layout-test-rectangle layout :temperature))
         (ntop.ui:rectangle-width (layout-test-rectangle layout :network))
+        (ntop.ui:rectangle-width (layout-test-rectangle layout :disks))
+        (ntop.ui:rectangle-width (layout-test-rectangle layout :temperature))
         (ntop.ui:rectangle-width (layout-test-rectangle layout :process))))
 
 (defun layout-test-grid-differences (width-reference height-reference)
-  (destructuring-bind (width cpu-panel-width memory-width side-width
-                            network-width process-width)
+  (destructuring-bind (width cpu-panel-width memory-width
+                            network-width disk-width temperature-width)
       width-reference
-    (destructuring-bind (height top-row-height middle-row-height bottom-row-height)
+    (destructuring-bind (height top-row-height
+                                 middle-row-height process-height)
         height-reference
       (let* ((layout (ntop.ui:layout-widgets width height))
              (legend-width (floor (* cpu-panel-width 15) 100))
              (legend-visible-p (>= legend-width 6))
-             (cpu-width (if legend-visible-p
-                            (- cpu-panel-width legend-width)
-                            cpu-panel-width))
-             (temperature-height (ceiling middle-row-height 2))
-             (disk-height (- middle-row-height temperature-height))
+             (cpu-width
+              (if legend-visible-p
+                  (- cpu-panel-width legend-width)
+                  cpu-panel-width))
              (expected
               (append
-               (list (list :cpu (list 0 0 cpu-width top-row-height)))
+               (list (list :cpu
+                           (list 0 0 cpu-width top-row-height)))
                (when legend-visible-p
                  (list (list :cpu-legend
                              (list cpu-width 0 legend-width top-row-height))))
                (list (list :memory
-                           (list 0 top-row-height memory-width middle-row-height))
-                     (list :temperature
-                           (list memory-width top-row-height
-                                 side-width temperature-height))
-                     (list :disks
-                           (list memory-width (+ top-row-height temperature-height)
-                                 side-width disk-height))
+                           (list cpu-panel-width 0
+                                 memory-width top-row-height))
                      (list :network
-                           (list 0 (+ top-row-height middle-row-height)
-                                 network-width bottom-row-height))
+                           (list 0 top-row-height
+                                 network-width middle-row-height))
+                     (list :disks
+                           (list network-width top-row-height
+                                 disk-width middle-row-height))
+                     (list :temperature
+                           (list (+ network-width disk-width)
+                                 top-row-height
+                                 temperature-width
+                                 middle-row-height))
                      (list :process
-                           (list network-width (+ top-row-height middle-row-height)
-                                 process-width bottom-row-height)))))
+                           (list 0 (+ top-row-height middle-row-height)
+                                 width process-height)))))
              (expected-widgets
               (mapcar (lambda (entry) (first entry)) expected))
              (actual-widgets
