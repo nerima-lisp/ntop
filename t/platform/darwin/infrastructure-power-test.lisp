@@ -1,11 +1,4 @@
 (in-package #:ntop.test)
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (load (merge-pathnames
-         "helpers-power.lisp"
-         (uiop:pathname-directory-pathname
-          (asdf:component-pathname
-           (asdf:find-component "ntop/test"
-                                "t/platform/darwin/infrastructure-power-test"))))))
 (cl-weave:describe
  "Darwin battery boundary"
  (cl-weave:it "routes null CoreFoundation references to missing only"
@@ -40,31 +33,34 @@
      (cl-weave:expect release-calls :to-be 1)
      (cl-weave:expect missing-calls :to-be 0)))
  (cl-weave:it-run-if
- (member :darwin *features*)
- "brackets the native charge and status read with pmset"
- (let ((devices nil)
-       (unavailable nil))
-   (multiple-value-bind (before before-state) (%pmset-battery-reading)
-     (ntop.battery.infrastructure::read-darwin-battery-devices
-      (lambda (value) (setf devices value))
-      (lambda (reason) (setf unavailable reason)))
-     (multiple-value-bind (after after-state) (%pmset-battery-reading)
-       (let* ((device (first devices))
-              (charge
-                (and device
-                     (ntop.battery.domain:battery-device-charge-percent device)))
-              (state
-                (and device
-                     (ntop.battery.domain:battery-device-state device))))
-         (cl-weave:expect
-          (list
-           unavailable
-           (numberp charge)
-           (<= (min before after) (round charge) (max before after))
-           (not (null (member state (list before-state after-state) :test #'eq))))
-          :to-equal
-          '(nil t t t))))))
-)) (cl-weave:describe
+  (member :darwin *features*)
+  "maps explicit native battery state without reading host state"
+  (let ((devices nil)
+        (unavailable nil))
+    (cl-weave:with-mocked-functions
+      (((symbol-function
+         'ntop.platform.darwin::call-with-power-source-properties)
+        (lambda (on-value on-unavailable)
+          (declare (ignore on-unavailable))
+          (funcall
+           on-value
+           (list
+            (list :source-type "InternalBattery"
+                  :source-state "AC Power"
+                  :current-capacity 75
+                  :maximum-capacity 100
+                  :external-connected-p :true
+                  :charging-p :false
+                  :fully-charged-p :false))))))
+      (ntop.battery.infrastructure::read-darwin-battery-devices
+       (lambda (value) (setf devices value))
+       (lambda (reason) (setf unavailable reason))))
+    (cl-weave:expect
+     (list unavailable
+           (ntop.battery.domain:battery-device-charge-percent (first devices))
+           (ntop.battery.domain:battery-device-state (first devices)))
+     :to-equal
+     (list nil 75 :unknown))))) (cl-weave:describe
  "Mocked Darwin battery power reads"
  (cl-weave:it-run-if
  (member :darwin *features*)
