@@ -258,12 +258,5 @@
                 touch "$out"
               '';
         };
-
-      # The PTY terminal-session test launches `cat` from its PATH.
-      overrideOutputs = ctx: {
-        checks.default = ctx.generated.checks.default.overrideAttrs (old: {
-          nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ ctx.pkgs.coreutils ];
-        });
-      };
     };
 }
