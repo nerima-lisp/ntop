@@ -316,56 +316,63 @@
          (choices
            (ntop.process.presentation:process-table-sort-options sort-config))
          (rows (or (application-composition-screen-rows composition) 24)))
-    (cond
-      ((eq kind :sort-processes)
-       (if (eq value :apply)
-           (%apply-process-sort-choice
-            state config snapshot
-            (ntop.ui:table-state-selected-index menu-state))
-           (multiple-value-bind (x y pointer-p)
-               (%process-dialog-pointer-coordinates value :sort-choice)
-             (if pointer-p
-                 (let ((area (%process-dialog-area-at
-                              composition :sort-choice x y)))
-                   (let ((index
-                           (and area
-                                (position
-                                 (ntop.ui:clickable-area-value area)
-                                 choices :key #'car :test #'eq))))
-                     (or (%apply-process-sort-choice state config snapshot index)
-                         t)))
+    (flet ((select-choice (index)
+             (when (and (integerp index) (<= 0 index) (< index (length choices)))
+               (let ((copy (%copy-composition-table-state menu-state)))
+                 (ntop.process.presentation:select-process-sort-menu-choice
+                  copy index (length choices))
+                 (setf (gethash :process-sort
+                                (ntop.app.domain:app-state-widget-v-states state))
+                       copy)
                  t))))
-      ((eq kind :navigation)
-       (cond
-         ((eq value :first-row)
-          (%apply-process-sort-choice state config snapshot 0)
-          t)
-         ((eq value :last-row)
-          (%apply-process-sort-choice state config snapshot
-                                      (max 0 (1- (length choices))))
-          t)
-         (t
-          (let ((movement (%process-dialog-navigation-delta
-                           value (max 0 (1- rows)))))
-            (when movement
-              (let ((copy (%copy-composition-table-state menu-state)))
-                (ntop.process.presentation:move-process-sort-menu-selection
-                 copy movement (length choices) (max 0 (1- rows)))
-                (setf (gethash :process-sort
-                               (ntop.app.domain:app-state-widget-v-states state))
-                      copy))
-              t)))))
-      ((and (eq kind :dialog)
-            (member value '(:choice-up :choice-down) :test #'eq))
-       (let ((movement (if (eq value :choice-up) -1 1))
-             (copy (%copy-composition-table-state menu-state)))
-         (ntop.process.presentation:move-process-sort-menu-selection
-          copy movement (length choices) (max 0 (1- rows)))
-         (setf (gethash :process-sort
-                        (ntop.app.domain:app-state-widget-v-states state))
-               copy)
-         t))
-      (t nil))))
+      (cond
+        ((eq kind :sort-processes)
+         (if (eq value :apply)
+             (%apply-process-sort-choice
+              state config snapshot
+              (ntop.ui:table-state-selected-index menu-state))
+             (multiple-value-bind (x y pointer-p)
+                 (%process-dialog-pointer-coordinates value :sort-choice)
+               (if pointer-p
+                   (let ((area (%process-dialog-area-at
+                                composition :sort-choice x y)))
+                     (let ((index
+                             (and area
+                                  (position
+                                   (ntop.ui:clickable-area-value area)
+                                   choices :key #'car :test #'eq))))
+                       (or (select-choice index) t)))
+                   t))))
+        ((eq kind :navigation)
+         (cond
+           ((eq value :first-row)
+            (select-choice 0)
+            t)
+           ((eq value :last-row)
+            (select-choice (max 0 (1- (length choices))))
+            t)
+           (t
+            (let ((movement (%process-dialog-navigation-delta
+                             value (max 0 (1- rows)))))
+              (when movement
+                (let ((copy (%copy-composition-table-state menu-state)))
+                  (ntop.process.presentation:move-process-sort-menu-selection
+                   copy movement (length choices) (max 0 (1- rows)))
+                  (setf (gethash :process-sort
+                                 (ntop.app.domain:app-state-widget-v-states state))
+                        copy))
+                t)))))
+        ((and (eq kind :dialog)
+              (member value '(:choice-up :choice-down) :test #'eq))
+         (let ((movement (if (eq value :choice-up) -1 1))
+               (copy (%copy-composition-table-state menu-state)))
+           (ntop.process.presentation:move-process-sort-menu-selection
+            copy movement (length choices) (max 0 (1- rows)))
+           (setf (gethash :process-sort
+                          (ntop.app.domain:app-state-widget-v-states state))
+                 copy)
+           t))
+        (t nil)))))
 
 (defun %process-direct-sort-action (state action config)
   (let* ((value (ntop.app.domain:app-action-value action))

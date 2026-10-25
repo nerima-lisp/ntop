@@ -98,122 +98,125 @@
         (cl-weave:expect forwarded :to-be nil))))
 
   (cl-weave:it "retains rendered click areas and routes row, sort, and kill clicks"
-    (let* ((row-area
-             (ntop.ui:make-clickable-area
-              :rectangle (ntop.ui:make-rectangle :x 2 :y 3 :width 1 :height 1)
-              :action :select-row
-              :value 0))
-           (sort-area
-             (ntop.ui:make-clickable-area
-              :rectangle (ntop.ui:make-rectangle :x 4 :y 5 :width 1 :height 1)
-              :action :sort-choice
-              :value :memory))
-           (kill-area
-             (ntop.ui:make-clickable-area
-              :rectangle (ntop.ui:make-rectangle :x 6 :y 7 :width 1 :height 1)
-              :action :kill-choice
-              :value 0))
-           (forwarded nil)
-           (config (ntop.shared.application:make-application-config))
-           (composition
-             (ntop.app.application:make-application-composition
-              config
-              :on-action (lambda (state action)
-                           (push (list state action) forwarded))
-              :draw-screen
-              (lambda (target state draw-config snapshot columns rows reasons series)
-                (declare
-                 (ignore target draw-config snapshot columns rows reasons series))
-                (case (ntop.app.domain:app-state-active-dialog state)
-                  (:process-sort (list sort-area))
-                  (:process-kill (list kill-area))
-                  (otherwise (list row-area))))))
-           (state (ntop.app.domain:make-app-state :selected-widget :process))
-           (sample
-             (ntop.process.domain:make-process-sample
-              :sampled-at 1d0
-              :processes
-              (list
-               (ntop.process.domain:make-process-record
-                :pid 42 :ppid 1 :name "worker" :command "worker"
-                :cpu-time-ns 100000000 :resident-memory-bytes 1024
-                :virtual-memory-bytes 2048 :read-bytes 100 :write-bytes 20))))
-           (snapshot
-             (ntop.app.domain:make-collection-snapshot
-              :sampled-at 1d0 :process-sample sample))
-           (on-action
-             (ntop.app.application:application-composition-on-action composition)))
-      (setf (ntop.shared.application:application-config-disable-advanced-kill-p
-             config)
-            t)
-      (funcall
-       (ntop.app.application:application-composition-on-snapshot composition)
-       snapshot)
-      (let ((returned-areas nil))
-        (with-output-to-string (stream)
-          (let ((*standard-output* stream))
-            (setf returned-areas
-                  (funcall
-                   (ntop.app.application:application-composition-render composition)
-                   state config snapshot 80 24 nil))))
-        (cl-weave:expect (first returned-areas) :to-be row-area))
-      (cl-weave:expect
-         (first
-          (ntop.app.application::application-composition-clickable-areas
-           composition))
-         :to-be
-         row-area)
-      (funcall on-action
-               state
-               (ntop.app.domain:make-app-action
-                :kind :select :value (list :pointer :process-row 2 3)))
-      (cl-weave:expect
+  (let* ((row-area
+           (ntop.ui:make-clickable-area
+            :rectangle (ntop.ui:make-rectangle :x 2 :y 3 :width 1 :height 1)
+            :action :select-row :value 0))
+         (sort-area
+           (ntop.ui:make-clickable-area
+            :rectangle (ntop.ui:make-rectangle :x 4 :y 5 :width 1 :height 1)
+            :action :sort-choice :value :memory))
+         (kill-area
+           (ntop.ui:make-clickable-area
+            :rectangle (ntop.ui:make-rectangle :x 6 :y 7 :width 1 :height 1)
+            :action :kill-choice :value 0))
+         (forwarded nil)
+         (config (ntop.shared.application:make-application-config))
+         (composition
+           (ntop.app.application:make-application-composition
+            config
+            :on-action (lambda (state action)
+                         (push (list state action) forwarded))
+            :draw-screen
+            (lambda (target state draw-config snapshot columns rows reasons series)
+              (declare
+               (ignore target draw-config snapshot columns rows reasons series))
+              (case (ntop.app.domain:app-state-active-dialog state)
+                (:process-sort (list sort-area))
+                (:process-kill (list kill-area))
+                (otherwise (list row-area))))))
+         (state (ntop.app.domain:make-app-state :selected-widget :process))
+         (sample
+           (ntop.process.domain:make-process-sample
+            :sampled-at 1d0
+            :processes
+            (list
+             (ntop.process.domain:make-process-record
+              :pid 42 :ppid 1 :name "worker" :command "worker"
+              :cpu-time-ns 100000000 :resident-memory-bytes 1024
+              :virtual-memory-bytes 2048 :read-bytes 100 :write-bytes 20))))
+         (snapshot
+           (ntop.app.domain:make-collection-snapshot
+            :sampled-at 1d0 :process-sample sample))
+         (on-action
+           (ntop.app.application:application-composition-on-action composition))
+         (on-snapshot
+           (ntop.app.application:application-composition-on-snapshot composition))
+         (renderer
+           (ntop.app.application:application-composition-render composition)))
+    (setf (ntop.shared.application:application-config-disable-advanced-kill-p
+           config)
+          t)
+    (funcall on-snapshot snapshot)
+    (flet ((send (kind value)
+             (funcall on-action state
+                      (ntop.app.domain:make-app-action :kind kind :value value)))
+           (render ()
+             (let ((areas nil))
+               (with-output-to-string (stream)
+                 (let ((*standard-output* stream))
+                   (setf areas (funcall renderer state config snapshot 80 24 nil))))
+               areas))
+           (check (actual expected)
+             (cl-weave:expect actual :to-be expected)))
+      (check (first (render)) row-area)
+      (check
+       (first
+        (ntop.app.application::application-composition-clickable-areas composition))
+       row-area)
+      (send :select (list :pointer :process-row 2 3))
+      (check
        (ntop.ui:table-state-selected-index
         (gethash :process (ntop.app.domain:app-state-widget-v-states state)))
-       :to-be
        0)
-      (funcall on-action
-               state
-               (ntop.app.domain:make-app-action
-                :kind :dialog :value :process-sort))
-      (with-output-to-string (stream)
-        (let ((*standard-output* stream))
-          (funcall
-           (ntop.app.application:application-composition-render composition)
-           state config snapshot 80 24 nil)))
-      (funcall on-action
-               state
-               (ntop.app.domain:make-app-action
-                :kind :sort-processes
-                :value (list :pointer :sort-choice 4 5)))
-      (cl-weave:expect
-       (ntop.process.domain:process-sort-state-key
-        (gethash :process-sort-state
-                 (ntop.app.domain:app-state-widget-v-states state)))
-       :to-be
-       :memory)
-      (funcall on-action
-               state
-               (ntop.app.domain:make-app-action
-                :kind :dialog :value :process-kill))
-      (with-output-to-string (stream)
-        (let ((*standard-output* stream))
-          (funcall
-           (ntop.app.application:application-composition-render composition)
-           state config snapshot 80 24 nil)))
-      (funcall on-action
-               state
-               (ntop.app.domain:make-app-action
-                :kind :process-terminate
-                :value (list :pointer :kill-choice 6 7)))
-      (cl-weave:expect
+      (send :dialog :process-sort)
+      (render)
+      (let* ((sort-state
+               (ntop.app.application::%process-sort-state state config))
+             (table-config
+               (ntop.app.application::%process-dialog-table-config
+                config snapshot sort-state))
+             (choices
+               (ntop.process.presentation:process-table-sort-options table-config))
+             (menu-state
+               (gethash :process-sort
+                        (ntop.app.domain:app-state-widget-v-states state)))
+             (previous-index (ntop.ui:table-state-selected-index menu-state))
+             (previous-sort-key
+               (ntop.process.domain:process-sort-state-key sort-state))
+             (memory-index (position :memory choices :key #'car :test #'eq)))
+        ;; btm 0.14.9: src/app.rs:2164-2221 changes only the selected
+        ;; sort position.
+        ;; Enter applies in src/app.rs:511-521 and closes via
+        ;; src/widgets/process_table.rs:1129-1135.
+        (check (= previous-index memory-index) nil)
+        (send :sort-processes (list :pointer :sort-choice 4 5))
+        (check
+         (ntop.ui:table-state-selected-index
+          (gethash :process-sort (ntop.app.domain:app-state-widget-v-states state)))
+         memory-index)
+        (check
+         (ntop.process.domain:process-sort-state-key
+          (ntop.app.application::%process-sort-state state config))
+         previous-sort-key)
+        (check (ntop.app.domain:app-state-active-dialog state) :process-sort)
+        (send :sort-processes :apply)
+        (check
+         (ntop.process.domain:process-sort-state-key
+          (gethash :process-sort-state
+                   (ntop.app.domain:app-state-widget-v-states state)))
+         :memory)
+        (check (ntop.app.domain:app-state-active-dialog state) nil))
+      (send :dialog :process-kill)
+      (render)
+      (send :process-terminate (list :pointer :kill-choice 6 7))
+      (check
        (ntop.ui:table-state-selected-index
         (ntop.process.presentation::process-termination-dialog-state-selection-state
          (gethash :process-kill
                   (ntop.app.domain:app-state-widget-v-states state))))
-       :to-be
        0)
-      (cl-weave:expect forwarded :to-be nil)))
+      (check forwarded nil))))
 
   (cl-weave:it "sends kill confirmation through the configured sender"
     (let* ((forwarded nil)

@@ -302,52 +302,50 @@
 
     (cl-weave:it "covers sort dialog choices and navigation actions"
   (let* ((config (ntop.shared.application:make-application-config))
-         (area
-           (ntop.ui:make-clickable-area
-            :rectangle (ntop.ui:make-rectangle :x 4 :y 5 :width 1 :height 1)
-            :action :sort-choice :value :memory))
-         (composition (%d-composition :areas (list area) :rows 1))
+         (area (ntop.ui:make-clickable-area
+                :rectangle (ntop.ui:make-rectangle :x 4 :y 5 :width 1 :height 1)
+                :action :sort-choice :value :memory))
+         (composition (%d-composition :areas (list area)))
          (state (ntop.app.domain:make-app-state
                  :selected-widget :process :active-dialog :process-sort)))
-    (flet ((check (actual expected)
-             (cl-weave:expect actual :to-be expected))
-           (run (action)
-             (ntop.app.application::%process-sort-dialog-action
-              composition state action config)))
-      (check (ntop.app.application::%open-process-sort-dialog
-              state config nil)
-             t)
-      (check (typep (gethash :process-sort
-                             (ntop.app.domain:app-state-widget-v-states state))
-                    'ntop.ui:table-state)
-             t)
-      (check (ntop.app.application::%apply-process-sort-choice
-              state config nil 0)
-             t)
+    (flet ((check (actual expected) (cl-weave:expect actual :to-be expected))
+           (run (action) (ntop.app.application::%process-sort-dialog-action
+                          composition state action config))
+           (active-sort-key () (ntop.process.domain:process-sort-state-key
+                                (ntop.app.application::%process-sort-state state config))))
+      (check (ntop.app.application::%open-process-sort-dialog state config nil) t)
       (dolist (index (list -1 999 1.5 nil))
-        (check (ntop.app.application::%apply-process-sort-choice
-                state config nil index)
-               nil))
-      (dolist (action
-               (list (%d-action :sort-processes :apply)
-                     (%d-action :navigation :first-row)
-                     (%d-action :navigation :last-row)
-                     (%d-action :sort-processes (list :pointer :sort-choice 4 5))
-                     (%d-action :sort-processes (list :pointer :sort-choice 9 9))
-                     (%d-action :sort-processes :unknown)
-                     (%d-action :navigation :down)
-                     (%d-action :navigation :page-up)
-                     (%d-action :dialog :choice-up)
-                     (%d-action :dialog :choice-down)))
-        (check (run action) t))
-      (dolist (action-spec
-               (quote ((:navigation :unknown) (:dialog :close) (:help nil))))
-        (check (run (apply (function %d-action) action-spec)) nil))
-      (check
-       (ntop.process.domain:process-sort-state-key
-        (gethash :process-sort-state
-                 (ntop.app.domain:app-state-widget-v-states state)))
-       :memory))))
+        (check (ntop.app.application::%apply-process-sort-choice state config nil index) nil))
+      (let* ((sort-state (ntop.app.application::%process-sort-state state config))
+             (choices (ntop.process.presentation:process-table-sort-options
+                       (ntop.app.application::%process-dialog-table-config
+                        config nil sort-state)))
+             (menu-state (gethash :process-sort
+                                  (ntop.app.domain:app-state-widget-v-states state)))
+             (sort-key (ntop.process.domain:process-sort-state-key sort-state))
+             (memory-index (position :memory choices :key #'car :test #'eq)))
+        (check (typep menu-state 'ntop.ui:table-state) t)
+        (check (= (ntop.ui:table-state-selected-index menu-state) memory-index) nil)
+        ;; bottom 0.14.9 click only changes sort-table position: src/app.rs:2164-2221.
+        (check (run (%d-action :sort-processes (list :pointer :sort-choice 4 5))) t)
+        (check (ntop.ui:table-state-selected-index
+                (gethash :process-sort (ntop.app.domain:app-state-widget-v-states state)))
+               memory-index)
+        (check (active-sort-key) sort-key)
+        (check (ntop.app.domain:app-state-active-dialog state) :process-sort)
+        (dolist (action (list (%d-action :navigation :first-row)
+                              (%d-action :navigation :last-row)
+                              (%d-action :sort-processes (list :pointer :sort-choice 9 9))
+                              (%d-action :sort-processes :unknown)
+                              (%d-action :navigation :down)
+                              (%d-action :navigation :page-up)
+                              (%d-action :dialog :choice-up)
+                              (%d-action :dialog :choice-down)))
+          (check (run action) t))
+        (dolist (action-spec '((:navigation :unknown) (:dialog :close) (:help nil)))
+          (check (run (apply #'%d-action action-spec)) nil))
+        (check (active-sort-key) sort-key)
+        (check (ntop.app.domain:app-state-active-dialog state) :process-sort)))))
 
     (cl-weave:it "covers kill opening, movement, selection, and close actions"
   (let* ((sample (%d-sample))
