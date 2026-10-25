@@ -438,6 +438,27 @@
      status)
    :to-equal 2))
                    (cl-weave:it
+                    "rejects both config location spellings without creating files"
+                    (host-kit:call-with-temporary-directory
+                     (lambda (directory)
+                       (dolist (case
+                                (list
+                                 (list "-C" "short.toml")
+                                 (list "--config_location" "long.toml")))
+                         (let ((pathname
+                                 (merge-pathnames (second case) directory)))
+                           (multiple-value-bind (status calls config stdout stderr)
+                               (cli-test-captured-run
+                                (list (first case) (namestring pathname)))
+                             (declare (ignore calls config stdout stderr))
+                             (cl-weave:expect status :to-equal 2)
+                             (cl-weave:expect
+                              (not (probe-file pathname))
+                              :to-be
+                              t)))))
+                     :prefix
+                     "ntop-cli-config-location-test-"))
+                   (cl-weave:it
                     "accepts free_arc as a no-op and calls the application runner"
                     (multiple-value-bind (status calls config)
                         (cli-test-captured-run '("--free_arc"))
