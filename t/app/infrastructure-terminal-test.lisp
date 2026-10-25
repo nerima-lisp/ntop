@@ -243,7 +243,27 @@
              (list sb-posix:sigint (list :terminate sb-posix:sigint)))
             expected-signals)))))))
   (cl-weave:it "runs its callback in a PTY terminal session"
-  (let ((pty (cl-tty-kit:make-pty :program "cat"))
+  (let ((pty (cl-tty-kit:make-pty
+               :program
+               ;; cl-tty-kit passes :environment NIL to SBCL.
+               ;; Resolve the program before the child is created.
+               (let ((path (sb-ext:posix-getenv "PATH")))
+                 (unless path
+                   (error "PATH is unset."))
+                 (or
+                  (loop for directory in (uiop:split-string path :separator ":")
+                        for candidate =
+                          (uiop:ensure-absolute-pathname
+                           (merge-pathnames
+                            "cat"
+                            (uiop:ensure-directory-pathname
+                             (if (string= directory "")
+                                 (uiop:getcwd)
+                                 directory)))
+                           (uiop:getcwd))
+                        when (probe-file candidate)
+                          return (namestring candidate))
+                  (error "Executable cat was not found on PATH.")))))
         (installed-signals nil)
         (defaults-restored nil)
         (callback-event :unset)
