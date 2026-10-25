@@ -263,6 +263,14 @@
 
 
 
+(defun %screen-draw-freeze-indicator (target rows)
+  (when (plusp rows)
+    (ntop.ui:draw-table-text target
+                             1
+                             (1- rows)
+                             "Frozen, press 'f' to unfreeze"
+                             :selected)))
+
 (defun draw-application-screen (target state
                                        config
                                        snapshot
@@ -279,9 +287,11 @@
          (selected
           (%screen-widget-base
            (ntop.app.domain:app-state-selected-widget state)))
+         (paused-p (ntop.app.domain:app-state-paused-p state))
+         (content-rows (if paused-p (max 0 (1- rows)) rows))
          (layout-results
            (multiple-value-list
-            (%screen-layout-placements columns rows state mode)))
+            (%screen-layout-placements columns content-rows state mode)))
          (placements (first layout-results))
          (cpu-frames (second layout-results))
          (clickable-areas nil))
@@ -311,7 +321,9 @@
                                                     render-config
                                                     snapshot
                                                     columns
-                                                    rows)))
+                                                    content-rows)))
+    (when paused-p
+      (%screen-draw-freeze-indicator target rows))
     clickable-areas))
 
 

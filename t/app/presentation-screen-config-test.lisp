@@ -266,3 +266,72 @@
                         (ntop.ui:make-rectangle :x 0 :y 0 :width 2 :height 2)
                         nil state config nil nil nil)
                        :to-equal nil))))
+
+(cl-weave:describe "frozen screen layout"
+  (cl-weave:it
+   "reserves a styled bottom row like btm 0.14.9 (src/canvas.rs:74-100)"
+   (let* ((rows 24)
+          (footer-y (1- rows))
+          (config (%wp12b-screen-config))
+          (*wp12b-screen-widget-calls* nil)
+          (*wp12b-screen-recording-p* t)
+          (frozen-text "Frozen, press 'f' to unfreeze")
+          (state (ntop.app.domain:make-app-state :paused-p t)))
+     (setf (ntop.shared.application:application-config-theme config) :gruvbox)
+     (multiple-value-bind (areas screen output)
+         (%wp12b-screen-render 80 rows :state state :config config)
+       (declare (ignore areas))
+       (cl-weave:expect (not (null *wp12b-screen-widget-calls*)) :to-be t)
+       (cl-weave:expect
+        (every
+         (lambda (call)
+           (let ((rectangle (second call)))
+             (<= (+ (ntop.ui:rectangle-y rectangle)
+                    (ntop.ui:rectangle-height rectangle))
+                 footer-y)))
+         *wp12b-screen-widget-calls*)
+        :to-be t)
+       (cl-weave:expect (not (null (search frozen-text output))) :to-be t)
+       (cl-weave:expect
+        (coerce
+         (loop for x from 1 below (+ 1 (length frozen-text))
+               collect (cl-tty-kit:cell-char
+                        (cl-tty-kit:screen-cell screen x footer-y)))
+         'string)
+        :to-equal frozen-text)
+       (cl-weave:expect
+        (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 0 footer-y))
+        :to-be
+        #\Space)
+       (cl-weave:expect
+        (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 1 footer-y))
+        :to-equal
+        (if (ntop.app.presentation::%screen-no-color-p)
+            nil
+            (ntop.ui:presentation-theme-style :gruvbox :selected-text))))
+     (let* ((rows 6)
+            (footer-y (1- rows))
+            (*wp12b-screen-widget-calls* nil)
+            (state (ntop.app.domain:make-app-state
+                    :paused-p t :active-dialog :process-search)))
+       (multiple-value-bind (areas screen output)
+           (%wp12b-screen-render 80 rows :state state :config config)
+         (declare (ignore areas))
+         (let* ((call (find :process-search
+                            *wp12b-screen-widget-calls*
+                            :key #'first :test #'eq))
+                (rectangle (second call)))
+           (cl-weave:expect (not (null call)) :to-be t)
+           (cl-weave:expect (ntop.ui:rectangle-height rectangle)
+                            :to-equal footer-y)
+           (cl-weave:expect
+            (+ (ntop.ui:rectangle-y rectangle)
+               (ntop.ui:rectangle-height rectangle))
+            :to-equal footer-y)
+           (cl-weave:expect (not (null (search "Frozen, press 'f' to unfreeze"
+                                               output)))
+                            :to-be t)
+           (cl-weave:expect
+            (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 1 footer-y))
+            :to-be
+            #\F)))))))
