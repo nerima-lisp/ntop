@@ -241,17 +241,17 @@
                        (cl-tty-kit:cell-style
                         (cl-tty-kit:screen-cell screen 0 0))
                        :to-equal
-                       (ntop.ui:presentation-theme-style :gruvbox :border))
+                       (ntop.app.presentation::%screen-style :gruvbox :border))
                       (cl-weave:expect
                        (cl-tty-kit:cell-style
                         (cl-tty-kit:screen-cell screen 2 0))
                        :to-equal
-                       (ntop.ui:presentation-theme-style :gruvbox :widget-title))
+                       (ntop.app.presentation::%screen-style :gruvbox :widget-title))
                       (cl-weave:expect
                        (cl-tty-kit:cell-style
                         (cl-tty-kit:screen-cell screen 1 1))
                        :to-equal
-                       (ntop.ui:presentation-theme-style :gruvbox :text))
+                       (ntop.app.presentation::%screen-style :gruvbox :text))
                       (let* ((row (cl-tty-kit:screen-row-string screen 1))
                              (match (search "GPU" row :test #'char-equal)))
                         (cl-weave:expect (not (null match)) :to-be t)
@@ -259,8 +259,7 @@
                          (cl-tty-kit:cell-style
                           (cl-tty-kit:screen-cell screen (1+ match) 1))
                          :to-equal
-                         (ntop.ui:presentation-theme-style :gruvbox
-                                                           :selected-text)))))
+                         (ntop.app.presentation::%screen-style :gruvbox :selected-text)))))
                    (cl-weave:it "handles short and one-cell help rectangles"
                                 (let* ((screen (cl-tty-kit:make-screen 3 3))
                                        (rectangle
@@ -335,14 +334,12 @@
                                    (cl-tty-kit:cell-style
                                     (cl-tty-kit:screen-cell screen 0 0))
                                    :to-equal
-                                   (ntop.ui:presentation-theme-style :default
-                                                                     :border))
+                                   (ntop.app.presentation::%screen-style :default :border))
                                   (cl-weave:expect
                                    (cl-tty-kit:cell-style
                                     (cl-tty-kit:screen-cell screen 0 1))
                                    :to-equal
-                                   (ntop.ui:presentation-theme-style :default
-                                                                     :border)))))
+                                   (ntop.app.presentation::%screen-style :default :border)))))
 
 (cl-weave:describe
  "application help presentation boundary behavior"

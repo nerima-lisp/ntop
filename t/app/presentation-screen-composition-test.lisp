@@ -113,9 +113,16 @@
                                          :gruvbox role nil)
                                         (ntop.ui:presentation-theme-style
                                          :gruvbox theme-role))))
-                          (and (not (ntop.app.presentation::%screen-no-color-p nil))
-                               (not (ntop.app.presentation::%screen-no-color-p ""))
-                               (ntop.app.presentation::%screen-no-color-p "1"))
+                          (and
+                            (not (ntop.app.presentation::%screen-no-color-p nil))
+                            (not (ntop.app.presentation::%screen-no-color-p ""))
+                            (ntop.app.presentation::%screen-no-color-p "1")
+                            (null (ntop.app.presentation::%screen-style
+                                   :default :border t))
+                            (equal (ntop.app.presentation::%screen-style
+                                    :default :border nil)
+                                   (ntop.ui:presentation-theme-style
+                                    :default :border)))
                           (null (ntop.app.presentation::%screen-table-style
                                  :default :header t))
                           (equal (ntop.app.presentation::%screen-table-style

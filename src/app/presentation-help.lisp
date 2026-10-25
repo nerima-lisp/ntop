@@ -256,15 +256,13 @@
                                  (ntop.shared.application:application-config-theme
                                   config))))
                               (border-style
-                               (ntop.ui:presentation-theme-style theme :border))
+                               (%screen-style theme :border))
                               (title-style
-                               (ntop.ui:presentation-theme-style theme
-                                                                 :widget-title))
+                               (%screen-style theme :widget-title))
                               (text-style
-                               (ntop.ui:presentation-theme-style theme :text))
+                               (%screen-style theme :text))
                               (selected-style
-                               (ntop.ui:presentation-theme-style theme
-                                                                 :selected-text))
+                               (%screen-style theme :selected-text))
                               (x (ntop.ui:rectangle-x rectangle))
                               (y (ntop.ui:rectangle-y rectangle))
                               (width (ntop.ui:rectangle-width rectangle))

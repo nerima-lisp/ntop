@@ -30,7 +30,20 @@
               (top-row (cl-tty-kit:screen-row-string screen 10))
               (dashboard-row (cl-tty-kit:screen-row-string screen 0))
               (bottom-row (cl-tty-kit:screen-row-string screen 36)))
-         (cl-weave:expect draw-count :to-be 1)
+         (progn
+           (cl-weave:expect draw-count :to-be 1)
+           (cl-weave:expect
+            (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 32 10))
+            :to-equal
+            (ntop.app.presentation::%screen-style :default :border))
+           (cl-weave:expect
+            (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 33 10))
+            :to-equal
+            (ntop.app.presentation::%screen-style :default :widget-title))
+           (cl-weave:expect
+            (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 32 36))
+            :to-equal
+            (ntop.app.presentation::%screen-style :default :border)))
          (cl-weave:expect
           (every (lambda (character) (char= character #\Space)) dashboard-row)
           :to-be t)

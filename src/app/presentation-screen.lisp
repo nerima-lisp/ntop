@@ -226,16 +226,19 @@
 (progn
   (defun %screen-no-color-p (&optional (value (uiop:getenv "NO_COLOR")))
     (and value (plusp (length value))))
-  (defun %screen-table-style (theme role &optional (no-color-p (%screen-no-color-p)))
+  (defun %screen-style (theme role &optional (no-color-p (%screen-no-color-p)))
     (unless no-color-p
-      (ntop.ui:presentation-theme-style
-       theme
-       (case role
-         (:normal :text)
-         (:header :table-header)
-         (:selected :selected-text)
-         (:title :widget-title)
-         (otherwise :text)))))
+      (ntop.ui:presentation-theme-style theme role)))
+  (defun %screen-table-style (theme role &optional (no-color-p (%screen-no-color-p)))
+    (%screen-style
+     theme
+     (case role
+       (:normal :text)
+       (:header :table-header)
+       (:selected :selected-text)
+       (:title :widget-title)
+       (otherwise :text))
+     no-color-p))
   (defmethod ntop.ui:draw-table-text ((target cl-tty-kit:screen) x y text role)
     (cl-tty-kit:screen-write-string target
                                     x
