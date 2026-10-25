@@ -1,5 +1,4 @@
 (in-package #:ntop.test)
-
 (cl-weave:describe "process dialogs in application composition"
   (cl-weave:it "routes search edits and submit through the active dialog"
     (let* ((forwarded nil)
@@ -467,7 +466,22 @@
           (gethash :process
                    (ntop.app.domain:app-state-widget-v-states next-state)))
          :to-be
-         (1+ start-index)))))))
+         (1+ start-index))))))
+
+  (cl-weave:it "matches BTM help geometry (src/canvas.rs:138-194)"
+    (dolist (case '((40 12 0 0 40 12)
+                    (80 24 0 0 80 24)
+                    (160 48 32 10 96 27)))
+      (destructuring-bind (columns rows x y width height) case
+        (let ((rectangle
+                (ntop.app.application::%help-dialog-rectangle columns rows)))
+          (cl-weave:expect
+           (list (ntop.ui:rectangle-x rectangle)
+                 (ntop.ui:rectangle-y rectangle)
+                 (ntop.ui:rectangle-width rectangle)
+                 (ntop.ui:rectangle-height rectangle))
+           :to-equal
+           (list x y width height)))))))
 (load
  (asdf:system-relative-pathname
   "ntop/test"
