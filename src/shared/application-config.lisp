@@ -40,7 +40,7 @@
                 (process-tree-collapse-p nil)
                 (process-show-command-p nil)
                 (process-default-memory-value-p nil)
-                (process-default-grouped-p t)
+                (process-default-grouped-p nil)
                 (process-default-tree-p nil)
                 (process-columns nil)
                 (process-sort-column :cpu-percent)
