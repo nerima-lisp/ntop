@@ -458,4 +458,34 @@
                        "frame. Resize the terminal to 120 by 36. Record the time"
                        "until output resumes and verify the final frame uses all"
                        "120 columns and 36 rows. Save the terminal capture and"
-                       "note whether exit restores terminal settings."))))))))
+                       "note whether exit restores terminal settings.")))
+          ((and
+            (member id (list "key-51" "key-52" "key-53"
+                             "mouse-69" "mouse-70")
+                    :test (function string=))
+            (or (not (member id (list "mouse-69" "mouse-70")
+                             :test (function string=)))
+                (string-equal (or context "") "graphs")))
+           (list :reason
+                 (text "BTM-self condition-A matched, but only one launch showed"
+                       "the expected graph zoom transition. The run cannot"
+                       "establish consistent behavior; verify it manually.")
+                 :procedure
+                 (cond
+                   ((string= id "key-51")
+                    (text "At 60s, press +; verify CPU changes to 45s and the"
+                          "adjacent scale stays fixed. Repeat in a fresh BTM."))
+                   ((string= id "key-52")
+                    (text "At 45s, press -; verify CPU returns to 60s and the"
+                          "adjacent scale stays fixed. Repeat in a fresh BTM."))
+                   ((string= id "key-53")
+                    (text "Zoom in with +, then press =; verify CPU resets to"
+                          "60s and the adjacent scale stays fixed. Repeat fresh."))
+                   ((string= id "mouse-69")
+                    (text "At 60s, wheel up over the CPU plot; verify it changes"
+                          "to 45s and adjacent scale stays fixed. Repeat fresh."))
+                   (t
+                    (text "At 60s, wheel up then down over the CPU plot; verify"
+                          "45s then 60s while adjacent scale stays fixed. Repeat"
+                          "in a fresh BTM process.")))))
+)))))

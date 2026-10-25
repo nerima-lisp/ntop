@@ -262,10 +262,11 @@
   (cl-weave:describe
  "BTM self subcase manual classifications"
  (cl-weave:it
-  "classifies exactly six expanded BTM self subcases"
+  "classifies exactly eleven expanded BTM self subcases"
   (let* ((routes (ntop.e2e::route-catalog))
          (target-ids
-           (list "key-15-002" "flag-113-001" "search-field-153-001"
+           (list "key-15-002" "key-51-001" "key-52-001" "key-53-001"
+                 "mouse-69-001" "mouse-70-001" "flag-113-001" "search-field-153-001"
                  "search-field-154-001" "search-field-155-001" "resize-001")))
     (labels ((manual-targets (mode)
                (loop for route in routes
@@ -281,8 +282,9 @@
                              (format nil "~a-~3,'0d"
                                      (ntop.e2e::route-id route) index))))
              (target-route-subcase-counts ()
-               (loop for id in '("key-15" "flag-113" "search-field-153"
-                                 "search-field-154" "search-field-155" "resize")
+               (loop for id in '("key-15" "key-51" "key-52" "key-53" "mouse-69"
+                                 "mouse-70" "flag-113" "search-field-153" "search-field-154"
+                                 "search-field-155" "resize")
                      for route =
                        (find id routes :key #'ntop.e2e::route-id
                              :test #'string=)
@@ -310,11 +312,10 @@
       (cl-weave:expect
        (target-route-subcase-counts)
        :to-equal
-       (list (cons "key-15" 4)
-             (cons "flag-113" 4)
-             (cons "search-field-153" 1)
-             (cons "search-field-154" 2)
-             (cons "search-field-155" 1)
+       (list (cons "key-15" 4) (cons "key-51" 1) (cons "key-52" 1)
+             (cons "key-53" 1) (cons "mouse-69" 4) (cons "mouse-70" 4)
+             (cons "flag-113" 4) (cons "search-field-153" 1)
+             (cons "search-field-154" 2) (cons "search-field-155" 1)
              (cons "resize" 1)))
       (cl-weave:expect (manual-specs-have-procedure-p) :to-be t))))
  (cl-weave:it
