@@ -44,12 +44,12 @@
                                   '(ntop.e2e:define-btm-layout
                                     ((cpu 2) (mem nil))
                                     ((net 2) (disk 2) (temp nil))
-                                    ((proc 2 :default))))
+                                    ((:row-ratio 2) (proc nil :default))))
                                  :to-equal
                                  '(quote
                                    (((cpu 2) (mem nil))
                                     ((net 2) (disk 2) (temp nil))
-                                    ((proc 2 :default))))))
+                                    ((:row-ratio 2) (proc nil :default))))))
                    (cl-weave:it-each
                     ((:minimum-rate 1) (:configured-rate 700)
                      (:higher-rate 1200))
@@ -90,6 +90,51 @@
                        (btm-config-test-count text "default = true")
                        :to-be
                        1)
+                      (cl-weave:expect
+                       (btm-config-test-count text (format nil "[[row]]~%ratio = 2"))
+                       :to-be
+                       1)
+                      (cl-weave:expect
+                       (btm-config-test-contains-p
+                        text
+                        (format nil
+                                "[[row.child]]~%type = ~s~%ratio = 2"
+                                "cpu"))
+                       :to-be
+                       t)
+                      (cl-weave:expect
+                       (btm-config-test-contains-p
+                        text
+                        (format nil
+                                "[[row.child]]~%type = ~s~%ratio = 2"
+                                "net"))
+                       :to-be
+                       t)
+                      (cl-weave:expect
+                       (btm-config-test-contains-p
+                        text
+                        (format nil
+                                "[[row.child]]~%type = ~s~%ratio = 2"
+                                "disk"))
+                       :to-be
+                       t)
+                      (cl-weave:expect
+                       (btm-config-test-contains-p
+                        text
+                        (format nil
+                                "[[row]]~%ratio = 2~%[[row.child]]~%type = ~s~%default = true"
+                                "proc"))
+                       :to-be
+                       t)
+                      (let ((process-child-position
+                             (search "type = \"proc\"" text)))
+                        (cl-weave:expect
+                         (and process-child-position
+                              (not (search "ratio = 2"
+                                           text
+                                           :start2 process-child-position)))
+                         :to-be
+                         t))
                       (cl-weave:expect (btm-config-test-layout-order-p text)
                                        :to-be
                                        t)

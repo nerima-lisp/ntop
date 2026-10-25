@@ -6,7 +6,7 @@
 (defparameter *btm-layout*
   (define-btm-layout ((cpu 2) (mem nil))
                      ((net 2) (disk 2) (temp nil))
-                     ((proc 2 :default))))
+                     ((:row-ratio 2) (proc nil :default))))
 
 (defun btm-config-string (rate)
   (unless (and (integerp rate) (plusp rate))
@@ -17,22 +17,21 @@
             rate)
     (format stream
             "[processes]~%case_sensitive = false~%default_grouped = true~%~%")
-    (loop for
-      row
-      in
-      *btm-layout*
-      do
-      (format stream "[[row]]~%")
-      (loop for
-        (type ratio marker)
-        in
-        row
-        do
-        (format stream
-                "[[row.child]]~%type = ~s~%"
-                (string-downcase (symbol-name type)))
-        (when ratio
-          (format stream "ratio = ~d~%" ratio))
-        (when marker
-          (format stream "default = true~%")))
-      (terpri stream))))
+    (loop for row in *btm-layout*
+          do
+          (let* ((row-ratio (when (eq (caar row) :row-ratio)
+                              (cadar row)))
+                 (children (if row-ratio (cdr row) row)))
+            (format stream "[[row]]~%")
+            (when row-ratio
+              (format stream "ratio = ~d~%" row-ratio))
+            (loop for (type ratio marker) in children
+                  do
+                  (format stream
+                          "[[row.child]]~%type = ~s~%"
+                          (string-downcase (symbol-name type)))
+                  (when ratio
+                    (format stream "ratio = ~d~%" ratio))
+                  (when marker
+                    (format stream "default = true~%")))
+            (terpri stream)))))
