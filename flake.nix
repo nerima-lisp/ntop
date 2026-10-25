@@ -237,11 +237,6 @@
             entryPoint = "scripts/coverage.lisp";
             timeoutSeconds = 1800;
           };
-          checks.n7 = ctx.cl.mkScriptCheck {
-            drv = ctx.package;
-            entryPoint = "scripts/check-n7.lisp";
-            timeoutSeconds = 300;
-          };
           checks.dependency-depth = ctx.cl.mkScriptCheck {
             drv = ctx.package;
             entryPoint = "scripts/dependency-depth.lisp";

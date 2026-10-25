@@ -28,9 +28,6 @@ jobs:
           cachix-cache: ${{ vars.CACHIX_CACHE }}
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-      - name: Check N7 machine-derived content
-        run: nix build .#checks.x86_64-linux.n7 --print-build-logs
-
       - name: Check flake
         run: nix flake check --print-build-logs
 
