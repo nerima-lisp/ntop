@@ -98,7 +98,6 @@
                 (and (eq (first before) :45) (eq (first after) :60))))))))
 )
 
-
 (defun %route-action-state-p (route mode subcase side side-name)
   (let* ((action (route-action route))
          (before (getf side :initial-projection)) (after (getf side :projection))
@@ -297,7 +296,6 @@
                     (concatenate 'string
                                  "Input reached BTM; condition-A cells and attributes did not "
                                  "expose focus, and the cursor stayed hidden.")))
-
                ((and (string= (route-id route) "key-38")
                      (%route-widget-no-data-p
                       (getf reference :initial-grid) "Processes")
@@ -457,7 +455,7 @@
       (format nil "~c[<0;~d;~dM" #\Escape (1+ (first point))
               (1+ (second point))))))
 (defun %route-manual-result (route subcase directory
-                               &optional reason prefix)
+                               &optional reason prefix procedure)
   (let* ((id (route-id route))
          (input (%route-input-description route subcase))
          (context (or (getf subcase :context) "default"))
@@ -466,7 +464,8 @@
                    (pathname (format nil "~a-manual.md" prefix))
                    (merge-pathnames (format nil "~a-manual.md" id)
                                     directory)))
-         (procedure (%route-manual-procedure route subcase input context))
+         (procedure (or procedure
+                        (%route-manual-procedure route subcase input context)))
          (expected
            (cond
              ((string= id "basic-mode")
@@ -476,9 +475,14 @@
              (t (format nil "~a; expected: ~a" input (route-expected route))))))
     (%write-text path
                  (format nil
-                         "# ~a~%~%Procedure: ~a~%~%Expected: ~a~%~%Reason: ~a~%~%"
-                         id procedure expected reason))
-    (list :status :manual :expected expected :cause reason
+                         "# ~a~%~%Input: ~a~%~%Procedure: ~a~%~%Expected: ~a~%~%Reason: ~a~%~%"
+                         id input procedure expected reason))
+    (list :status :manual
+          :passed nil
+          :input input
+          :expected expected
+          :actual "Not executed in this BTM self run; manual verification is required."
+          :cause reason
           :evidence (list (namestring path)))))
 (defun %route-wait-owned-child (process timeout-seconds)
   (let ((deadline (+ (%now) (%seconds-to-ticks timeout-seconds))))

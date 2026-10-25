@@ -70,43 +70,56 @@
                        for subcase-index from 1
                        do (push (%route-input-description route subcase)
                                 route-inputs)
-                       (handler-case
-                           (push (%route-side-pair
-                                  route subcase subcase-index mode
-                                  reference-program candidate-program
-                                  directory config-path rows columns rate
-                                  timeout-seconds)
-                                 subresults)
-                         (error (condition)
-                                (let* ((error-path
+                       (let ((manual-spec (%route-btm-self-manual-spec mode route subcase)))
+                         (if manual-spec
+                             (let ((prefix
+                                     (namestring
+                                      (merge-pathnames
+                                       (format nil "~a-~3,'0d"
+                                               (route-id route) subcase-index)
+                                       directory))))
+                               (push (%route-manual-result
+                                      route subcase directory
+                                      (getf manual-spec :reason)
+                                      prefix
+                                      (getf manual-spec :procedure))
+                                     subresults))
+                           (handler-case
+                               (push (%route-side-pair
+                                      route subcase subcase-index mode
+                                      reference-program candidate-program
+                                      directory config-path rows columns rate
+                                      timeout-seconds)
+                                     subresults)
+                             (error (condition)
+                               (let* ((error-path
                                         (merge-pathnames
                                          (format nil "~a-~3,'0d-error.txt"
                                                  (route-id route) subcase-index)
                                          directory))
-                                       (frame-paths
-                                         (loop for side in '("reference"
-                                                             "candidate")
-                                               for frame-path =
-                                                 (merge-pathnames
-                                                  (format nil "~a-~3,'0d-~a.ansi"
-                                                          (route-id route)
-                                                          subcase-index side)
-                                                  directory)
-                                               when (probe-file frame-path)
-                                                 collect (namestring frame-path))))
-                                  (%write-text error-path
-                                               (princ-to-string condition))
-                                  (push (list :passed nil
-                                              :input (%route-input-description
-                                                      route subcase)
-                                              :expected (route-expected route)
-                                              :actual (princ-to-string condition)
-                                              :cause "route execution raised an error"
-                                              :first-difference nil
-                                              :evidence
-                                              (append frame-paths
-                                                      (list (namestring error-path))))
-                                        subresults)))))))
+                                      (frame-paths
+                                        (loop for side in '("reference" "candidate")
+                                              for frame-path =
+                                                (merge-pathnames
+                                                 (format nil "~a-~3,'0d-~a.ansi"
+                                                         (route-id route)
+                                                         subcase-index side)
+                                                 directory)
+                                              when (probe-file frame-path)
+                                                collect (namestring frame-path))))
+                                 (%write-text error-path
+                                              (princ-to-string condition))
+                                 (push (list :passed nil
+                                             :input (%route-input-description
+                                                     route subcase)
+                                             :expected (route-expected route)
+                                             :actual (princ-to-string condition)
+                                             :cause "route execution raised an error"
+                                             :first-difference nil
+                                             :evidence
+                                             (append frame-paths
+                                                     (list (namestring error-path))))
+                                       subresults)))))))))
                (setf subresults (nreverse subresults))
                (let* ((first-difference
                        (find-if (lambda (subresult)

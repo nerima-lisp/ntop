@@ -137,7 +137,30 @@
     (cond
       ((member context (quote ("tables" "process table"))
                :test (function string-equal))
-       (%route-widget-no-data-p grid "Processes"))
+       (or (%route-widget-no-data-p grid "Processes")
+           (let* ((frames (and grid (criterion-projection-frames grid)))
+                  (frame (find-if
+                          (lambda (frame)
+                            (search "Processes"
+                                    (criterion-row-text grid (first frame))
+                                    :test (function char-equal)))
+                          frames))
+                  (header (and frame
+                               (loop for row from (1+ (first frame))
+                                     below (second frame)
+                                     when (criterion-process-header-row-p
+                                           grid row (list frame))
+                                       return row))))
+             (and frame
+                  header
+                  (not (loop for row from (1+ header) below (second frame)
+                             thereis
+                             (loop for column from (1+ (third frame))
+                                   below (fourth frame)
+                                   thereis
+                                   (not (char= (cell-character
+                                                (grid-cell-at grid row column))
+                                               #\Space)))))))))
       ((string-equal context "temperature table")
        (%route-widget-no-data-p grid "Temperatures"))
       ((string-equal context "disk table")

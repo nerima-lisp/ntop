@@ -376,3 +376,82 @@
             (text "Before: establish the documented starting state for" id
                   ". Action: run" input ". After: verify" (route-expected route) ".")))))))
 )
+(defun %route-btm-self-manual-spec (mode route subcase)
+  (when (string= mode "btm-self")
+    (let ((id (route-id route))
+          (context (getf subcase :context))
+          (input (getf subcase :input))
+          (variant (getf subcase :variant)))
+      (labels ((text (&rest parts)
+                 (format nil "~{~a~^ ~}" parts)))
+        (cond
+          ((and (string= id "key-15")
+                (string= context "tables")
+                (string= input "j"))
+           (list :reason
+                 (text "The BTM-self tables/j case hit an E2E close timeout"
+                       "after 1.000 seconds. The capture does not establish"
+                       "whether BTM completed row movement before the PTY close check.")
+                 :procedure
+                 (text "Start BTM in its default 60 by 220 layout. In Processes,"
+                       "select a row that has a following row and record the"
+                       "selected row and nearby labels. Press j once and verify"
+                       "that selection advances one row or the viewport moves."
+                       "Quit with q; record whether the PTY closes and terminal"
+                       "settings are restored.")))
+          ((and (string= id "flag-113")
+                 (eq variant :kebab)
+                 (not (getf subcase :invalid-value)))
+           (list :reason
+                 (text "The first BTM-self --kelvin spelling hit an E2E close"
+                       "timeout after 1.000 seconds. Sibling spellings completed,"
+                       "but this run does not establish the result for this exact"
+                       "spelling.")
+                 :procedure
+                 (text "Launch BTM with --kelvin. Inspect the temperature values"
+                       "and confirm that their displayed unit is Kelvin. Quit"
+                       "with q and record whether the PTY closes and terminal"
+                       "settings are restored.")))
+          ((and (string= id "search-field-153") (string= input "pid"))
+           (list :reason
+                 (text "The BTM-self captures had matching condition-A projections,"
+                       "but the runner did not observe the expected pid 0 query"
+                       "on either side. Query acceptance remains unverified.")
+                 :procedure
+                 (text "Open Processes search in BTM and enter exactly pid 0."
+                       "Verify that the prompt visibly retains pid 0 without a"
+                       "syntax error, record the resulting rows, and close the"
+                       "prompt with Escape.")))
+          ((and (string= id "search-field-154") (string= input "cpu"))
+           (list :reason
+                 (text "The BTM-self captures had matching condition-A projections,"
+                       "but the runner did not observe the expected cpu>=0 query"
+                       "on either side. Query acceptance remains unverified.")
+                 :procedure
+                 (text "Open Processes search in BTM and enter exactly cpu>=0."
+                       "Verify that the prompt visibly retains cpu>=0 without a"
+                       "syntax error, record the resulting rows, and close the"
+                       "prompt with Escape.")))
+          ((and (string= id "search-field-155") (string= input "memb"))
+           (list :reason
+                 (text "The BTM-self memb>=0 case hit an E2E close timeout after"
+                       "1.000 seconds. This run does not establish whether BTM"
+                       "accepted the query before the PTY close check.")
+                 :procedure
+                 (text "Open Processes search in BTM and enter exactly memb>=0."
+                       "Verify that the prompt visibly retains memb>=0 without a"
+                       "syntax error, record the resulting rows, and close the"
+                       "prompt with Escape. Record whether BTM exits and restores"
+                       "the terminal.")))
+          ((string= id "resize")
+           (list :reason
+                 (text "The BTM-self resize case timed out reading after 44.245"
+                       "seconds while waiting for post-resize output. No frame"
+                       "was verified, so this does not distinguish application"
+                       "drawing delay from a PTY read failure.")
+                 :procedure
+                 (text "Start BTM in an 80 by 24 terminal and wait for its initial"
+                       "frame. Resize the terminal to 120 by 36. Record the time"
+                       "until output resumes and verify the final frame uses all"
+                       "120 columns and 36 rows. Save the terminal capture and"
+                       "note whether exit restores terminal settings."))))))))

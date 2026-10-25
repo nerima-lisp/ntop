@@ -14,6 +14,9 @@
           (every (lambda (result) (getf result :passed)) subresults))
      :pass)
     (t :fail)))
+(defun %route-subresult-status (subresult)
+  (or (getf subresult :status)
+      (if (getf subresult :passed) :pass :fail)))
 (defun %route-noncomparable-manual-result
     (route subcase subcase-index directory)
   (let* ((id (route-id route))
@@ -103,24 +106,31 @@
                (%route-report-cell
                 (format nil "~{~a~^, ~}" (getf result :evidence))))
        (dolist (subresult (getf result :subresults))
-         (let ((status (or (getf subresult :status)
-                           (if (getf subresult :passed) :pass :fail))))
-           (format stream
-                   (concatenate 'string
-                                "  - ~a: ~a; expected ~a; actual ~a; "
-                                "first difference ~a; cause ~a; evidence ~{~a~^, ~}~%")
-                   (%route-report-cell (getf subresult :input))
-                   (string-upcase (symbol-name status))
-                   (%route-report-cell (getf subresult :expected))
-                   (%route-report-cell (getf subresult :actual))
-                   (%route-report-cell (getf subresult :first-difference))
-                   (%route-report-cell (getf subresult :cause))
-                   (getf subresult :evidence)))))
-     (format stream "~%Counts: ~d total, ~d PASS, ~d FAIL, ~d MANUAL.~%"
-             (length results)
-             (count :pass results :key (lambda (result) (getf result :status)))
-             (count :fail results :key (lambda (result) (getf result :status)))
-             (count :manual results :key (lambda (result) (getf result :status)))))))
+         (format stream
+                 (concatenate 'string
+                              "  - ~a: ~a; expected ~a; actual ~a; "
+                              "first difference ~a; cause ~a; evidence ~{~a~^, ~}~%")
+                 (%route-report-cell (getf subresult :input))
+                 (string-upcase
+                  (symbol-name (%route-subresult-status subresult)))
+                 (%route-report-cell (getf subresult :expected))
+                 (%route-report-cell (getf subresult :actual))
+                 (%route-report-cell (getf subresult :first-difference))
+                 (%route-report-cell (getf subresult :cause))
+                 (getf subresult :evidence))))
+     (let ((subresults
+             (loop for result in results
+                   append (copy-list (getf result :subresults)))))
+       (format stream "~%Route counts: ~d total, ~d PASS, ~d FAIL, ~d MANUAL.~%"
+               (length results)
+               (count :pass results :key (lambda (result) (getf result :status)))
+               (count :fail results :key (lambda (result) (getf result :status)))
+               (count :manual results :key (lambda (result) (getf result :status))))
+       (format stream "Subcase counts: ~d total, ~d PASS, ~d FAIL, ~d MANUAL.~%"
+               (length subresults)
+               (count :pass subresults :key #'%route-subresult-status)
+               (count :fail subresults :key #'%route-subresult-status)
+               (count :manual subresults :key #'%route-subresult-status))))))
 (progn
   (defun %route-report-widget-no-data-p (grid title)
     (let* ((top (and grid
