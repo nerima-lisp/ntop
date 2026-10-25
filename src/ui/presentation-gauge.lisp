@@ -76,7 +76,7 @@
            y
            (make-string filled-width :initial-element (code-char 124))
            :style gauge-style))
-        (when (plusp inner-width)
+        (when (and (plusp inner-width) (< inner-width pipe-width))
           (%draw-gauge-text target
                             (max x (- right inner-width 1))
                             y

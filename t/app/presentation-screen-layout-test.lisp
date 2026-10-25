@@ -26,11 +26,11 @@
 (cl-weave:describe
  "FR-001 condition C fixture screen layout"
  (cl-weave:it-each
-  ((40 12 "application-40x12.txt" 9 10 ((1 8 "PID(p)" "100") (10 9 "Name(n)" "alpha")
+  ((40 12 "application-40x12.txt" 7 8 ((1 8 "PID(p)" "100") (10 9 "Name(n)" "alpha")
      (20 9 "CPU%(c)▼" "5.0%") (30 9 "Mem%(m)" "6.3%")))
-   (80 24 "application-80x24.txt" 17 18 ((1 18 "PID(p)" "100") (20 19 "Name(n)" "alpha")
+   (80 24 "application-80x24.txt" 13 14 ((1 18 "PID(p)" "100") (20 19 "Name(n)" "alpha")
      (40 19 "CPU%(c)▼" "5.0%") (60 19 "Mem%(m)" "6.3%")))
-   (160 48 "application-160x48.txt" 33 34 ((1 38 "PID(p)" "100") (40 39 "Name(n)" "alpha")
+   (160 48 "application-160x48.txt" 25 26 ((1 38 "PID(p)" "100") (40 39 "Name(n)" "alpha")
      (80 39 "CPU%(c)▼" "5.0%") (120 39 "Mem%(m)" "6.3%"))))
   "~D×~D process columns match the fixed golden's BTM layout"
   (width height golden header-row first-process-row fields)
@@ -58,9 +58,9 @@
               :to-equal
               #\Space))))
  (cl-weave:it-each
- ((40 12 "application-40x12.txt" 26 3 ((1 "100%") (2 "  0%")) nil nil 27)
-  (80 24 "application-80x24.txt" 45 7 ((1 "100%") (4 "  0%")) 46 52 53)
-  (160 48 "application-160x48.txt" 90 15 ((1 "100%") (12 "  0%")) 91 106 107))
+ ((40 12 "application-40x12.txt" 26 2 nil nil nil 27)
+  (80 24 "application-80x24.txt" 45 5 ((1 "100%") (4 "  0%")) 46 52 53)
+  (160 48 "application-160x48.txt" 90 11 ((1 "100%") (8 "  0%")) 91 106 107))
  "~D×~D CPU graph and legend regions follow the BTM split"
  (width height golden graph-right graph-bottom y-labels legend-left
   legend-right memory-left)
@@ -68,11 +68,15 @@
    (cl-weave:expect (%wp12c-screen-field screen 0 8 14)
                     :to-equal
                     "0.25 0.50 0.75")
-   (dolist (label y-labels)
-     (destructuring-bind (row expected) label
-       (cl-weave:expect (%wp12c-screen-field screen row 1 4)
+   (if (consp y-labels)
+       (dolist (label y-labels)
+         (destructuring-bind (row expected) label
+           (cl-weave:expect (%wp12c-screen-field screen row 1 4)
+                            :to-equal
+                            expected)))
+       (cl-weave:expect (%wp12c-screen-field screen 1 1 4)
                         :to-equal
-                        expected)))
+                        "    "))
    (cl-weave:expect (%wp12c-screen-cell-char screen graph-right 0)
                     :to-equal
                     #\┐)
@@ -98,13 +102,13 @@
                           #\┘))
        (cl-weave:expect graph-right :to-equal 26))))
  (cl-weave:it-each
- ((80 24 47 5 (1 2 3 4 5 6) ("CPU  " "     " "All  " "AVG  " "0    " "1    "))
+ ((80 24 47 5 (1 2 3 4) ("CPU  " "All  " "AVG  " "0    "))
   (160 48 92 14 (1 2 3 4 5 6)
    ("CPU    Use    " "              " "All           "
     "AVG    48%    " "CPU0   35%    " "CPU1   62%    ")))
  "~D×~D fixture CPU rows follow BTM's table layout"
  (width height label-x label-width row-numbers expected-rows)
- ;; The 8-row CPU pane retains its header and both per-core rows after borders.
+ ;; At 80×24, the six-row CPU pane shows its header, gap, All, and AVG rows.
  (let ((screen (nth-value 1 (%wp12b-screen-render width height))))
    (cl-weave:expect
     (mapcar (lambda (row)
@@ -118,19 +122,19 @@
     (cl-weave:expect
      (mapcar (lambda (row)
                (%wp12c-screen-field screen row 33 30))
-             '(17 18 19 20))
+             (quote (13 14 15 16)))
      :to-equal
      '("┌────────────────────────────┐"
        "│RX: 4.8Kb/s    All: 2.4KB   │"
        "│TX: 9.6Kb/s    All: 5.2KB   │"
        "└────────────────────────────┘"))))
  (cl-weave:it-each
-  ((40 12 "application-40x12.txt" 4 5 ((5 " 24.")) nil nil)
-   (80 24 "application-80x24.txt" 5 6 ((9 " 24.0") (10 " 16.0") (11 "  8.0") (12 "  0Kb")) 14 28)
+  ((40 12 "application-40x12.txt" 4 5 ((4 " 24.")) nil nil)
+   (80 24 "application-80x24.txt" 5 6 ((7 " 24.0") (8 " 16.0")
+    (9 "  8.0") (10 "  0Kb")) nil nil)
    (160 48 "application-160x48.txt" 5 6
-   ((17 " 24.0") (21 " 16.0")
-    (25 "  8.0") (28 "  0Kb"))
-   30 60))
+    ((13 " 24.0") (16 " 16.0") (18 "  8.0") (20 "  0Kb"))
+    22 60))
   "~D×~D network axis labels keep the BTM width and cell positions"
   (width height golden label-width axis-x labels x-label-row now-x)
   (let ((screen (%wp12c-golden-screen width height golden)))
@@ -142,22 +146,33 @@
         (cl-weave:expect (%wp12c-screen-cell-char screen axis-x row)
                          :to-equal
                          #\│)))
-    (when x-label-row
+    (if x-label-row
+    (progn
       (cl-weave:expect (%wp12c-screen-field screen x-label-row 3 4)
                        :to-equal
                        " 60s")
       (cl-weave:expect (%wp12c-screen-field screen x-label-row now-x 3)
                        :to-equal
-                       " 0s"))))
+                       " 0s"))
+    (progn
+      ;; BTM hides time labels below seven widget rows (drawing_utils.rs:13-28).
+      (cl-weave:expect
+       (loop for row below height
+             thereis (search "60s" (cl-tty-kit:screen-row-string screen row)))
+       :to-equal
+       nil)
+      (cl-weave:expect
+       (loop for row below height
+             thereis (search " 0s" (cl-tty-kit:screen-row-string screen row)))
+       :to-equal
+       nil)))))
  (cl-weave:it-each
- ((40 12 "application-40x12.txt" 6 1 20 1 ((25 1 #x2880)))
+ ((40 12 "application-40x12.txt" 6 1 20 1 nil)
   (80 24 "application-80x24.txt" 6 1 39 4
    ((44 2 #x28A0) (43 3 #x2880) (44 3 #x281C) (43 4 #x2801)))
-  (160 48 "application-160x48.txt" 6 1 84 14
-   ((89 5 #x28A0) (89 6 #x2847) (88 7 #x2878) (89 7 #x2870)
-    (87 8 #x2880) (88 8 #x2870) (89 8 #x2801) (87 9 #x28A0)
-    (88 9 #x2803) (89 9 #x2803) (86 10 #x2820) (87 10 #x2803)
-    (88 10 #x2801) (86 11 #x2810) (87 11 #x2801))))
+  (160 48 "application-160x48.txt" 6 1 84 8
+   ((89 4 #x285C) (88 5 #x2880) (89 5 #x280E) (87 6 #x28A0)
+    (88 6 #x280A) (89 6 #x280A) (86 7 #x2810) (87 7 #x2801))))
  "~D×~D fixture CPU plot cells match BTM's Braille raster"
  (screen-width screen-height golden plot-x plot-y plot-width plot-height expected-cells)
  ;; These cells use the same fixture values as the source-backed chart vector
@@ -194,8 +209,7 @@
      (%wp12b-screen-golden-bytes golden))))
  (cl-weave:it-each
  ((80 24 "application-80x24.txt" 47 5
-   (1 2 3 4 5 6)
-   ("CPU  " "     " "All  " "AVG  " "0    " "1    "))
+   (1 2 3 4) ("CPU  " "All  " "AVG  " "0    "))
   (160 48 "application-160x48.txt" 92 14 (1 2 3 4 5 6)
    ("CPU    Use    " "              " "All           "
     "AVG    48%    " "CPU0   35%    " "CPU1   62%    ")))
@@ -233,21 +247,26 @@
                      :to-equal
                      "│SWP: 50%   1.0GiB/2.0GiB│")))
  (cl-weave:it-each
-  ((40 12 "application-40x12.txt" 28 3 ((1 "100") (2 "  0")))
+  ((40 12 "application-40x12.txt" 28 3 nil)
    (80 24 "application-80x24.txt" 54 4 ((1 "100%") (4 "  0%")))
-   (160 48 "application-160x48.txt" 108 4 ((1 "100%") (12 "  0%"))))
+   (160 48 "application-160x48.txt" 108 4 ((1 "100%") (8 "  0%"))))
   "~D×~D fixture Memory axis labels follow BTM chart geometry"
   (width height golden label-x label-width labels)
   (let ((screen (%wp12c-golden-screen width height golden)))
-    (dolist (label labels)
-      (destructuring-bind (row expected) label
-        (cl-weave:expect (%wp12c-screen-field screen row label-x label-width)
+    (if (consp labels)
+        (dolist (label labels)
+          (destructuring-bind (row expected) label
+            (cl-weave:expect (%wp12c-screen-field screen row label-x label-width)
+                             :to-equal
+                             expected)))
+        (cl-weave:expect (%wp12c-screen-field screen 1 label-x label-width)
                          :to-equal
-                         expected)))))
+                         "   "))))
  (cl-weave:it-each
   ((40 12 "application-40x12.txt" 28 1 11 1 nil)
    (80 24 "application-80x24.txt" 59 1 20 4 ((78 4 #x28C0)))
-   (160 48 "application-160x48.txt" 113 1 46 14 ((157 12 #x28C0) (158 12 #x28C0))))
+   (160 48 "application-160x48.txt" 113 1 46 8
+    ((157 8 #x28C0) (158 8 #x28C0))))
   "~D×~D fixture Memory plot cells match BTM's raster"
   (screen-width screen-height golden plot-x plot-y plot-width plot-height expected-cells)
   ;; BTM charts memory usage as a ratio inside a fixed trailing time window.
@@ -276,11 +295,11 @@
      :to-equal
      expected-cells)))
  (cl-weave:it-each
- ((40 12 "application-40x12.txt" 6 5 9 2 ((14 5 #x28A0) (14 6 #x2808)))
-  (80 24 "application-80x24.txt" 7 9 24 4 ((30 10 #x2846) (30 11 #x2818) (30 12 #x2808)))
-  (160 48 "application-160x48.txt" 7 17 56 12
-   ((61 21 #x28B8) (62 22 #x2847) (62 23 #x28A3)
-    (62 24 #x2808) (61 25 #x28A0) (62 26 #x2823))))
+ ((40 12 "application-40x12.txt" 6 4 9 1 ((14 4 #x2830)))
+  (80 24 "application-80x24.txt" 7 7 24 4
+   ((30 8 #x2846) (30 9 #x2818) (30 10 #x2808)))
+  (160 48 "application-160x48.txt" 7 13 56 8
+   ((62 17 #x28B1) (61 18 #x2880) (62 19 #x2811))))
  "~D×~D fixture Network plot cells match BTM's 60-second Braille raster"
  (screen-width screen-height golden plot-x plot-y plot-width plot-height expected-cells)
  ;; BTM maps fixture t=2,3 points to relative seconds -1,0 inside [-60,0].

@@ -15,7 +15,7 @@
                                  (((:fill 2) (:widget :network))
                                   ((:fill 2) (:widget :disks))
                                   ((:fill 1) (:widget :temperature)))))
-                        ((:fill 1) (:widget :process)))))
+                        ((:fill 2) (:widget :process)))))
 
 (define-layout *basic-layout*
                (:split :vertical

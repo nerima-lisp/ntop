@@ -25,14 +25,14 @@
     (220 147 73 88 88 44)))
 
 (defparameter *btm-layout-height-reference*
-  ;; All three active rows omit their row ratio (t/e2e/btm-config.lisp:6-9).
-  ;; BTM defaults each missing row ratio to 1 (options/config/layout.rs:64);
-  ;; BottomRow::new maps it to Fill(1) (app/layout_manager.rs:715-720).
-  ;; The process child ratio 2 controls its horizontal width, not row height.
-  ;; Ratatui splits the three equal Fill rows at cumulative boundaries.
-  (quote ((12 4 4 4) (18 6 6 6) (24 8 8 8)
-          (30 10 10 10) (36 12 12 12) (42 14 14 14)
-          (48 16 16 16) (54 18 18 18) (60 20 20 20))))
+  ;; The effective FR-001 profile sets outer row ratios to 1:1:2: CPU+Mem,
+  ;; Net+Disks+Temp, Process. BTM defaults omitted ratios to 1 and applies
+  ;; BottomRow ratios in layout.rs:64-76,209-211; layout_manager.rs:729-731
+  ;; maps them to Fill constraints, split vertically in canvas.rs:432-433.
+  ;; Ratatui Fill boundaries yield the weighted cell heights below.
+  (quote ((12 3 3 6) (18 5 4 9) (24 6 6 12)
+          (30 8 7 15) (36 9 9 18) (42 11 10 21)
+          (48 12 12 24) (54 14 13 27) (60 15 15 30))))
 
 (defun layout-test-rectangle (layout widget)
   (cdr (assoc widget layout)))

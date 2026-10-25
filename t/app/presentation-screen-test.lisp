@@ -296,8 +296,7 @@
         (%wp12b-screen-render 80 24)
       (declare (ignore areas))
       (cl-weave:expect
-       (loop for (x y) in (quote ((2 0) (0 0) (0 7) (45 0) (46 0) (47 0)
-  (45 7) (46 7)))
+       (loop for (x y) in (quote ((2 0) (0 0) (0 5) (45 0) (46 0) (47 0) (45 5) (46 5)))
              collect (cl-tty-kit:cell-char
                       (cl-tty-kit:screen-cell screen x y)))
        :to-equal '(#\C #\┌ #\└ #\┐ #\┌ #\─ #\┘ #\└))

@@ -44,10 +44,10 @@
                                              temperature-width
                                              width))))
                    (cl-weave:it-each
- ((12 4 4 4) (18 6 6 6) (24 8 8 8)
-  (30 10 10 10) (36 12 12 12) (42 14 14 14)
-  (48 16 16 16) (54 18 18 18) (60 20 20 20))
- "matches configured BTM row spans at height ~A"
+ ((12 3 3 6) (18 5 4 9) (24 6 6 12)
+  (30 8 7 15) (36 9 9 18) (42 11 10 21)
+  (48 12 12 24) (54 14 13 27) (60 15 15 30))
+ "matches the effective BTM 1:1:2 row spans at height ~A"
  (height top-row-height middle-row-height process-height)
  (let ((layout (ntop.ui:layout-widgets 80 height)))
    (cl-weave:expect
@@ -66,7 +66,7 @@
      (list 0 (+ top-row-height middle-row-height)
            80 process-height)))))
                    (cl-weave:it
- "matches the configured outer-frame split at 40x12"
+ "matches the effective BTM 1:1:2 outer split at 40x12"
  (let* ((layout (ntop.ui:layout-widgets 40 12))
         (cpu (layout-test-rectangle layout :cpu))
         (network (layout-test-rectangle layout :network))
@@ -78,7 +78,7 @@
           (ntop.ui:rectangle-y process)
           (ntop.ui:rectangle-height process))
     :to-equal
-    (quote (3 4 4 8 4)))))
+    (quote (2 3 3 6 6)))))
                    (cl-weave:it "matches the full 171-size btm rectangle grid"
                                 (let ((count 0)
                                       (differences nil))

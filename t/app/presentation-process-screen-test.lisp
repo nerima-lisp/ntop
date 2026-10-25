@@ -57,7 +57,7 @@
                (ntop.ui:rectangle-width process-rectangle)
                (ntop.ui:rectangle-height process-rectangle))
          :to-equal
-         (list 1 32 78 10))
+         (list 1 24 78 18))
         (cl-weave:expect
          (and
           (equal (mapcar #'ntop.process.domain:process-row-name rows)

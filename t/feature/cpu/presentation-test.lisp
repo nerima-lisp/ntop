@@ -226,7 +226,7 @@
                              expected-names))))))
 
   ;; bottom 0.14.9 src/canvas/widgets/cpu_basic.rs:48-79,81-145,159-176.
-  (cl-weave:it "draws basic CPU pipe gauges without changing the immutable sample"
+  (cl-weave:it "places AVG first in the four-column basic CPU gauges"
     (let* ((screen (cl-tty-kit:make-screen 64 3))
            (rectangle
              (ntop.ui:make-rectangle :x 0 :y 0 :width 64 :height 3))
@@ -235,12 +235,20 @@
            (series (%f1-cpu-fixture-series))
            (sample (getf series :sample)))
       (ntop.ui:draw-widget :cpu screen rectangle nil config series)
-      (let ((text (cl-tty-kit:screen-to-string screen)))
-        (cl-weave:expect (not (null (search "AVG" text))) :to-be t)
-        (cl-weave:expect (not (null (search "0" text))) :to-be t)
-        (cl-weave:expect (not (null (search "32%" text))) :to-be t)
-        (cl-weave:expect (not (null (search "[" text))) :to-be t)
-        (cl-weave:expect (not (null (search "|" text))) :to-be t))
+      (let ((first-row (cl-tty-kit:screen-row-string screen 0))
+            (second-row (cl-tty-kit:screen-row-string screen 1))
+            (last-row (cl-tty-kit:screen-row-string screen 2)))
+        (cl-weave:expect
+         (loop for x in (list 1 17 33 49)
+               collect (subseq first-row x (+ x 3)))
+         :to-equal (list "AVG" "1  " "2  " "3  "))
+        (cl-weave:expect (subseq second-row 1 4) :to-equal "0  ")
+        (cl-weave:expect (not (null (search "54%" first-row))) :to-be t)
+        (cl-weave:expect (search "AVG" last-row) :to-equal nil)
+        (cl-weave:expect
+         (every (lambda (character) (char= character (code-char 32)))
+                last-row)
+         :to-be t))
       (cl-weave:expect
        (ntop.cpu.domain:cpu-core-value-frequency-mhz
         (second (ntop.cpu.domain:cpu-sample-core-values sample)))
@@ -430,11 +438,14 @@
       (ntop.ui:draw-widget :cpu screen rectangle nil config (list :sample sample))
       (progn
        (cl-weave:expect
-        (search "AVG" (cl-tty-kit:screen-to-string screen))
+        (search "AVG" (cl-tty-kit:screen-row-string screen 0))
         :to-equal nil)
        (cl-weave:expect
-        (not (null (search "25%" (cl-tty-kit:screen-to-string screen))))
-        :to-be t)))
+        (subseq (cl-tty-kit:screen-row-string screen 0) 1 5)
+        :to-equal " 25%")
+       (cl-weave:expect
+        (search "25%" (cl-tty-kit:screen-row-string screen 1))
+        :to-equal nil)))
     (let* ((sample
              (ntop.cpu.domain:make-cpu-sample :sampled-at
                                               1d0

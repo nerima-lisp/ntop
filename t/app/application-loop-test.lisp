@@ -50,12 +50,12 @@
            (ntop.app.application::%layout-widgets-for-state
             state config 80 24))
           (expected
-           (quote ((:cpu 0 0 53 8)
-  (:memory 53 0 27 8)
-  (:network 0 8 32 8)
-  (:disks 32 8 32 8)
-  (:temperature 64 8 16 8)
-  (:process 0 16 80 8)))))
+            (quote ((:cpu 0 0 53 6)
+                    (:memory 53 0 27 6)
+                    (:network 0 6 32 6)
+                    (:disks 32 6 32 6)
+                    (:temperature 64 6 16 6)
+                    (:process 0 12 80 12)))))
      (flet ((layout-values (placements)
               (mapcar
                (lambda (entry)

@@ -59,9 +59,8 @@
                 (ntop.shared.application:application-config-hide-average-cpu-p
                  config))
                (ntop.cpu.domain:cpu-sample-average-usage-percent sample)))
-         (show-average-p (realp average))
          (gauges
-          (if show-average-p
+          (if (realp average)
               (cons (%cpu-basic-gauge
                      "AVG"
                      average
@@ -70,7 +69,8 @@
               cores)))
     (if gauges
         (ntop.ui:draw-basic-cpu-gauges target rectangle gauges)
-        (%draw-cpu-empty target rectangle theme))))
+        (%draw-cpu-empty target rectangle theme))
+    target))
 
 (ntop.ui:define-widget :cpu
                        (target rectangle state config series)

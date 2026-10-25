@@ -237,6 +237,35 @@
                                                                         height))
                                         :to-equal
                                         expected-visible)))
+                   (cl-weave:it "keeps the RAM label when its value is too wide"
+                                (let ((screen (cl-tty-kit:make-screen 20 1)))
+                                  (ntop.ui:draw-basic-memory-gauge screen
+                                                                   (%chart-test-rectangle
+                                                                    0
+                                                                    0
+                                                                    20
+                                                                    1)
+                                                                   4
+                                                                   8
+                                                                   "113.9GiB/128.0GiB"
+                                                                   nil)
+                                  (cl-weave:expect
+                                   (not
+                                    (null
+                                     (search "RAM["
+                                             (cl-tty-kit:screen-row-string
+                                              screen
+                                              0))))
+                                   :to-be
+                                   t)
+                                  (cl-weave:expect
+                                   (not
+                                    (search "113.9GiB/128.0GiB"
+                                            (cl-tty-kit:screen-row-string
+                                             screen
+                                             0)))
+                                   :to-be
+                                   t)))
                    (cl-weave:it "draws a memory ratio and label"
                                 (let ((screen (cl-tty-kit:make-screen 24 1)))
                                   (ntop.ui:draw-basic-memory-gauge screen
