@@ -90,7 +90,7 @@
          (value (ntop.app.domain:app-action-value action))
          (active (ntop.app.domain:app-state-active-dialog state))
          (config (application-composition-config composition))
-         (snapshot (application-composition-latest-snapshot composition)))
+         (snapshot (%composition-current-snapshot composition)))
     (cond
       ((and (eq kind :search) (eq value :process))
        (%ensure-process-search-field state config)

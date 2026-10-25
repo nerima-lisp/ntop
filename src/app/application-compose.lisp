@@ -121,7 +121,11 @@
       (case (first intent)
         (:pause
          (let ((paused-p (second intent)))
-           (setf (application-composition-paused-p composition) paused-p)
+           (setf (application-composition-paused-p composition) paused-p
+                 (application-composition-frozen-snapshot composition)
+                 (if paused-p
+                     (application-composition-latest-snapshot composition)
+                     nil))
            (map nil
                 (lambda (store)
                   (if paused-p
@@ -149,6 +153,7 @@
         (application-composition-network-samples composition)
         (make-array 0 :adjustable t :fill-pointer 0)
         (application-composition-latest-snapshot composition) nil
+        (application-composition-frozen-snapshot composition) nil
         (application-composition-previous-disk-sample composition) nil
         (application-composition-previous-process-sample composition) nil
         (application-composition-latest-process-sample composition) nil
@@ -329,47 +334,51 @@
   (check-type config ntop.shared.application:application-config)
   (check-type columns (integer 1 *))
   (check-type rows (integer 1 *))
-  (let* ((screen (%new-composition-screen composition columns rows))
+  (let* ((snapshot
+          (if (application-composition-paused-p composition)
+              (%composition-current-snapshot composition)
+            snapshot))
+         (screen (%new-composition-screen composition columns rows))
          (help-active-p (%help-dialog-p state))
          (ntop.app.presentation::*screen-selection-active-p*
           (application-composition-selection-active-p composition))
          (widget-areas
           (if help-active-p
               nil
-              (apply (application-composition-draw-screen composition)
-                     (append
-                      (list screen
-                            state
-                            config
-                            snapshot
-                            columns
-                            rows
-                            unavailability-reasons
-                            (%composition-series-by-widget
-                             composition snapshot unavailability-reasons))
-                      (when
-                          (and current-time-unix-seconds
-                               (eq (application-composition-draw-screen
-                                    composition)
-                                   (function
-                                    ntop.app.presentation:draw-application-screen)))
-                        (list current-time-unix-seconds))))))
+            (apply (application-composition-draw-screen composition)
+                   (append
+                    (list screen
+                          state
+                          config
+                          snapshot
+                          columns
+                          rows
+                          unavailability-reasons
+                          (%composition-series-by-widget
+                           composition snapshot unavailability-reasons))
+                    (when
+                        (and current-time-unix-seconds
+                             (eq (application-composition-draw-screen
+                                  composition)
+                                 (function
+                                  ntop.app.presentation:draw-application-screen)))
+                      (list current-time-unix-seconds))))))
          (areas
           (append widget-areas
                   (%draw-help-overlay screen state config columns rows))))
     (setf (application-composition-clickable-areas composition) areas)
     (let ((diff
-            (with-output-to-string (output)
-              (cl-tty-kit:render-diff
-               screen (application-composition-previous-screen composition)
-               output))))
+           (with-output-to-string (output)
+             (cl-tty-kit:render-diff
+              screen (application-composition-previous-screen composition)
+              output))))
       (loop for index from 0 below (length diff)
             for character = (char diff index)
             do (when (and (char= character #\Newline)
                           (or (zerop index)
                               (not (char= (char diff (1- index)) #\Return))))
                  (write-char #\Return *standard-output*))
-               (write-char character *standard-output*)))
+            (write-char character *standard-output*)))
     (finish-output)
     (setf (application-composition-previous-screen composition)
           (cl-tty-kit:screen-copy screen))

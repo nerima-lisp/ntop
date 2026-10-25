@@ -262,7 +262,7 @@
     t))
 
 (defun %open-process-kill-dialog (composition state config)
-  (let* ((snapshot (application-composition-latest-snapshot composition))
+  (let* ((snapshot (%composition-current-snapshot composition))
          (sample
            (and snapshot
                 (ntop.app.domain:collection-snapshot-process-sample snapshot))))
@@ -315,7 +315,7 @@
 (defun %process-sort-dialog-action (composition state action config)
   (let* ((kind (ntop.app.domain:app-action-kind action))
          (value (ntop.app.domain:app-action-value action))
-         (snapshot (application-composition-latest-snapshot composition))
+         (snapshot (%composition-current-snapshot composition))
          (sort-state (%process-sort-state state config))
          (sort-config
            (%process-dialog-table-config config snapshot sort-state))

@@ -12,6 +12,7 @@
   (network-samples (make-array 0 :adjustable t :fill-pointer 0))
   (gpu-memory-device-totals (make-hash-table :test (function equal)))
   latest-snapshot
+  frozen-snapshot
   previous-disk-sample
   previous-process-sample
   latest-process-sample
@@ -77,6 +78,10 @@
       (if store
           (ntop.shared.domain:history-slice store 0)
           #())))
+  (defun %composition-current-snapshot (composition)
+    (if (application-composition-paused-p composition)
+        (application-composition-frozen-snapshot composition)
+        (application-composition-latest-snapshot composition)))
   (defun %history-series-for (composition group kind)
     (loop for key across (application-composition-history-keys composition)
           when (and (eq (first key) group) (eq (second key) kind))

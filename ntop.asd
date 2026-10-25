@@ -332,6 +332,7 @@
    (:file "t/app/infrastructure-terminal-test")
    (:file "t/app/application-compose-actions-test")
    (:file "t/app/application-compose-test")
+   (:file "t/app/application-compose-pause-test")
    (:file "t/app/application-compose-history-test")
    (:file "t/app/application-compose-dialogs-test")
    (:file "t/app/application-compose-help-test")

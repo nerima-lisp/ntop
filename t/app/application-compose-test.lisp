@@ -201,7 +201,6 @@
               (ntop.ui:chart-series-samples gpu-memory))
          :to-equal '(50d0 80d0))
         (cl-weave:expect (getf memory :gpu-memory-total-bytes) :to-be 100))))
-
   (cl-weave:it "omits GPU memory series and capacity without a valid device total"
     (let* ((rendered-series nil)
            (composition (%make-composition-test-instance

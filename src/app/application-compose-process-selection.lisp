@@ -78,7 +78,7 @@
                    rows
                    state
                    mode
-                   (application-composition-latest-snapshot composition)
+                   (%composition-current-snapshot composition)
                    config)
                   :test (function eq)))
          (outer-height
@@ -141,7 +141,7 @@
                               :half-page-down :scroll-up :scroll-down))
                      :test (function eq)))
       (let* ((config (application-composition-config composition))
-             (snapshot (application-composition-latest-snapshot composition))
+             (snapshot (%composition-current-snapshot composition))
              (sort-state
                (ntop.app.presentation::%screen-process-sort-state
                 config state)))
