@@ -3,49 +3,59 @@
 (cl-weave:describe
   "Process collector and Linux failure paths"
   (cl-weave:it
-    "builds samples and forwards clock failures through the collection port"
+    "dispatches both collector callbacks through the collection port"
     (let* ((config (ntop.shared.application:make-application-config))
            (collector
             (make-instance '%f8a-process-test-collector
                            :clock
                            (make-instance '%f8a-process-test-clock
                                           :outcome
-                                          '(:time 42.5d0))
+                                          (list :time 42.5d0))
                            :config
                            config
                            :outcome
-                           '(:value nil nil)))
+                           (list :value nil nil)))
+           (events nil)
            (sample :unset)
            (reason :unset))
-      (ntop.shared.application:collect-process-sample collector
-                                                      (lambda (value)
-                                                        (setf sample value))
-                                                      (lambda (value)
-                                                        (setf reason value)))
+      (ntop.shared.application:collect-process-sample
+       collector
+       (lambda (value)
+         (push :sample events)
+         (setf sample value))
+       (lambda (value)
+         (push :unavailable events)
+         (setf reason value)))
       (cl-weave:expect sample :to-be-truthy)
       (cl-weave:expect (ntop.shared.domain:sample-record-sampled-at sample)
                        :to-be
                        42.5d0)
       (cl-weave:expect reason :to-be :unset)
+      (cl-weave:expect (nreverse events) :to-equal (list :sample))
       (let ((clock-failure
              (make-instance '%f8a-process-test-collector
                             :clock
                             (make-instance '%f8a-process-test-clock
                                            :outcome
-                                           '(:unavailable :permission-denied))
+                                           (list :unavailable :permission-denied))
                             :config
                             config
                             :outcome
-                            '(:value nil nil))))
-        (setf sample :unset
+                            (list :value nil nil))))
+        (setf events nil
+              sample :unset
               reason :unset)
-        (ntop.shared.application:collect-process-sample clock-failure
-                                                        (lambda (value)
-                                                          (setf sample value))
-                                                        (lambda (value)
-                                                          (setf reason value)))
+        (ntop.shared.application:collect-process-sample
+         clock-failure
+         (lambda (value)
+           (push :sample events)
+           (setf sample value))
+         (lambda (value)
+           (push :unavailable events)
+           (setf reason value)))
         (cl-weave:expect sample :to-be :unset)
-        (cl-weave:expect reason :to-be :permission-denied))))
+        (cl-weave:expect reason :to-be :permission-denied)
+        (cl-weave:expect (nreverse events) :to-equal (list :unavailable)))))
   (cl-weave:it
     "normalizes unavailable reasons and uses the unsupported-platform method"
     (let* ((config (ntop.shared.application:make-application-config))

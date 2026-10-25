@@ -204,7 +204,7 @@ class TerminalGrid:
         elif final in "G`": self.column = max(0, min(self.columns - 1, (n or 1) - 1))
         elif final == "d": self.row = max(0, min(self.rows - 1, (n or 1) - 1))
         elif final in "JK": self._erase(final, n)
-        elif final == "m": return
+        elif final in "mn": return
         elif final in "su":
             self.saved = ((self.row, self.column) if final == "s"
                           else getattr(self, "saved", (0, 0)))

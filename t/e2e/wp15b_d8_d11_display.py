@@ -14,9 +14,9 @@ CLI_ERROR_PATTERN = re.compile(
 )
 FRAME_WORDS = frozenset(
     "CPU AVG Memory Disk Network Temperature GPU Battery Process Use User Time "
-    "PID Mem Rx Tx Read Write Used Free Total All Core Cores Name Count Power".split()
+    "PID Mem Rx Tx Read Write Used Free Total All Core Cores Name Count Power RAM SWP".split()
 )
-BOX_GLYPHS = frozenset("┌┐└┘─│┬┴├┤┼")
+BOX_GLYPHS = frozenset("┌┐└┘")
 
 
 def structure_signature(text: str) -> dict[str, Any]:
@@ -28,16 +28,48 @@ def structure_signature(text: str) -> dict[str, Any]:
             "box_cells": boxes, "labels": labels}
 
 
-def memory_arc_display_signature(text: str) -> dict[str, Any]:
-    rows = text.splitlines()
-    memory_panel_visible = any(re.search(r"\bMemory\b", row) for row in rows)
-    arc_entries = [row for row in rows if re.search(r"\bARC\s*:", row, re.IGNORECASE)]
-    return {"memory_panel_visible": memory_panel_visible,
-            "arc_entry_present": bool(arc_entries), "arc_entry_count": len(arc_entries)}
-
-
 def cli_error_output_detected(text: str) -> bool:
     return bool(CLI_ERROR_PATTERN.search(text))
+
+def compare_d11_screens(
+    without_text: str,
+    with_text: str,
+    *,
+    without_rendered: bool,
+    with_rendered: bool,
+    free_arc_supplied: bool,
+    without_cli_error: bool = False,
+    with_cli_error: bool = False,
+) -> dict[str, Any]:
+    without_error = without_cli_error or cli_error_output_detected(without_text)
+    with_error = with_cli_error or cli_error_output_detected(with_text)
+    without_valid = without_rendered and not without_error
+    with_valid = with_rendered and not with_error
+    without_signature = application_render_signature(without_text) if without_valid else None
+    with_signature = application_render_signature(with_text) if with_valid else None
+    comparison_complete = (
+        without_valid and with_valid
+        and without_signature is not None and with_signature is not None
+    )
+    signature_equal = (
+        without_signature == with_signature if comparison_complete else None
+    )
+    flag_accepted = free_arc_supplied and with_valid
+    status = (
+        "incomplete" if not comparison_complete or not flag_accepted
+        else "pass" if signature_equal
+        else "fail"
+    )
+    return {
+        "without_signature": without_signature,
+        "with_signature": with_signature,
+        "comparison_complete": comparison_complete,
+        "display_signature_equal": signature_equal,
+        "flag_accepted": flag_accepted,
+        "cli_error_output_detected": without_error or with_error,
+        "acceptance_status": status,
+        "pass": status == "pass",
+    }
 
 
 def application_render_signature(text: str) -> dict[str, Any] | None:
@@ -46,11 +78,32 @@ def application_render_signature(text: str) -> dict[str, Any] | None:
         return None
     if cli_error_output_detected(text):
         return None
-    if not any(re.search(r"┌\s*CPU\b", row) for row in rows):
+
+    panel_positions = {}
+    for panel in ("CPU", "Memory"):
+        for y, row in enumerate(rows):
+            match = re.search(rf"┌\s*{panel}\b", row)
+            if match:
+                panel_positions[panel] = (y, match.start())
+                break
+    if set(panel_positions) != {"CPU", "Memory"}:
         return None
-    if not any(re.search(r"┌\s*Memory\b", row) for row in rows):
-        return None
-    return structure_signature(text)
+
+    screen_structure = structure_signature(text)
+    return {
+        "rows": HEIGHT,
+        "columns": WIDTH,
+        "panels": panel_positions,
+        "screen_structure": {
+            "box_cells": screen_structure["box_cells"],
+            "labels": screen_structure["labels"],
+            "value_labels": [
+                [y, match.start(1), match.group(1)]
+                for y, row in enumerate(rows)
+                for match in re.finditer(r"\b([A-Za-z][A-Za-z0-9_-]*):", row)
+            ],
+        },
+    }
 
 
 def complete_process_panel(text: str) -> dict[str, Any] | None:

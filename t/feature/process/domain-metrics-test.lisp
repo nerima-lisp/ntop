@@ -459,4 +459,20 @@
                                                                      1)
                                                                     71)
                      :to-be
-                     nil)))
+                     nil))
+                   (cl-weave:it
+  "records process counters with the supplied monotonic sample time"
+  (host-kit:call-with-temporary-directory
+   (lambda (directory)
+     (let* ((pathname (merge-pathnames "process-samples.tsv" directory))
+            (record (%wp4-metrics-record
+                     77 :read-bytes 1234 :write-bytes 5678)))
+       (with-open-file (stream pathname :direction :output :if-exists :supersede)
+         (ntop.process.infrastructure::%write-process-sample-trace-row
+          stream 12.5d0 77 (list record)))
+       (cl-weave:expect
+        (with-open-file (stream pathname :direction :input)
+          (read-line stream nil))
+        :to-equal
+        (format nil "12500000000~C77~C1234~C5678"
+                (code-char 9) (code-char 9) (code-char 9))))))))
