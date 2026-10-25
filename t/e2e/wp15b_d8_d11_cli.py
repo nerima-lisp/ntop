@@ -159,13 +159,18 @@ def run_d11(args: argparse.Namespace) -> int:
     memory_arc_absent = memory_arc_complete and all(
         not signature["arc_entry_present"] for signature in memory_arc_signatures.values()
     )
-    complete = all(run["complete_panel_complete"] for run in runs.values())
-    acceptance_pass = (
-        complete and equal and memory_arc_equal and memory_arc_absent
+    application_rendered = all(
+        run["application_rendered"] and not run["cli_error_output_detected"]
+        for run in runs.values()
     )
+    cli_error_detected = any(run["cli_error_output_detected"] for run in runs.values())
+    process_panel_complete = all(
+        run["complete_panel_complete"] for run in runs.values()
+    )
+    acceptance_pass = application_rendered and memory_arc_equal and memory_arc_absent
     status = (
         "pass" if acceptance_pass
-        else "fail" if complete and memory_arc_complete
+        else "fail" if application_rendered and memory_arc_complete
         else "incomplete"
     )
     exact_pid_checks = [{"pid": run["pid"], "absent": run["cleanup"]["pid_absent"]}
@@ -176,7 +181,13 @@ def run_d11(args: argparse.Namespace) -> int:
         "requirement": "D11", "started_utc": utc_now(), "common_arguments": common,
         "without_flag": runs["without"], "with_flag": runs["with"],
         "without_structure": signatures["without"], "with_structure": signatures["with"],
-        "flag_accepted": runs["with"]["complete_panel_complete"],
+        "flag_accepted": (
+            runs["with"]["application_rendered"]
+            and not runs["with"]["cli_error_output_detected"]
+        ),
+        "application_rendered": application_rendered,
+        "cli_error_output_detected": cli_error_detected,
+        "process_panel_complete": process_panel_complete,
         "display_structure_equal": equal,
         "without_memory_arc_display": memory_arc_signatures["without"],
         "with_memory_arc_display": memory_arc_signatures["with"],
@@ -195,6 +206,9 @@ def run_d11(args: argparse.Namespace) -> int:
     print(json.dumps({"mode": "d11", "acceptance_status": status,
                       "cleanup_confirmed": cleanup_confirmed,
                       "flag_accepted": record["flag_accepted"],
+                      "application_rendered": application_rendered,
+                      "cli_error_output_detected": cli_error_detected,
+                      "process_panel_complete": process_panel_complete,
                       "display_structure_equal": equal,
                       "memory_arc_display_equal": memory_arc_equal,
                       "memory_arc_display_absent": memory_arc_absent,

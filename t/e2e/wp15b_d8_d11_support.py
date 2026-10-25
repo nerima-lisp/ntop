@@ -26,6 +26,10 @@ HEIGHT = 48
 CPU_LOAD_INFO = 2
 CPU_ACTIVE_STATES = (0, 1, 3)
 AVG_PATTERN = re.compile(r"\bAVG\s+([0-9]{1,3})%")
+CLI_ERROR_PATTERN = re.compile(
+    r"(?im)^\s*(?:[^:\n]+:\s*)?(?:error\b|usage\s*:|"
+    r"(?:unknown|unrecognized|invalid|unexpected)\s+(?:option|argument)\b)"
+)
 FRAME_WORDS = frozenset(
     "CPU AVG Memory Disk Network Temperature GPU Battery Process Use User Time "
     "PID Mem Rx Tx Read Write Used Free Total All Core Cores Name Count Power".split()
@@ -200,8 +204,12 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
     decoder = codecs.getincrementaldecoder("utf-8")("replace")
     deadline = started + (20.0 if mode == "d8" else 8.0)
     first_avg = panel_snapshot = layout_signature = stable_since = raw_status = None
+    application_layout_signature = application_stable_since = None
     complete_panel_seen = complete_panel_complete = child_done = False
-    stable_snapshot_count, last_output_at, layout_stable_seconds = 0, None, 0.0
+    application_rendered = cli_error_detected = False
+    stable_snapshot_count = application_snapshot_count = 0
+    last_output_at = None
+    layout_stable_seconds = application_render_stable_seconds = 0.0
     try:
         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", HEIGHT, WIDTH, 0, 0))
         os.set_blocking(master, False)
@@ -229,6 +237,9 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
                                          "latency_seconds": now-started, "screen_text": text}
                             break
                     if mode == "d11":
+                        cli_error_detected = (
+                            cli_error_detected or cli_error_output_detected(text)
+                        )
                         snapshot = complete_process_panel(text)
                         if snapshot:
                             complete_panel_seen, panel_snapshot = True, snapshot
@@ -239,6 +250,19 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
                                 stable_since, stable_snapshot_count = now, 1
                         else:
                             layout_signature, stable_since, stable_snapshot_count = None, None, 0
+                        app_snapshot = (
+                            None if cli_error_detected else application_render_signature(text)
+                        )
+                        if app_snapshot:
+                            if app_snapshot == application_layout_signature:
+                                application_snapshot_count += 1
+                            else:
+                                application_layout_signature = app_snapshot
+                                application_stable_since = now
+                                application_snapshot_count = 1
+                        else:
+                            application_layout_signature = application_stable_since = None
+                            application_snapshot_count = 0
                 child_done, raw_status = wait_child(pid, 0.0)
                 if child_done:
                     break
@@ -248,6 +272,12 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
                     and now-last_output_at >= 0.2 and not decoder.getstate()[0]):
                     complete_panel_complete = True
                     layout_stable_seconds = now-stable_since
+                if (mode == "d11" and application_stable_since is not None
+                    and application_snapshot_count >= 2
+                    and now-application_stable_since >= 1.2 and last_output_at is not None
+                    and now-last_output_at >= 0.2 and not decoder.getstate()[0]):
+                    application_rendered = True
+                    application_render_stable_seconds = now-application_stable_since
                     break
     finally:
         tail = decoder.decode(b"", final=True)
@@ -259,6 +289,10 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
         except OSError:
             pass
     text = screen_text(screen)
+    cli_error_detected = cli_error_detected or (
+        mode == "d11" and cli_error_output_detected(text)
+    )
+    application_rendered = application_rendered and not cli_error_detected
     display_path.write_text(text + "\n")
     return {"argv": argv, "pid": pid, "started_utc": started_utc,
             "started_monotonic": started, "elapsed_seconds": time.monotonic()-started,
@@ -266,7 +300,12 @@ def capture_tui(binary: str, working_directory: Path, arguments: list[str],
             "complete_panel_complete": complete_panel_complete,
             "process_panel_snapshot": panel_snapshot,
             "layout_snapshot_count": stable_snapshot_count,
-            "layout_stable_seconds": layout_stable_seconds, "cleanup": cleanup,
+            "layout_stable_seconds": layout_stable_seconds,
+            "application_rendered": application_rendered,
+            "cli_error_output_detected": cli_error_detected,
+            "application_render_snapshot_count": application_snapshot_count,
+            "application_render_stable_seconds": application_render_stable_seconds,
+            "cleanup": cleanup,
             "screen_dimensions": {"rows": HEIGHT, "columns": WIDTH},
             "raw_path": str(raw_path), "display_path": str(display_path)}
 
@@ -310,6 +349,23 @@ def memory_arc_display_signature(text: str) -> dict[str, Any]:
     arc_entries = [row for row in rows if re.search(r"\bARC\s*:", row, re.IGNORECASE)]
     return {"memory_panel_visible": memory_panel_visible,
             "arc_entry_present": bool(arc_entries), "arc_entry_count": len(arc_entries)}
+
+
+def cli_error_output_detected(text: str) -> bool:
+    return bool(CLI_ERROR_PATTERN.search(text))
+
+
+def application_render_signature(text: str) -> dict[str, Any] | None:
+    rows = text.splitlines()
+    if len(rows) != HEIGHT or max((len(row) for row in rows), default=0) != WIDTH:
+        return None
+    if cli_error_output_detected(text):
+        return None
+    if not any(re.search(r"┌\s*CPU\b", row) for row in rows):
+        return None
+    if not any(re.search(r"┌\s*Memory\b", row) for row in rows):
+        return None
+    return structure_signature(text)
 
 
 def complete_process_panel(text: str) -> dict[str, Any] | None:
