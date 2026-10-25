@@ -304,6 +304,14 @@ def structure_signature(text: str) -> dict[str, Any]:
             "box_cells": boxes, "labels": labels}
 
 
+def memory_arc_display_signature(text: str) -> dict[str, Any]:
+    rows = text.splitlines()
+    memory_panel_visible = any(re.search(r"\bMemory\b", row) for row in rows)
+    arc_entries = [row for row in rows if re.search(r"\bARC\s*:", row, re.IGNORECASE)]
+    return {"memory_panel_visible": memory_panel_visible,
+            "arc_entry_present": bool(arc_entries), "arc_entry_count": len(arc_entries)}
+
+
 def complete_process_panel(text: str) -> dict[str, Any] | None:
     rows = text.splitlines()
     if len(rows) != HEIGHT or max((len(row) for row in rows), default=0) != WIDTH:

@@ -13,7 +13,8 @@ from typing import Any
 
 from wp15b_d8_d11_support import (
     HEIGHT, WIDTH, MAX_LOAD_ATTEMPTS, capture_tui, cpu_counters, cpu_worker,
-    load_window, stop_workers, structure_signature, utc_now, write_json,
+    load_window, stop_workers, structure_signature, memory_arc_display_signature,
+    utc_now, write_json,
 )
 
 
@@ -143,12 +144,30 @@ def run_d11(args: argparse.Namespace) -> int:
             output / f"d11-{label}-free-arc.raw",
             output / f"d11-{label}-free-arc.screen.txt", "d11",
         )
-    signatures = {label: structure_signature(Path(run["display_path"]).read_text())
-                  for label, run in runs.items()}
+    displays = {label: Path(run["display_path"]).read_text()
+                for label, run in runs.items()}
+    signatures = {label: structure_signature(displays[label])
+                  for label in runs}
     equal = signatures["without"] == signatures["with"]
+    memory_arc_signatures = {
+        label: memory_arc_display_signature(displays[label]) for label in runs
+    }
+    memory_arc_equal = memory_arc_signatures["without"] == memory_arc_signatures["with"]
+    memory_arc_complete = all(
+        signature["memory_panel_visible"] for signature in memory_arc_signatures.values()
+    )
+    memory_arc_absent = memory_arc_complete and all(
+        not signature["arc_entry_present"] for signature in memory_arc_signatures.values()
+    )
     complete = all(run["complete_panel_complete"] for run in runs.values())
-    acceptance_pass = complete and equal
-    status = "pass" if acceptance_pass else "fail" if complete else "incomplete"
+    acceptance_pass = (
+        complete and equal and memory_arc_equal and memory_arc_absent
+    )
+    status = (
+        "pass" if acceptance_pass
+        else "fail" if complete and memory_arc_complete
+        else "incomplete"
+    )
     exact_pid_checks = [{"pid": run["pid"], "absent": run["cleanup"]["pid_absent"]}
                         for run in runs.values()]
     cleanup_confirmed = all(run["cleanup"]["reaped"] and run["cleanup"]["pid_absent"]
@@ -158,7 +177,13 @@ def run_d11(args: argparse.Namespace) -> int:
         "without_flag": runs["without"], "with_flag": runs["with"],
         "without_structure": signatures["without"], "with_structure": signatures["with"],
         "flag_accepted": runs["with"]["complete_panel_complete"],
-        "display_structure_equal": equal, "acceptance_pass": acceptance_pass,
+        "display_structure_equal": equal,
+        "without_memory_arc_display": memory_arc_signatures["without"],
+        "with_memory_arc_display": memory_arc_signatures["with"],
+        "memory_arc_display_equal": memory_arc_equal,
+        "memory_arc_display_absent": memory_arc_absent,
+        "memory_arc_display_complete": memory_arc_complete,
+        "acceptance_pass": acceptance_pass,
         "acceptance_status": status, "pass": acceptance_pass,
         "exact_pid_checks": exact_pid_checks, "cleanup_confirmed": cleanup_confirmed,
         "cleanup_warning": [] if cleanup_confirmed else [
@@ -170,7 +195,10 @@ def run_d11(args: argparse.Namespace) -> int:
     print(json.dumps({"mode": "d11", "acceptance_status": status,
                       "cleanup_confirmed": cleanup_confirmed,
                       "flag_accepted": record["flag_accepted"],
-                      "display_structure_equal": equal, "output": str(output)}))
+                      "display_structure_equal": equal,
+                      "memory_arc_display_equal": memory_arc_equal,
+                      "memory_arc_display_absent": memory_arc_absent,
+                      "output": str(output)}))
     return 0 if record["process_success"] else 1
 
 
