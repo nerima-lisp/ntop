@@ -207,7 +207,16 @@
                                        widget-series))))
       (when (and (not basic-p) cpu-frame-rectangles)
         (%screen-draw-frame target (first cpu-frame-rectangles) config
-                            selected-p t)
+                            selected-p
+                            t)
+        (when (and config
+                   (ntop.shared.application:application-config-cpu-left-legend-p
+                    config))
+          (%screen-draw-frame target (first cpu-frame-rectangles) config
+                              selected-p
+                              nil
+                              nil
+                              t))
         (%screen-draw-frame target (second cpu-frame-rectangles) config
                             selected-p))
       clickable-areas)))

@@ -201,7 +201,7 @@
               (ntop.ui:rectangle-height rectangle)))
          ;; BTM adds a one-row gap only when the framed table is at least seven rows tall.
          (body-row-offset
-          (if (and external-frame-p (> inner-height 1) (>= outer-height 7)) 1 0))
+          (if (and sample external-frame-p (> inner-height 1) (>= outer-height 7)) 1 0))
          (inner-rectangle
           (if external-frame-p
               (ntop.ui:make-rectangle
@@ -215,7 +215,7 @@
         (%cpu-legend-view sample config width)
       (when columns
         (let* ((title-height 0)
-               (header-p (> (ntop.ui:rectangle-height inner-rectangle) 1))
+               (header-p (and sample (> (ntop.ui:rectangle-height inner-rectangle) 1)))
                (body-y
                 (+ (ntop.ui:rectangle-y inner-rectangle)
                    title-height
@@ -226,8 +226,8 @@
                         title-height
                         (if header-p 1 0))))
                (row-styles
-                (mapcar (lambda (row) (%cpu-row-style row theme)) rows)))
-          (ntop.ui:table-visible-window state (length rows) body-height)
+                (when sample (mapcar (lambda (row) (%cpu-row-style row theme)) rows))))
+          (ntop.ui:table-visible-window state (if sample (length rows) 0) body-height)
           (let ((areas
                   (ntop.ui:draw-table
                    (%make-cpu-legend-target
@@ -242,8 +242,9 @@
                    (ntop.ui:make-table-config :columns columns
                                               :selectable-p t
                                               :focused-p t
-                                              :show-current-entry-when-unfocused-p t)
-                   rows)))
+                                              :show-current-entry-when-unfocused-p t
+                                              :empty-message (unless sample "No data"))
+                   (if sample rows nil))))
             (if (plusp body-row-offset)
                 (mapcar
                  (lambda (area)
@@ -448,7 +449,7 @@
                (+ (ntop.ui:rectangle-width rectangle) 2)
                (ntop.ui:rectangle-width rectangle)))
          (graph-left-inset
-           (if (and external-frame-p (not left-p)) 1 0))
+           (if external-frame-p 1 0))
          (graph-right-inset (if external-frame-p 1 0)))
     (multiple-value-bind (legend-offset legend-width graph-offset graph-width)
         (ntop.ui:cpu-legend-region layout-width :left-p left-p)

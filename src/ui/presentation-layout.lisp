@@ -35,7 +35,8 @@
                              selected-widget
                              (cpu-height 1)
                              (memory-rows 2)
-                             (table-widget :process))
+                             (table-widget :process)
+                             cpu-left-legend-p)
   (ensure-layout-dimensions width height)
   (let ((rectangle (make-rectangle :x 0 :y 0 :width width :height height)))
     (case mode
@@ -53,16 +54,23 @@
                            (- (rectangle-width widget-rectangle) legend-width)
                            (rectangle-width widget-rectangle))))
                  (if legend-visible-p
-                     (list (cons :cpu
-                                 (offset-rectangle widget-rectangle
-                                                   :horizontal
-                                                   0
-                                                   graph-width))
-                           (cons :cpu-legend
-                                 (offset-rectangle widget-rectangle
-                                                   :horizontal
-                                                   graph-width
-                                                   legend-width)))
+                     (let* ((cpu-placement
+                             (cons :cpu
+                                   (offset-rectangle
+                                    widget-rectangle
+                                    :horizontal
+                                    (if cpu-left-legend-p legend-width 0)
+                                    graph-width)))
+                            (legend-placement
+                             (cons :cpu-legend
+                                   (offset-rectangle
+                                    widget-rectangle
+                                    :horizontal
+                                    (if cpu-left-legend-p 0 graph-width)
+                                    legend-width))))
+                       (if cpu-left-legend-p
+                           (list legend-placement cpu-placement)
+                           (list cpu-placement legend-placement)))
                      (list (cons :cpu widget-rectangle))))
              else
                collect placement))

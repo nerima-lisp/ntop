@@ -72,4 +72,26 @@
        (ntop.ui:rectangle-y
         (ntop.ui:clickable-area-rectangle (first areas)))
        :to-be
-       3))))
+       3)))
+  ;; BTM 0.14.9: src/canvas/components/data_table/draw.rs:210-218,338-345.
+  (cl-weave:it "draws No data first in an empty framed CPU legend"
+    (let* ((config (ntop.shared.application:make-application-config))
+           (screen (cl-tty-kit:make-screen 64 16))
+           (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 64 :height 16)))
+      (let ((ntop.cpu.presentation::*cpu-legend-external-frame-p* t))
+        (ntop.cpu.presentation::%draw-cpu-legend
+         screen rectangle (ntop.ui:make-table-state) nil config "default"))
+      (ntop.app.presentation::%screen-draw-frame screen rectangle config nil)
+      (cl-weave:expect
+       (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 0 0))
+       :to-be (char "┌" 0))
+      (cl-weave:expect
+       (search "No data" (cl-tty-kit:screen-row-string screen 1))
+       :to-be 1)
+      (cl-weave:expect
+       (search "No data" (cl-tty-kit:screen-row-string screen 2))
+       :to-equal nil)
+      (let ((output (cl-tty-kit:screen-to-string screen)))
+        (cl-weave:expect
+         (some (lambda (header) (search header output)) '("CPU" "Use" "AVG"))
+         :to-equal nil)))))

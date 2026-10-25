@@ -143,13 +143,18 @@
                       2)))
                2))
          (placements
-           (ntop.ui:layout-widgets columns
-                                   rows
-                                   :mode mode
-                                   :selected-widget expanded-widget
-                                   :cpu-height cpu-height
-                                   :memory-rows memory-rows
-                                   :table-widget table-widget))
+           (let ((cpu-left-legend-p
+                   (and config
+                        (ntop.shared.application:application-config-cpu-left-legend-p
+                         config))))
+             (ntop.ui:layout-widgets columns
+                                     rows
+                                     :mode mode
+                                     :selected-widget expanded-widget
+                                     :cpu-height cpu-height
+                                     :memory-rows memory-rows
+                                     :table-widget table-widget
+                                     :cpu-left-legend-p cpu-left-legend-p)))
          (cpu (assoc :cpu placements :test (function eq)))
          (cpu-legend (assoc :cpu-legend placements :test (function eq)))
          (cpu-frames
@@ -184,7 +189,8 @@
 (defvar *screen-selection-active-p* nil)
 
 (defun %screen-draw-frame (target rectangle config selected-p
-                                  &optional right-edge-only-p side-borders-only-p)
+                                  &optional right-edge-only-p side-borders-only-p
+                                    left-edge-only-p)
   (when (and (plusp (ntop.ui:rectangle-width rectangle))
              (plusp (ntop.ui:rectangle-height rectangle)))
     (let* ((theme (ntop.shared.application:application-config-theme config))
@@ -211,6 +217,14 @@
            (loop for y from (1+ top) below bottom
                  do (cl-tty-kit:screen-write-string target x y "│" :style style))
            (cl-tty-kit:screen-write-string target x bottom "┘" :style style)))
+        (left-edge-only-p
+         (let* ((x (ntop.ui:rectangle-x rectangle))
+                (top (ntop.ui:rectangle-y rectangle))
+                (bottom (+ top (1- (ntop.ui:rectangle-height rectangle)))))
+           (cl-tty-kit:screen-write-string target x top "┌" :style style)
+           (loop for y from (1+ top) below bottom
+                 do (cl-tty-kit:screen-write-string target x y "│" :style style))
+           (cl-tty-kit:screen-write-string target x bottom "└" :style style)))
         (t
          (cl-tty-kit:screen-draw-box target
                                      (ntop.ui:rectangle-x rectangle)

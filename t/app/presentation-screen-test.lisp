@@ -296,7 +296,8 @@
         (%wp12b-screen-render 80 24)
       (declare (ignore areas))
       (cl-weave:expect
-       (loop for (x y) in (quote ((2 0) (0 0) (0 5) (45 0) (46 0) (47 0) (45 5) (46 5)))
+       (loop for (x y) in '((2 0) (0 0) (0 5) (45 0) (46 0) (47 0)
+                            (45 5) (46 5))
              collect (cl-tty-kit:cell-char
                       (cl-tty-kit:screen-cell screen x y)))
        :to-equal '(#\C #\┌ #\└ #\┐ #\┌ #\─ #\┘ #\└))
@@ -309,7 +310,24 @@
       (cl-weave:expect
        (list (ntop.ui:presentation-theme-style :default :widget-title)
              (ntop.ui:presentation-theme-style :default :border))
-       :to-equal (list '((:fg 7)) '((:fg 7))))))
+       :to-equal (list '((:fg 7)) '((:fg 7)))))
+    (let ((config (%wp12b-screen-config)))
+      (setf (ntop.shared.application:application-config-cpu-left-legend-p config) t)
+      (multiple-value-bind (areas screen)
+          (%wp12b-screen-render 80 24 :config config)
+        (declare (ignore areas))
+        (cl-weave:expect
+         (and
+          (equal
+           (loop for (x y) in (quote ((6 0) (7 0) (6 5) (7 5)))
+                 collect (cl-tty-kit:cell-char
+                          (cl-tty-kit:screen-cell screen x y)))
+           (quote (#\┐ #\┌ #\┘ #\└)))
+          (not (null
+                (search " CPU "
+                        (cl-tty-kit:screen-row-string screen 0)))))
+         :to-be
+         t))))
 )
 (defun %wp12b-screen-golden-bytes (name)
   (with-open-file

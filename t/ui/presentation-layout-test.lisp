@@ -187,14 +187,23 @@
       nil)
      :to-equal
      '(1 2 3 4)))
-  (cl-weave:it "rounds Ratio constraints at cumulative boundaries"
+  (cl-weave:it "rounds Ratio constraints and places the CPU legend on the left like BTM 0.14.9"
     (cl-weave:expect
      (ntop.ui::split-sizes
       6
       '((:ratio 2 5) (:ratio 2 5) (:ratio 1 5))
       nil)
      :to-equal
-     '(2 3 1)))
+     '(2 3 1))
+    ;; BTM 0.14.9: src/canvas/widgets/cpu_graph.rs:31-56,70-79.
+    (let* ((layout (ntop.ui:layout-widgets 80 24 :cpu-left-legend-p t))
+           (cpu (layout-test-rectangle layout :cpu))
+           (legend (layout-test-rectangle layout :cpu-legend)))
+      (cl-weave:expect (ntop.ui:rectangle-x legend) :to-be 0)
+      (cl-weave:expect
+       (+ (ntop.ui:rectangle-x legend) (ntop.ui:rectangle-width legend))
+       :to-equal
+       (ntop.ui:rectangle-x cpu))))
   (cl-weave:it "omits unresolved widget references"
     (let ((rectangle
            (ntop.ui::make-rectangle :x 0 :y 0 :width 1 :height 1)))
