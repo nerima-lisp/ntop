@@ -243,7 +243,7 @@
     (cl-weave:expect (ntop.ui:clickable-area-value (first areas)) :to-be 4)
     (cl-weave:expect (ntop.ui:table-state-selected-index state) :to-be 4)
     (cl-weave:expect (aref (%battery-screen-target-cells target) 0 0)
-                     :to-be #\B))
+                     :to-be #\…))
   (let* ((target (%battery-screen-target 10 1))
          (areas (ntop.ui:draw-widget
                  :battery target

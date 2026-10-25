@@ -38,24 +38,30 @@
                                                       config))
                               (theme (ntop.shared.application:application-config-theme config)))
                          (if (ntop.shared.application:application-config-basic-p config)
-                             (%draw-network-basic target rectangle latest previous baseline config)
-                             (let* ((chart-area (%network-content-rectangle rectangle))
-                                    (chart-rectangle (%network-chart-rectangle chart-area config))
-                                    (chart-config
-                                     (%network-chart-config chart-rectangle latest maximum config)))
-                               (%draw-network-title target rectangle " Network " theme)
-                               (ntop.ui:draw-time-chart target
-                                                        chart-rectangle
-                                                        chart-config
-                                                        chart-series)
-                               (when (%network-old-legend-p config)
-                                 (%draw-network-old-legend target
-                                                           (%network-old-legend-rectangle
-                                                            chart-area)
-                                                           latest
-                                                           previous
-                                                           baseline
-                                                           config))))
+                             (let ((basic-config
+                                    (ntop.shared.application::copy-application-config config)))
+                               (setf (ntop.shared.application:application-config-data-unit
+                                      basic-config)
+                                     :byte)
+                               (%draw-network-basic target rectangle latest previous baseline
+                                                    basic-config))
+                           (let* ((chart-area (%network-content-rectangle rectangle))
+                                  (chart-rectangle (%network-chart-rectangle chart-area config))
+                                  (chart-config
+                                   (%network-chart-config rectangle latest maximum config)))
+                             (%draw-network-title target rectangle " Network " theme)
+                             (ntop.ui:draw-time-chart target
+                                                      chart-rectangle
+                                                      chart-config
+                                                      chart-series)
+                             (when (%network-old-legend-p config)
+                               (%draw-network-old-legend target
+                                                         (%network-old-legend-rectangle
+                                                          chart-area)
+                                                         latest
+                                                         previous
+                                                         baseline
+                                                         config))))
                          nil))
 
 (defun %network-state (state)

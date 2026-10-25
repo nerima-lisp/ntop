@@ -119,18 +119,27 @@
                             (ntop.disk.presentation::%disk-io-chart-config
                              "default"
                              (ntop.shared.application:make-application-config)
-                             series)))
+                             series
+                             t)))
                       (cl-weave:expect (ntop.ui:chart-config-y-min config)
                                        :to-be
                                        0d0)
                       (cl-weave:expect (ntop.ui:chart-config-y-max config)
                                        :to-be
                                        4608d0)
-                      (cl-weave:expect (ntop.ui:chart-config-y-labels config)
-                                       :to-equal
-                                       '("0KiB/s" "     1.5"
-                                                  "     3.0"
-                                                  "     4.5"))
+                      (cl-weave:expect
+                       (list (ntop.ui:chart-config-x-start config)
+                             (ntop.ui:chart-config-x-end config)
+                             (ntop.ui:chart-config-x-labels config)
+                             (ntop.ui:chart-config-y-labels config))
+                       :to-equal
+                       (list -57d0
+                             3d0
+                             (list "60s" "0s")
+                             (list "  0KiB/s"
+                                   "     1.5"
+                                   "     3.0"
+                                   "     4.5")))
                       (cl-weave:expect
                        (ntop.ui:chart-config-legend-width-ratio config)
                        :to-be

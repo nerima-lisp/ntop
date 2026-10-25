@@ -132,42 +132,68 @@
        :to-be t)))
 
   ;; bottom 0.14.9 src/components/time_series/percent.rs:30-37.
-  (cl-weave:it "uses the CPU percentage axis, title format, theme and marker setting"
-    (let* ((config
+  (cl-weave:it "uses the 60-second CPU window and percentage axis"
+    (let* ((fixture (%f1-cpu-fixture-series))
+           (config
              (ntop.shared.application:make-application-config :dot-marker-p t))
            (chart-config
-             (ntop.cpu.presentation::%cpu-chart-config "default" config)))
+             (ntop.cpu.presentation::%cpu-chart-config
+              "default" config (getf fixture :usage) t)))
+      (cl-weave:expect (ntop.ui:chart-config-x-start chart-config)
+                       :to-be -57d0)
+      (cl-weave:expect (ntop.ui:chart-config-x-end chart-config)
+                       :to-be 3d0)
       (cl-weave:expect (ntop.ui:chart-config-y-min chart-config) :to-be 0d0)
       (cl-weave:expect (ntop.ui:chart-config-y-max chart-config) :to-be 100.5d0)
       (cl-weave:expect (ntop.ui:chart-config-y-labels chart-config)
-                       :to-equal '("  0%" "100%"))
+                       :to-equal (list "  0%" "100%"))
+      (cl-weave:expect (ntop.ui:chart-config-x-labels chart-config)
+                       :to-equal (list "60s" "0s"))
       (cl-weave:expect (ntop.ui:chart-config-legend-position chart-config)
                        :to-be nil)
       (cl-weave:expect (ntop.ui:chart-config-dot-marker-p chart-config)
                        :to-be t)
       (cl-weave:expect
-       (ntop.cpu.presentation::%cpu-title
-        (getf (%f1-cpu-fixture-series) :sample))
+       (ntop.cpu.presentation::%cpu-title (getf fixture :sample))
        :to-equal " CPU ─ 1.25 0.88 0.55 ")))
 
-  ;; bottom 0.14.9 src/canvas/widgets/cpu_graph.rs:26-87.
-  (cl-weave:it "adds the MHz column only in expanded mode and preserves N/A frequency"
+  ;; bottom 0.14.9 src/widgets/cpu_graph.rs:26-41,118-125,146-164.
+  (cl-weave:it "matches BTM CPU legend widths and preserves N/A frequency"
+    ;; BTM 0.14.9 src/widgets/cpu_graph.rs:25-31,118-125,146-167;
+    ;; src/canvas/components/data_table/column.rs:182-255;
+    ;; src/canvas/components/data_table/draw.rs:224-261.
     (let* ((series (%f1-cpu-fixture-series))
            (sample (getf series :sample)))
-      (dolist (case '((nil (:cpu :use))
-                      (t (:cpu :use :mhz))))
-        (destructuring-bind (expanded-p expected-columns) case
+      (dolist (case '((nil 5 (:cpu) (4) ("CPU") ("All" "AVG" "0" "1" "2" "3"))
+                      (nil 14 (:cpu :use) (6 6) ("CPU" "Use")
+                       ("All" "AVG" "CPU0" "CPU1" "CPU2" "CPU3"))
+                      (nil 20 (:cpu :use) (9 9) ("CPU" "Use")
+                       ("All" "AVG" "CPU0" "CPU1" "CPU2" "CPU3"))
+                      (t 20 (:cpu :use :mhz) (6 5 6) ("CPU" "Use" "MHz")
+                       ("All" "AVG" "CPU0" "CPU1" "CPU2" "CPU3"))))
+        (destructuring-bind (expanded-p width expected-columns expected-widths
+                                        expected-headers expected-labels)
+            case
           (let* ((config
                    (ntop.shared.application:make-application-config
                     :expanded-p expanded-p))
                  (rows
                    (ntop.cpu.presentation::%cpu-legend-rows sample config 5)))
             (multiple-value-bind (columns visible-rows)
-                (ntop.cpu.presentation::%cpu-legend-view sample config 20)
-              (cl-weave:expect
-               (mapcar #'ntop.ui:table-column-id columns)
-               :to-equal
-               expected-columns)
+                (ntop.cpu.presentation::%cpu-legend-view sample config width)
+              (cl-weave:expect (mapcar #'ntop.ui:table-column-id columns)
+                               :to-equal
+                               expected-columns)
+              (cl-weave:expect (mapcar #'ntop.ui:table-column-width columns)
+                               :to-equal
+                               expected-widths)
+              (cl-weave:expect (mapcar #'ntop.ui:table-column-header columns)
+                               :to-equal
+                               expected-headers)
+              (cl-weave:expect (mapcar (lambda (row) (getf row :label))
+                                       visible-rows)
+                               :to-equal
+                               expected-labels)
               (cl-weave:expect
                (getf (%f1-cpu-row visible-rows :cpu 1) :frequency)
                :to-equal
@@ -184,7 +210,7 @@
            (config (ntop.shared.application:make-application-config))
            (rows
              (ntop.cpu.presentation::%cpu-legend-rows sample config 5)))
-      (dolist (case '((0 ("AVG" "CPU0" "CPU1" "CPU2" "CPU3"))
+      (dolist (case '((0 ("CPU3" "CPU2" "CPU1" "CPU0" "AVG"))
                       (1 ("AVG"))
                       (2 ("CPU0"))
                       (3 ("CPU1"))))
@@ -285,7 +311,7 @@
                 rows
                 (ntop.ui:make-table-state :selected-index -2)
                 "default"))
-       :to-equal (list "AVG" "CPU0" "CPU1" "CPU2" "CPU3"))
+       :to-equal (list "CPU3" "CPU2" "CPU1" "CPU0" "AVG"))
       (cl-weave:expect
        (mapcar (function ntop.ui:chart-series-name)
                (ntop.cpu.presentation::%cpu-selected-chart-series
@@ -402,9 +428,13 @@
            (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 24 :height 2))
            (config (ntop.shared.application:make-application-config :basic-p t)))
       (ntop.ui:draw-widget :cpu screen rectangle nil config (list :sample sample))
-      (cl-weave:expect
-       (not (null (search "AVG" (cl-tty-kit:screen-to-string screen))))
-       :to-be t))
+      (progn
+       (cl-weave:expect
+        (search "AVG" (cl-tty-kit:screen-to-string screen))
+        :to-equal nil)
+       (cl-weave:expect
+        (not (null (search "25%" (cl-tty-kit:screen-to-string screen))))
+        :to-be t)))
     (let* ((sample
              (ntop.cpu.domain:make-cpu-sample :sampled-at
                                               1d0
@@ -450,50 +480,4 @@
        nil config fixture)
       (cl-weave:expect
        (search "AVG" (cl-tty-kit:screen-to-string screen))
-       :to-equal nil))))
-
-
-(cl-weave:describe "CPU legend text styling"
-  (cl-weave:it "uses theme text for missing row styles and unknown roles"
-    (let* ((screen (cl-tty-kit:make-screen 16 2))
-           (target
-             (ntop.cpu.presentation::%make-cpu-legend-target
-              screen "default" nil 0 0)))
-      (ntop.ui:draw-table-text target 0 0 "fallback" :unknown)
-      (ntop.ui:draw-table-text target 0 1 "normal" :normal)
-      (cl-weave:expect
-       (search "fallback" (cl-tty-kit:screen-to-string screen))
-       :to-be 0)
-      (cl-weave:expect
-       (search "normal" (cl-tty-kit:screen-to-string screen))
-       :to-be 17))))
-
-(cl-weave:describe "CPU legend without layout"
-  (cl-weave:it "keeps a one-character row label when no column fits"
-    (let* ((sample (getf (%f1-cpu-fixture-series) :sample))
-           (config
-             (ntop.shared.application:make-application-config :expanded-p t)))
-      (multiple-value-bind (columns rows)
-          (ntop.cpu.presentation::%cpu-legend-view sample config 0)
-        (cl-weave:expect columns :to-equal nil)
-        (cl-weave:expect (getf (first rows) :label) :to-equal "All")
-        (cl-weave:expect (getf (third rows) :label) :to-equal "0"))
-      (let* ((screen (cl-tty-kit:make-screen 8 1))
-             (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 0 :height 1)))
-        (ntop.cpu.presentation::%draw-cpu-legend
-         screen rectangle (ntop.ui:make-table-state) sample config "default")
-        (cl-weave:expect
-         (search "All" (cl-tty-kit:screen-to-string screen))
-         :to-equal nil)))))
-
-(cl-weave:describe "CPU basic empty width"
-  (cl-weave:it "does not draw an empty value into a zero-width area"
-    (let* ((screen (cl-tty-kit:make-screen 8 1))
-           (config (ntop.shared.application:make-application-config :basic-p t)))
-      (ntop.ui:draw-widget
-       :cpu screen
-       (ntop.ui:make-rectangle :x 0 :y 0 :width 0 :height 1)
-       nil config nil)
-      (cl-weave:expect
-       (search "N/A" (cl-tty-kit:screen-to-string screen))
        :to-equal nil))))

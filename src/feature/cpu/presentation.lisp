@@ -1,18 +1,27 @@
 (in-package #:ntop.cpu.presentation)
+
 (defstruct
     (%cpu-legend-target
      (:constructor %make-cpu-legend-target
-                   (target theme row-styles body-y scroll-offset)))
+                   (target theme row-styles body-y body-row-offset scroll-offset)))
   target
   theme
   row-styles
   body-y
+  body-row-offset
   scroll-offset)
+
+(defvar *cpu-legend-external-frame-p* nil)
 
 (defmethod ntop.ui:draw-table-text ((target %cpu-legend-target) x y text role)
   (let* ((row-index
           (+ (%cpu-legend-target-scroll-offset target)
              (- y (%cpu-legend-target-body-y target))))
+         (output-y
+          (+ y
+             (if (member role '(:normal :selected) :test #'eq)
+                 (%cpu-legend-target-body-row-offset target)
+                 0)))
          (style
           (case role
             (:header
@@ -34,7 +43,7 @@
                                                :text)))))
     (cl-tty-kit:screen-write-string (%cpu-legend-target-target target)
                                     x
-                                    y
+                                    output-y
                                     text
                                     :style
                                     style)))
@@ -131,19 +140,15 @@
 
 (defun %cpu-legend-columns (expanded-p)
   (append
-   (list (%cpu-column :cpu "CPU" 1 1/4 :label)
+   (list (%cpu-column :cpu "CPU" 1 1/2 :label)
          (%cpu-column :use "Use" 3 1/2 :usage))
    (when expanded-p
      (list (%cpu-column :mhz "MHz" 4 1/3 :frequency)))))
 
-(defun %cpu-freeze-legend-columns (columns layout)
-  (loop for entry in layout
-        for source = (find (ntop.ui:table-column-layout-id entry)
-                           columns
-                           :key
-                           #'ntop.ui:table-column-id
-                           :test
-                           #'eql)
+(defun %cpu-freeze-legend-columns (columns width-layout)
+  ;; BTM returns bare widths, then zips them with the original column list.
+  (loop for source in columns
+        for entry in width-layout
         collect (ntop.ui:make-table-column :id
                                            (ntop.ui:table-column-id source)
                                            :header
@@ -151,8 +156,7 @@
                                            :width-kind
                                            :hard
                                            :width
-                                           (ntop.ui:table-column-layout-width
-                                            entry)
+                                           (ntop.ui:table-column-layout-width entry)
                                            :value-function
                                            (ntop.ui:table-column-value-function
                                             source))))
@@ -161,16 +165,16 @@
   (let* ((columns
           (%cpu-legend-columns
            (ntop.shared.application:application-config-expanded-p config)))
-         (seed-rows (%cpu-legend-rows sample config 5))
-         (layout (ntop.ui:compute-table-layout columns width :rows seed-rows))
-         (cpu-column
-          (find :cpu layout :key #'ntop.ui:table-column-layout-id :test #'eql))
-         (label-width
-          (if cpu-column
-              (ntop.ui:table-column-layout-width cpu-column)
-              1))
+         ;; BTM supplies data widths 1 and 3; the three-cell headers raise both to 3.
+         (width-layout (ntop.ui:compute-table-layout columns
+                                                     width
+                                                     :right-to-left-p t))
+         ;; The returned widths are zipped onto the original CPU, Use column order.
+         (label-width (if width-layout
+                          (ntop.ui:table-column-layout-width (first width-layout))
+                          1))
          (rows (%cpu-legend-rows sample config label-width)))
-    (values (%cpu-freeze-legend-columns columns layout) rows)))
+    (values (%cpu-freeze-legend-columns columns width-layout) rows)))
 
 (defun %cpu-row-style (row theme)
   (case (getf row :kind)
@@ -181,47 +185,80 @@
        (nth (mod (getf row :index) (length colors)) colors)))))
 
 (defun %draw-cpu-legend (target rectangle state sample config theme)
-  (multiple-value-bind (columns rows)
-      (%cpu-legend-view sample config (ntop.ui:rectangle-width rectangle))
-    (when columns
-      (let* ((title-height 0)
-             (header-p (> (ntop.ui:rectangle-height rectangle) 1))
-             (body-y
-              (+ (ntop.ui:rectangle-y rectangle)
-                 title-height
-                 (if header-p
-                     1
-                     0)))
-             (body-height
-              (max 0
-                   (- (ntop.ui:rectangle-height rectangle)
-                      title-height
-                      (if header-p
-                          1
-                          0))))
-             (row-styles
-              (mapcar
-               (lambda (row)
-                 (%cpu-row-style row theme))
-               rows)))
-        (ntop.ui:table-visible-window state (length rows) body-height)
-        (ntop.ui:draw-table
-         (%make-cpu-legend-target target
-                                  theme
-                                  row-styles
-                                  body-y
-                                  (ntop.ui:table-state-scroll-offset state))
-         rectangle
-         state
-         (ntop.ui:make-table-config :columns
-                                    columns
-                                    :selectable-p
-                                    t
-                                    :focused-p
-                                    t
-                                    :show-current-entry-when-unfocused-p
-                                    t)
-         rows)))))
+  (let* ((external-frame-p *cpu-legend-external-frame-p*)
+         (outer-height
+          (if external-frame-p
+              (1+ (ntop.ui:rectangle-height rectangle))
+              (ntop.ui:rectangle-height rectangle)))
+         (inner-height
+          (if external-frame-p
+              (max 0 (1- (ntop.ui:rectangle-height rectangle)))
+              (ntop.ui:rectangle-height rectangle)))
+         ;; BTM adds a one-row gap only when the framed table is at least seven rows tall.
+         (body-row-offset
+          (if (and external-frame-p (> inner-height 1) (>= outer-height 7)) 1 0))
+         (inner-rectangle
+          (if external-frame-p
+              (ntop.ui:make-rectangle
+               :x (1+ (ntop.ui:rectangle-x rectangle))
+               :y (1+ (ntop.ui:rectangle-y rectangle))
+               :width (max 0 (- (ntop.ui:rectangle-width rectangle) 2))
+               :height (max 0 (- inner-height body-row-offset)))
+              rectangle))
+         (width (ntop.ui:rectangle-width inner-rectangle)))
+    (multiple-value-bind (columns rows)
+        (%cpu-legend-view sample config width)
+      (when columns
+        (let* ((title-height 0)
+               (header-p (> (ntop.ui:rectangle-height inner-rectangle) 1))
+               (body-y
+                (+ (ntop.ui:rectangle-y inner-rectangle)
+                   title-height
+                   (if header-p 1 0)))
+               (body-height
+                (max 0
+                     (- (ntop.ui:rectangle-height inner-rectangle)
+                        title-height
+                        (if header-p 1 0))))
+               (row-styles
+                (mapcar (lambda (row) (%cpu-row-style row theme)) rows)))
+          (ntop.ui:table-visible-window state (length rows) body-height)
+          (let ((areas
+                  (ntop.ui:draw-table
+                   (%make-cpu-legend-target
+                    target
+                    theme
+                    row-styles
+                    body-y
+                    body-row-offset
+                    (ntop.ui:table-state-scroll-offset state))
+                   inner-rectangle
+                   state
+                   (ntop.ui:make-table-config :columns columns
+                                              :selectable-p t
+                                              :focused-p t
+                                              :show-current-entry-when-unfocused-p t)
+                   rows)))
+            (if (plusp body-row-offset)
+                (mapcar
+                 (lambda (area)
+                   (if (eq (ntop.ui:clickable-area-action area) :select-row)
+                       (let* ((area-rectangle
+                               (ntop.ui:clickable-area-rectangle area))
+                              (shifted-rectangle
+                               (ntop.ui:make-rectangle
+                                :x (ntop.ui:rectangle-x area-rectangle)
+                                :y (+ (ntop.ui:rectangle-y area-rectangle)
+                                      body-row-offset)
+                                :width (ntop.ui:rectangle-width area-rectangle)
+                                :height (ntop.ui:rectangle-height area-rectangle))))
+                         (ntop.ui:make-clickable-area
+                          :rectangle shifted-rectangle
+                          :action (ntop.ui:clickable-area-action area)
+                          :value (ntop.ui:clickable-area-value area)))
+                       area))
+                 areas)
+                areas)))))))
 
 (defun %cpu-series-kind (series)
   (let ((name (ntop.ui:chart-series-name series)))
@@ -266,6 +303,8 @@
            (lambda (item)
              (%cpu-row-series-p row item))
            items)))
+    (when (eq (getf row :kind) :all)
+      (setf visible (reverse visible)))
     (loop for item in visible
           for ordinal from 0
           collect (ntop.ui:make-chart-series :name
@@ -277,20 +316,30 @@
                                              :samples
                                              (ntop.ui:chart-series-samples item)))))
 
-(defun %cpu-chart-config (theme config)
-  (ntop.ui:make-chart-config :y-min
-                             0d0
-                             :y-max
-                             100.5d0
-                             :y-labels
-                             '("  0%" "100%")
-                             :theme-name
-                             theme
-                             :legend-position
-                             nil
-                             :dot-marker-p
-                             (ntop.shared.application:application-config-dot-marker-p
-                              config)))
+
+(defun %cpu-chart-config (theme config series &optional show-time-labels-p)
+  (let* ((latest-time
+           (loop for item in series
+                 for samples = (ntop.ui:chart-series-samples item)
+                 when (plusp (length samples))
+                   maximize
+                   (ntop.shared.domain:history-sample-sampled-at
+                    (aref samples (1- (length samples))))))
+         (window
+           (ntop.shared.application:application-config-time-window-seconds
+            config)))
+    (ntop.ui:make-chart-config
+     :x-start (and latest-time (- latest-time window))
+     :x-end latest-time
+     :y-min 0d0
+     :y-max 100.5d0
+     :y-labels (list "  0%" "100%")
+     :x-labels (when show-time-labels-p
+                 (list (format nil "~Ds" (round window)) "0s"))
+     :theme-name theme
+     :legend-position nil
+     :dot-marker-p
+     (ntop.shared.application:application-config-dot-marker-p config))))
 
 (defun %cpu-load-text (value)
   (if (realp value)
@@ -325,29 +374,33 @@
                                       (ntop.ui:presentation-theme-style theme
                                                                         :widget-title)))))
 
+
 (defun %draw-cpu-chart (target rectangle state sample config rows series theme)
   (%draw-cpu-title target rectangle sample theme)
-  (when (> (ntop.ui:rectangle-height rectangle) 1)
-    (ntop.ui:draw-time-chart target
-                             (ntop.ui:make-rectangle :x
-                                                     (ntop.ui:rectangle-x
-                                                      rectangle)
-                                                     :y
-                                                     (1+
-                                                      (ntop.ui:rectangle-y
-                                                       rectangle))
-                                                     :width
-                                                     (ntop.ui:rectangle-width
-                                                      rectangle)
-                                                     :height
-                                                     (1-
-                                                      (ntop.ui:rectangle-height
-                                                       rectangle)))
-                             (%cpu-chart-config theme config)
-                             (%cpu-selected-chart-series (getf series :usage)
-                                                         rows
-                                                         state
-                                                         theme))))
+  (let ((height (ntop.ui:rectangle-height rectangle)))
+    (when (> height 2)
+      (let ((selected-series
+              (%cpu-selected-chart-series (getf series :usage)
+                                          rows
+                                          state
+                                          theme)))
+        (ntop.ui:draw-time-chart
+         target
+         (ntop.ui:make-rectangle
+          :x (ntop.ui:rectangle-x rectangle)
+          :y (1+ (ntop.ui:rectangle-y rectangle))
+          :width (ntop.ui:rectangle-width rectangle)
+          :height (max 0 (1- height)))
+         (%cpu-chart-config
+          theme
+          config
+          selected-series
+          (and (>= height 7)
+               (not (ntop.shared.application:application-config-hide-time-p
+                     config))
+               (not (ntop.shared.application:application-config-auto-hide-time-p
+                     config))))
+         selected-series)))))
 
 (defun %cpu-state (state config rows)
   (let ((table-state
@@ -377,48 +430,37 @@
 
 (defun %draw-cpu-graph (target rectangle state sample config series theme)
   (let* ((left-p
-          (ntop.shared.application:application-config-cpu-left-legend-p config))
+           (ntop.shared.application:application-config-cpu-left-legend-p config))
          (rows (%cpu-legend-rows sample config 5))
-         (state (%cpu-state state config rows)))
-    (multiple-value-bind (legend-x legend-width graph-x graph-width)
-        (ntop.ui:cpu-legend-region (ntop.ui:rectangle-width rectangle)
-                                   :left-p
-                                   left-p)
+         (state (%cpu-state state config rows))
+         (external-frame-p *cpu-legend-external-frame-p*)
+         (layout-x
+           (if external-frame-p
+               (1- (ntop.ui:rectangle-x rectangle))
+               (ntop.ui:rectangle-x rectangle)))
+         (layout-width
+           (if external-frame-p
+               (+ (ntop.ui:rectangle-width rectangle) 2)
+               (ntop.ui:rectangle-width rectangle)))
+         (graph-left-inset
+           (if (and external-frame-p (not left-p)) 1 0))
+         (graph-right-inset (if external-frame-p 1 0)))
+    (multiple-value-bind (legend-offset legend-width graph-offset graph-width)
+        (ntop.ui:cpu-legend-region layout-width :left-p left-p)
       (%draw-cpu-chart target
-                       (ntop.ui:make-rectangle :x
-                                               (+
-                                                (ntop.ui:rectangle-x rectangle)
-                                                graph-x)
-                                               :y
-                                               (ntop.ui:rectangle-y rectangle)
-                                               :width
-                                               graph-width
-                                               :height
-                                               (ntop.ui:rectangle-height
-                                                rectangle))
-                       state
-                       sample
-                       config
-                       rows
-                       series
-                       theme)
+                       (ntop.ui:make-rectangle
+                        :x (+ layout-x graph-offset graph-left-inset)
+                        :y (ntop.ui:rectangle-y rectangle)
+                        :width
+                        (max 0 (- graph-width graph-left-inset graph-right-inset))
+                        :height (ntop.ui:rectangle-height rectangle))
+                       state sample config rows series theme)
       (when (plusp legend-width)
-        (%draw-cpu-legend target
-                          (ntop.ui:make-rectangle :x
-                                                  (+
-                                                   (ntop.ui:rectangle-x
-                                                    rectangle)
-                                                   legend-x)
-                                                  :y
-                                                  (ntop.ui:rectangle-y
-                                                   rectangle)
-                                                  :width
-                                                  legend-width
-                                                  :height
-                                                  (ntop.ui:rectangle-height
-                                                   rectangle))
-                          state
-                          sample
-                          config
-                          theme)))))
+        (%draw-cpu-legend
+         target
+         (ntop.ui:make-rectangle :x (+ layout-x legend-offset)
+                                 :y (ntop.ui:rectangle-y rectangle)
+                                 :width legend-width
+                                 :height (ntop.ui:rectangle-height rectangle))
+         state sample config theme)))))
 

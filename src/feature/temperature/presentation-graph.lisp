@@ -49,30 +49,38 @@
                                              :samples
                                              samples))))
 
-(defun %temperature-graph-config (theme config series)
-  (let ((unit
-         (ntop.shared.application:application-config-temperature-unit config)))
+(defun %temperature-graph-config (theme config series &optional show-time-labels-p)
+  (let* ((unit
+           (ntop.shared.application:application-config-temperature-unit config))
+         (samples
+           (loop for item in series
+                 append (coerce (ntop.ui:chart-series-samples item) 'list)))
+         (latest-time
+           (when samples
+             (loop for sample in samples
+                   maximize (ntop.shared.domain:history-sample-sampled-at
+                             sample))))
+         (window
+           (ntop.shared.application:application-config-time-window-seconds
+            config)))
     (multiple-value-bind (y-maximum y-labels)
         (ntop.ui:format-temperature-axis-labels
          (ntop.ui:chart-series-maximum-value series)
          unit)
-      (ntop.ui:make-chart-config :y-min
-                                 0d0
-                                 :y-max
-                                 y-maximum
-                                 :y-labels
-                                 y-labels
-                                 :theme-name
-                                 theme
-                                 :legend-position
-                                 :top-right
-                                 :legend-width-ratio
-                                 9/10
-                                 :legend-height-ratio
-                                 1/2
-                                 :dot-marker-p
-                                 (ntop.shared.application:application-config-dot-marker-p
-                                  config)))))
+      (ntop.ui:make-chart-config
+       :x-start (and latest-time (- latest-time window))
+       :x-end latest-time
+       :x-labels (when (and show-time-labels-p latest-time)
+                   (list (format nil "~Ds" (round window)) "0s"))
+       :y-min 0d0
+       :y-max y-maximum
+       :y-labels y-labels
+       :theme-name theme
+       :legend-position :top-right
+       :legend-width-ratio 9/10
+       :legend-height-ratio 1/2
+       :dot-marker-p
+       (ntop.shared.application:application-config-dot-marker-p config)))))
 
 (defun %draw-temperature-graph-title (target rectangle theme)
   (let* ((width (ntop.ui:rectangle-width rectangle))
@@ -101,9 +109,18 @@
                               (graph-series
                                (%temperature-graph-series series theme unit))
                               (chart-config
-                               (%temperature-graph-config theme
-                                                          config
-                                                          graph-series))
+                               (%temperature-graph-config
+                                theme
+                                config
+                                graph-series
+                                (and
+                                 (>= (ntop.ui:rectangle-height rectangle) 7)
+                                 (not
+                                  (ntop.shared.application:application-config-hide-time-p
+                                   config))
+                                 (not
+                                  (ntop.shared.application:application-config-auto-hide-time-p
+                                   config)))))
                               (height (ntop.ui:rectangle-height rectangle)))
                          (when (plusp height)
                            (%draw-temperature-graph-title target

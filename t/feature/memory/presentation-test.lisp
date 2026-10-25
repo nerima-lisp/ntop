@@ -150,7 +150,7 @@
               :dot-marker-p t))
            (chart-config
              (ntop.memory.presentation::%memory-chart-config
-              "default" config 0d0)))
+              "default" config 0d0 t)))
       (cl-weave:expect (ntop.ui:chart-config-legend-position chart-config)
                        :to-be :bottom-left)
       (cl-weave:expect (ntop.ui:chart-config-legend-width-ratio chart-config)
@@ -160,7 +160,11 @@
       (cl-weave:expect (ntop.ui:chart-config-dot-marker-p chart-config)
                        :to-be t)
       (cl-weave:expect (ntop.ui:chart-config-y-max chart-config)
-                       :to-be 1d0)))
+                       :to-be 1d0)
+      (cl-weave:expect (ntop.ui:chart-config-y-labels chart-config)
+                       :to-equal (list "  0%" "100%"))
+      (cl-weave:expect (ntop.ui:chart-config-x-labels chart-config)
+                       :to-equal (list "60s" "0s"))))
 
   (cl-weave:it "maps the none legend option to a hidden chart legend"
     (let* ((config
@@ -299,9 +303,12 @@
              (ntop.shared.application:make-application-config :basic-p t))
            (series (%f2-memory-fixture-series)))
       (ntop.ui:draw-widget :memory screen rectangle nil config series)
-      (cl-weave:expect
-       (not (null (search "RAM" (cl-tty-kit:screen-to-string screen))))
-       :to-be t)
+      (progn
+            (cl-weave:expect (char (cl-tty-kit:screen-row-string screen 0) 0)
+                             :to-be #\Space)
+            (cl-weave:expect
+             (subseq (cl-tty-kit:screen-row-string screen 0) 1 4)
+             :to-equal "RAM"))
       (cl-weave:expect
        (not (null (search "6.0GiB/8.0GiB"
                           (cl-tty-kit:screen-to-string screen))))

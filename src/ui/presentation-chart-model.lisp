@@ -102,11 +102,13 @@
 (defun chart-legend-layout (area series config)
   (let* ((named-series (remove-if-not #'chart-series-name series))
          (width-limit
-          (floor (* (rectangle-width area)
-                    (chart-config-legend-width-ratio config))))
+          (floor (+ (* (rectangle-width area)
+                       (chart-config-legend-width-ratio config))
+                    1/2)))
          (height-limit
-          (floor (* (rectangle-height area)
-                    (chart-config-legend-height-ratio config))))
+          (floor (+ (* (rectangle-height area)
+                       (chart-config-legend-height-ratio config))
+                    1/2)))
          (entry-count (min (length named-series) (max 0 (- height-limit 2))))
          (visible-series (subseq named-series 0 entry-count)))
     (when (and visible-series (chart-config-legend-position config))

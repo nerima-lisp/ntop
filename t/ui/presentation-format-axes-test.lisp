@@ -1,5 +1,8 @@
 (in-package #:ntop.test)
 
+;; BTM 0.14.9 axis rules: bottom/src/canvas/widgets/network_graph.rs:384-439,
+;; bottom/src/canvas/widgets/disk_io_graph.rs:272-301, and
+;; bottom/src/canvas/widgets/temperature_graph.rs:111-138.
 (cl-weave:describe "btm presentation axis format values"
                    (cl-weave:it-each
                     ((50 :celsius 100 100 ("0°C" "50°C" "100°C"))
@@ -16,16 +19,16 @@
                      :to-equal
                      (list expected-upper expected-labels)))
                    (cl-weave:it-each
-                    ((0 :decimal :bit 1d0 ("0b" "  0.0" "  0.0" "  0.0"))
-                     (1000 :decimal :bit 1500d0 ("0Kb" "  0.5" "  1.0" "  1.5"))
+                    ((0 :decimal :bit 1d0 ("   0b" "  0.0" "  0.0" "  0.0"))
+                     (1000 :decimal :bit 1500d0 ("  0Kb" "  0.5" "  1.0" "  1.5"))
                      (1048576 :binary
                               :byte
                               1572864d0
-                              ("0MiB" "  0.5" "  1.0" "  1.5"))
+                              (" 0MiB" "  0.5" "  1.0" "  1.5"))
                      (1000000 :decimal
                               :byte
                               1500000d0
-                              ("0MB" "  0.5" "  1.0" "  1.5")))
+                              ("  0MB" "  0.5" "  1.0" "  1.5")))
                     "formats network axis for ~A"
                     (max-entry prefix-system
                                data-unit
@@ -38,12 +41,12 @@
                       (cl-weave:expect (= actual-upper expected-upper) :to-be t)
                       (cl-weave:expect actual-labels :to-equal expected-labels)))
                    (cl-weave:it-each
-                    ((0 1d0 ("0B/s" "     0.0" "     0.0" "     0.0"))
-                     (1024 1536d0 ("0KiB/s" "     0.5" "     1.0" "     1.5"))
+                    ((0 1d0 ("    0B/s" "     0.0" "     0.0" "     0.0"))
+                     (1024 1536d0 ("  0KiB/s" "     0.5" "     1.0" "     1.5"))
                      (1048576 1572864d0
-                              ("0MiB/s" "     0.5" "     1.0" "     1.5"))
+                              ("  0MiB/s" "     0.5" "     1.0" "     1.5"))
                      (1073741824 1610612736d0
-                                 ("0GiB/s" "     0.5" "     1.0" "     1.5")))
+                                 ("  0GiB/s" "     0.5" "     1.0" "     1.5")))
                     "formats disk I/O axis for ~A bytes per second"
                     (max-entry expected-upper expected-labels)
                     (multiple-value-bind (actual-upper actual-labels)

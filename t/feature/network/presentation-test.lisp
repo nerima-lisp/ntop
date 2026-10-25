@@ -123,7 +123,7 @@
       (cl-weave:expect
        (mapcar
         (lambda (text) (not (null (search text snapshot))))
-        (quote ("4.4Kb/s" "16.0Kb/s" "2.1KB" "6.0KB"
+        (quote ("550.0/s" "2.0K/s" "2.1KB" "6.0KB"
                 "10pkt/s" "55.0B" "200.0B" "Network")))
        :to-equal
        (quote (t t t t t t t t))))
@@ -131,6 +131,18 @@
      (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
      :to-equal
      (ntop.ui:presentation-theme-style :default :widget-title))))
+                   (cl-weave:it
+  "uses BTM RX and TX colors for basic rate values without bold"
+  (let* ((screen (cl-tty-kit:make-screen 80 8))
+         (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height 8))
+         (config (%f4-basic-config))
+         (samples (%f4-network-presentation-samples)))
+    (ntop.ui:draw-widget :network screen rectangle nil config samples)
+    (cl-weave:expect
+     (list (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 5 0))
+           (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 5 1)))
+     :to-equal
+     (quote (((:fg 13)) ((:fg 11)))))))
                    (cl-weave:it "keeps basic text inside a small widget rectangle"
                                 (let* ((screen (cl-tty-kit:make-screen 20 8))
                                        (rectangle
@@ -143,8 +155,13 @@
                                                        config
                                                        (%f4-network-presentation-samples))
                                   (cl-weave:expect
-                                   (not
-                                    (null (search "Network" (cl-tty-kit:screen-to-string screen))))
+                                   (let ((snapshot (cl-tty-kit:screen-to-string screen)))
+                                     (not
+                                      (or (search "Network" snapshot)
+                                          (find-if
+                                           (lambda (character)
+                                             (find character "┌┐└┘─│"))
+                                           snapshot))))
                                    :to-be
                                    t)
                                   (cl-weave:expect
@@ -301,7 +318,7 @@
        :to-equal
        (quote (nil t))))))
                    (cl-weave:it-each ((6 t nil nil) (7 t nil t) (7 nil nil t) (7 nil t nil))
-                                     "honors time-label visibility at widget height ~A"
+                                     "matches BTM's height-7 time-label boundary at height ~A"
                                      (height auto-hide-p hide-time-p visible-p)
                                      (let* ((screen (cl-tty-kit:make-screen 50 height))
                                             (rectangle
@@ -329,7 +346,8 @@
                                                             config
                                                             samples)
                                        (cl-weave:expect
-                                        (not (null (search "-60s" (%f4-snapshot screen))))
+                                        (and (not (null (search "60s" (%f4-snapshot screen))))
+     (not (null (search "0s" (%f4-snapshot screen)))))
                                         :to-be
                                         visible-p)))
                    (cl-weave:it
@@ -343,7 +361,7 @@
      (cl-weave:expect
       (mapcar
        (lambda (text) (not (null (search text snapshot))))
-       '("RX: 4.4Kb/s" "RX Pkt: 10pkt/s" "Total RX: 2.1KB" "Avg RX: 55.0B"))
+       '("RX: 550.0/s" "RX Pkt: 10pkt/s" "Total RX: 2.1KB" "Avg RX: 55.0B"))
       :to-equal
       '(t t t t))))
 )

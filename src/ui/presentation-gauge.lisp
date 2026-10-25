@@ -116,23 +116,50 @@
                       :y (+ (rectangle-y rectangle) y-offset)
                       :width (max 0 (- column-width 2))
                       :height 1)
-                   do (draw-pipe-gauge target
-                                       gauge-rectangle
-                                       gauge
-                                       :label-limit label-limit)
+                   do (if (eq label-limit :bars)
+                          (let* ((start-label
+                                   (gauge-value-start-label gauge))
+                                 (inner-label
+                                   (gauge-value-inner-label gauge))
+                                 (label-style
+                                   (gauge-value-label-style gauge))
+                                 (x (rectangle-x gauge-rectangle))
+                                 (y (rectangle-y gauge-rectangle))
+                                 (width (rectangle-width gauge-rectangle))
+                                 (inner-width (chart-text-width inner-label)))
+                            (%draw-gauge-text target x y start-label width label-style)
+                            (%draw-gauge-text
+                             target
+                             (max x (- (+ x width) inner-width 1))
+                             y
+                             inner-label
+                             inner-width
+                             label-style))
+                          (if (eq label-limit :start-label)
+                              (%draw-gauge-text target
+                                                (rectangle-x gauge-rectangle)
+                                                (rectangle-y gauge-rectangle)
+                                                (gauge-value-inner-label gauge)
+                                                (rectangle-width gauge-rectangle)
+                                                (gauge-value-label-style gauge))
+                              (draw-pipe-gauge target
+                                               gauge-rectangle
+                                               gauge
+                                               :label-limit label-limit)))
                       (incf index)
                       (decf remaining))
              (incf x-offset column-width))
     target))
 
-(defun draw-basic-memory-gauge (target rectangle used total label style)
+(defun draw-basic-memory-gauge (target rectangle used total label style
+                                &optional (start-label "RAM"))
   (unless (and (realp used) (not (minusp used))
                (realp total) (not (minusp total)))
     (error "Memory gauge values must be non-negative real numbers."))
   (draw-pipe-gauge
    target
    rectangle
-   (make-gauge-value :start-label "RAM"
+   (make-gauge-value :start-label start-label
                      :inner-label label
                      :ratio (if (zerop total) 0d0 (/ used total))
                      :label-style style

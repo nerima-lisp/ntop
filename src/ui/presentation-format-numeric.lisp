@@ -249,7 +249,7 @@
          (width (format-rule-value :network-axis :label-width))
          (precision (format-rule-value :network-axis :precision)))
     (values upper
-            (list (format nil "0~A~A" prefix-text unit-text)
+            (list (format nil "~v@A" width (format nil "0~A~A" prefix-text unit-text))
                   (format-fixed (* scaled-max 1/2) precision width)
                   (format-fixed scaled-max precision width)
                   (format-fixed (* scaled-max 3/2) precision width)))))
@@ -270,11 +270,11 @@
                :binary
                prefix))))
          (scaled-max (/ (float max-entry 1d0) prefix-denominator))
-         (unit "B/s")
+         (unit (concatenate 'string prefix-text "B/s"))
          (width (format-rule-value :disk-io-axis :label-width))
          (precision (format-rule-value :disk-io-axis :precision)))
     (values upper
-            (list (format nil "0~A~A" prefix-text unit)
+            (list (format nil "~v@A" width (format nil "0~A" unit))
                   (format-fixed (* scaled-max 1/2) precision width)
                   (format-fixed scaled-max precision width)
                   (format-fixed (* scaled-max 3/2) precision width)))))

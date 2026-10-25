@@ -48,13 +48,28 @@
      (append (mapcar (function first) entries) gpu-series)
      (float (if gpu-series (max maximum-total gpu-total) maximum-total) 1d0))))
 
-(defun %memory-chart-config (theme config maximum)
-  (let ((legend-position
-          (ntop.shared.application:application-config-memory-legend-position
-           config)))
+(defun %memory-chart-config (theme config maximum &optional show-time-labels-p series)
+  (let* ((latest-time
+           (loop for item in series
+                 for samples = (ntop.ui:chart-series-samples item)
+                 when (plusp (length samples))
+                   maximize
+                   (ntop.shared.domain:history-sample-sampled-at
+                    (aref samples (1- (length samples))))))
+         (legend-position
+           (ntop.shared.application:application-config-memory-legend-position
+            config))
+         (window
+           (ntop.shared.application:application-config-time-window-seconds
+            config)))
     (ntop.ui:make-chart-config
+     :x-start (and latest-time (- latest-time window))
+     :x-end latest-time
      :y-min 0d0
      :y-max (max 1d0 maximum)
+     :y-labels (list "  0%" "100%")
+     :x-labels (when show-time-labels-p
+                 (list (format nil "~Ds" (round window)) "0s"))
      :theme-name theme
      :legend-position (unless (eq legend-position :none) legend-position)
      :legend-width-ratio 3/4
@@ -85,27 +100,52 @@
     (let ((height (ntop.ui:rectangle-height rectangle)))
       (when (plusp height)
         (%draw-memory-title target rectangle theme)
-        (ntop.ui:draw-time-chart
-         target
-         (ntop.ui:make-rectangle
-          :x (ntop.ui:rectangle-x rectangle)
-          :y (1+ (ntop.ui:rectangle-y rectangle))
-          :width (ntop.ui:rectangle-width rectangle)
-          :height (max 0 (1- height)))
-         (%memory-chart-config theme config maximum)
-         chart-series)))))
+        (when (> height 2)
+          (ntop.ui:draw-time-chart
+           target
+           (ntop.ui:make-rectangle
+            :x (ntop.ui:rectangle-x rectangle)
+            :y (1+ (ntop.ui:rectangle-y rectangle))
+            :width (ntop.ui:rectangle-width rectangle)
+            :height (max 0 (1- height)))
+           (%memory-chart-config
+            theme
+            config
+            maximum
+            (and (>= height 7)
+                 (not (ntop.shared.application:application-config-hide-time-p
+                       config))
+                 (not (ntop.shared.application:application-config-auto-hide-time-p
+                       config)))
+            chart-series)
+           chart-series))))))
 
 (defun %draw-memory-gauge (target rectangle series theme)
-  (let ((used (getf series :ram-used-bytes))
-        (total (getf series :ram-total-bytes)))
-    (when (and (%memory-counter-p used) (%memory-counter-p total))
-      (ntop.ui:draw-basic-memory-gauge
-       target
-       rectangle
-       used
-       total
-       (ntop.ui:format-memory-fraction used total)
-       (ntop.ui:presentation-theme-style theme :ram)))))
+  (let ((row-index 0))
+    (dolist (entry '((:ram-used-bytes :ram-total-bytes "RAM" :ram)
+                     (:swap-used-bytes :swap-total-bytes "SWP" :swap)
+                     (:cache-used-bytes :cache-total-bytes "CHE" :cache)
+                     (:arc-used-bytes :arc-total-bytes "ARC" :arc)))
+      (destructuring-bind (used-key total-key label role) entry
+        (let ((used (getf series used-key))
+              (total (getf series total-key)))
+          (when (and (< row-index (ntop.ui:rectangle-height rectangle))
+                     (%memory-counter-p used)
+                     (%memory-counter-p total))
+            (ntop.ui:draw-basic-memory-gauge
+             target
+             (ntop.ui:make-rectangle
+              :x (1+ (ntop.ui:rectangle-x rectangle))
+              :y (+ (ntop.ui:rectangle-y rectangle) row-index)
+              :width (max 0 (- (ntop.ui:rectangle-width rectangle) 2))
+              :height 1)
+             used
+             total
+             (ntop.ui:format-memory-fraction used total)
+             (ntop.ui:presentation-theme-style theme role)
+             label)
+            (incf row-index)))))
+    target))
 
 (ntop.ui:define-widget :memory (target rectangle state config series)
   (declare (ignore state))

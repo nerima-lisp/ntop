@@ -100,7 +100,32 @@
                                  (ntop.ui:chart-config-y-min
                                   ntop.ui:*default-chart-config*)
                                  :to-equal
-                                 0d0)))
+                                 0d0)
+                                (cl-weave:expect
+                                 (list
+                                  (ntop.ui:chart-config-legend-width-ratio
+                                   ntop.ui:*default-chart-config*)
+                                  (ntop.ui:chart-config-legend-height-ratio
+                                   ntop.ui:*default-chart-config*))
+                                 :to-equal
+                                 '(1/4 1/4))
+                                (multiple-value-bind (legend visible)
+                                    (ntop.ui:chart-legend-layout
+                                     (%chart-test-rectangle 0 0 31 21)
+                                     (list
+                                      (ntop.ui:make-chart-series :name "ABCDEF"))
+                                     ntop.ui:*default-chart-config*)
+                                  (cl-weave:expect
+                                   (list (ntop.ui:rectangle-x legend)
+                                         (ntop.ui:rectangle-y legend)
+                                         (ntop.ui:rectangle-width legend)
+                                         (ntop.ui:rectangle-height legend))
+                                   :to-equal
+                                   '(23 0 8 3))
+                                  (cl-weave:expect
+                                   (mapcar #'ntop.ui:chart-series-name visible)
+                                   :to-equal
+                                   '("ABCDEF")))))
 
 (cl-weave:describe "chart configuration validation"
                    (cl-weave:it-each

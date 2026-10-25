@@ -148,7 +148,7 @@
                                    :to-be
                                    t)))
                    (cl-weave:it
-                    "uses bars when CPU gauge columns cannot fit labels"
+                    "uses BTM's Bars labels at 10 cells per CPU column"
                     (let ((screen (cl-tty-kit:make-screen 40 1))
                           (gauges
                            (loop repeat 4
@@ -167,12 +167,16 @@
                       (cl-weave:expect
                        (count #\[ (cl-tty-kit:screen-row-string screen 0))
                        :to-equal
-                       4)
+                       0)
                       (cl-weave:expect
-                       (search "CPU" (cl-tty-kit:screen-row-string screen 0))
-                       :to-be
-                       nil)))
-                   (cl-weave:it "uses start labels in narrow CPU gauge columns"
+                       (loop for start in '(1 11 21 31)
+                             collect
+                             (subseq (cl-tty-kit:screen-row-string screen 0)
+                                     start
+                                     (+ start 3)))
+                       :to-equal
+                       '("CPU" "CPU" "CPU" "CPU"))))
+                   (cl-weave:it "uses inner percentages in narrow CPU gauge columns"
                                 (let ((screen (cl-tty-kit:make-screen 36 1))
                                       (gauges
                                        (loop repeat 4
@@ -197,14 +201,17 @@
                                    :to-equal
                                    0)
                                   (cl-weave:expect
-                                   (not
-                                    (null
-                                     (search "CPU"
-                                             (cl-tty-kit:screen-row-string
-                                              screen
-                                              0))))
-                                   :to-be
-                                   t)))
+                                   (list
+                                    (loop for column in '(1 10 19 28)
+                                          collect
+                                          (subseq
+                                           (cl-tty-kit:screen-row-string screen 0)
+                                           column
+                                           (+ column 3)))
+                                    (search "CPU"
+                                            (cl-tty-kit:screen-row-string screen 0)))
+                                   :to-equal
+                                   '(("50%" "50%" "50%" "50%") nil))))
                    (cl-weave:it-each ((8 2 8) (8 1 4) (0 2 0))
                                      "draws ~A CPU gauges in a ~A-row area"
                                      (gauge-count height expected-visible)
@@ -225,7 +232,7 @@
                                                                        height)
                                                                       gauges)
                                        (cl-weave:expect
-                                        (count #\[
+                                        (count #\C
                                                (%chart-test-screen-text screen
                                                                         height))
                                         :to-equal
@@ -384,8 +391,12 @@
                                                                   1)
                                                                  gauges)
                                   (cl-weave:expect
-                                   (count #\[
-                                          (cl-tty-kit:screen-row-string screen
-                                                                        0))
+                                   (loop for start in '(1 12 23 34)
+                                         collect
+                                         (subseq
+                                          (cl-tty-kit:screen-row-string screen 0)
+                                          start
+                                          (+ start 3)))
                                    :to-equal
-                                   4))))
+                                   '("CPU" "CPU" "CPU" "CPU"))))
+)

@@ -77,24 +77,33 @@
                                        name-width
                                        theme))))
 
-(defun %disk-io-chart-config (theme config series)
-  (multiple-value-bind (y-max y-labels)
-      (ntop.ui:format-disk-io-axis-labels (ntop.ui:chart-series-maximum-value series))
-    (ntop.ui:make-chart-config :y-min
-                               0d0
-                               :y-max
-                               y-max
-                               :y-labels
-                               y-labels
-                               :theme-name
-                               theme
-                               :legend-width-ratio
-                               9/10
-                               :legend-height-ratio
-                               1/2
-                               :dot-marker-p
-                               (ntop.shared.application:application-config-dot-marker-p
-                                config))))
+(defun %disk-io-chart-config (theme config series &optional show-time-labels-p)
+  (let* ((latest-time
+           (loop for item in series
+                 for samples = (ntop.ui:chart-series-samples item)
+                 when (plusp (length samples))
+                   maximize
+                   (ntop.shared.domain:history-sample-sampled-at
+                    (aref samples (1- (length samples))))))
+         (window
+           (ntop.shared.application:application-config-time-window-seconds
+            config)))
+    (multiple-value-bind (y-max y-labels)
+        (ntop.ui:format-disk-io-axis-labels
+         (ntop.ui:chart-series-maximum-value series))
+      (ntop.ui:make-chart-config
+       :x-start (and latest-time (- latest-time window))
+       :x-end latest-time
+       :x-labels (when (and show-time-labels-p latest-time)
+                   (list (format nil "~As" (round window)) "0s"))
+       :y-min 0d0
+       :y-max y-max
+       :y-labels y-labels
+       :theme-name theme
+       :legend-width-ratio 9/10
+       :legend-height-ratio 1/2
+       :dot-marker-p
+       (ntop.shared.application:application-config-dot-marker-p config)))))
 
 (defun %draw-disk-io-title (target rectangle theme)
   (let* ((width (ntop.ui:rectangle-width rectangle))
@@ -119,7 +128,15 @@
                               (graph-series
                                (%disk-io-chart-series series theme))
                               (chart-config
-                               (%disk-io-chart-config theme config graph-series))
+                               (%disk-io-chart-config
+                                theme
+                                config
+                                graph-series
+                                (and
+                                 (not
+                                  (ntop.shared.application:application-config-hide-time-p
+                                   config))
+                                 (>= (ntop.ui:rectangle-height rectangle) 7))))
                               (height (ntop.ui:rectangle-height rectangle)))
                          (when (plusp height)
                            (%draw-disk-io-title target rectangle theme)

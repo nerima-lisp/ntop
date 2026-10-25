@@ -15,10 +15,7 @@
            (latest-time (and latest (ntop.shared.domain:sample-record-sampled-at latest)))
            (labels-visible-p
             (and (not (ntop.shared.application:application-config-hide-time-p config))
-                 (or
-                  (not
-                   (ntop.shared.application:application-config-auto-hide-time-p config))
-                  (>= (ntop.ui:rectangle-height rectangle) 6))))
+                 (>= (ntop.ui:rectangle-height rectangle) 7)))
            (old-legend-p
             (%network-old-legend-p config)))
       (ntop.ui:make-chart-config :x-start
@@ -31,7 +28,7 @@
                                  :x-labels
                                  (and labels-visible-p
                                       latest-time
-                                      (list (format nil "-~As" (round window)) "now"))
+                                      (list (format nil "~As" (round window)) "0s"))
                                  :theme-name
                                  (string-downcase
                                   (string
@@ -183,10 +180,21 @@
 
 (defun %network-rate-text (quantity prefix-system config)
   (if quantity
-      (ntop.ui:format-network-rate (ntop.shared.domain:quantity-value quantity)
-                                   prefix-system
-                                   (ntop.shared.application:application-config-data-unit
-                                    config))
+      (let* ((unit
+               (ntop.shared.application:application-config-data-unit config))
+             (text
+               (ntop.ui:format-network-rate
+                (ntop.shared.domain:quantity-value quantity)
+                prefix-system
+                unit)))
+        (if (and (ntop.shared.application:application-config-basic-p config)
+                 (eq unit :byte)
+                 (>= (length text) 3)
+                 (string= "B/s" (subseq text (- (length text) 3))))
+            (concatenate 'string
+                         (subseq text 0 (- (length text) 3))
+                         "/s")
+            text))
       "N/A"))
 
 (defun %network-total-text (bytes prefix-system)
@@ -207,71 +215,57 @@
 
 (defun %draw-network-basic (target rectangle latest previous baseline config)
   (let* ((theme (ntop.shared.application:application-config-theme config))
-         (unit (ntop.shared.application:application-config-data-unit config))
-         (content-rectangle (%network-content-rectangle rectangle))
-         (body-rectangle
-          (ntop.ui:make-rectangle :x
-                                  (1+ (ntop.ui:rectangle-x content-rectangle))
-                                  :y
-                                  (1+ (ntop.ui:rectangle-y content-rectangle))
-                                  :width
-                                  (max 0
-                                       (- (ntop.ui:rectangle-width content-rectangle) 2))
-                                  :height
-                                  (max 0
-                                       (- (ntop.ui:rectangle-height content-rectangle) 2))))
          (show-packets-p
-          (ntop.shared.application:application-config-network-show-packets-p config))
-         (rx-rate
-          (%network-rate-text
-           (and previous
-                latest
-                (ntop.network.domain:network-rate previous latest :rx :unit unit))
-           (%network-prefix-system config)
-           config))
-         (tx-rate
-          (%network-rate-text
-           (and previous
-                latest
-                (ntop.network.domain:network-rate previous latest :tx :unit unit))
-           (%network-prefix-system config)
-           config))
-         (values (%network-legend-values latest previous baseline config show-packets-p))
+           (ntop.shared.application:application-config-network-show-packets-p config))
+         (values
+           (%network-legend-values latest previous baseline config show-packets-p))
          (styles (%network-value-styles theme show-packets-p))
-         (content-x (ntop.ui:rectangle-x body-rectangle))
-         (content-y (ntop.ui:rectangle-y body-rectangle))
-         (content-width (ntop.ui:rectangle-width body-rectangle))
-         (content-height (ntop.ui:rectangle-height body-rectangle)))
-    (%draw-network-title target rectangle "Network" theme)
-    (when
-        (and (plusp (ntop.ui:rectangle-width content-rectangle))
-             (plusp (ntop.ui:rectangle-height content-rectangle)))
-      (cl-tty-kit:screen-draw-box target
-                                  (ntop.ui:rectangle-x content-rectangle)
-                                  (ntop.ui:rectangle-y content-rectangle)
-                                  (ntop.ui:rectangle-width content-rectangle)
-                                  (ntop.ui:rectangle-height content-rectangle)
-                                  :border
-                                  :single
-                                  :style
-                                  (ntop.ui:presentation-theme-style theme :border)))
-    (if (not show-packets-p)
-        (let ((column-width (floor content-width 2)))
-          (%network-write-text target body-rectangle content-x content-y
-                               (format nil "RX: ~A" rx-rate)
-                               column-width (first styles))
-          (%network-write-text target body-rectangle content-x (+ content-y 1)
-                               (format nil "TX: ~A" tx-rate)
-                               column-width (second styles))
-          (%network-write-text target body-rectangle (+ content-x column-width) content-y
-                               (format nil "Total RX: ~A" (third values))
-                               (- content-width column-width) (third styles))
-          (%network-write-text target body-rectangle (+ content-x column-width)
-                               (+ content-y 1)
-                               (format nil "Total TX: ~A" (fourth values))
-                               (- content-width column-width) (fourth styles)))
-        (%draw-network-basic-packets target rectangle body-rectangle values styles
-                                     content-x content-y content-width content-height))))
+         (x (1+ (ntop.ui:rectangle-x rectangle)))
+         (y (ntop.ui:rectangle-y rectangle))
+         (width (ntop.ui:rectangle-width rectangle))
+         (height (ntop.ui:rectangle-height rectangle)))
+    (when (and (plusp width) (plusp height))
+      (if show-packets-p
+          (let* ((content-rectangle (%network-content-rectangle rectangle))
+                 (body-rectangle
+                   (ntop.ui:make-rectangle
+                    :x (1+ (ntop.ui:rectangle-x content-rectangle))
+                    :y (1+ (ntop.ui:rectangle-y content-rectangle))
+                    :width (max 0 (- (ntop.ui:rectangle-width content-rectangle) 2))
+                    :height (max 0 (- (ntop.ui:rectangle-height content-rectangle) 2))))
+                 (content-x (ntop.ui:rectangle-x body-rectangle))
+                 (content-y (ntop.ui:rectangle-y body-rectangle))
+                 (content-width (ntop.ui:rectangle-width body-rectangle))
+                 (content-height (ntop.ui:rectangle-height body-rectangle)))
+            (%draw-network-title target rectangle "Network" theme)
+            (when (and (plusp (ntop.ui:rectangle-width content-rectangle))
+                       (plusp (ntop.ui:rectangle-height content-rectangle)))
+              (cl-tty-kit:screen-draw-box
+               target
+               (ntop.ui:rectangle-x content-rectangle)
+               (ntop.ui:rectangle-y content-rectangle)
+               (ntop.ui:rectangle-width content-rectangle)
+               (ntop.ui:rectangle-height content-rectangle)
+               :border :single
+               :style (ntop.ui:presentation-theme-style theme :border)))
+            (%draw-network-basic-packets target rectangle body-rectangle values styles
+                                         content-x content-y content-width content-height))
+          (let* ((column-width (floor width 2))
+                 (left-content-width (max 0 (- column-width 2)))
+                 (right-column-width (- width column-width))
+                 (right-content-width (max 0 (- right-column-width 2))))
+            (%network-write-text target rectangle x y
+                                 (format nil "RX: ~A" (first values))
+                                 left-content-width (first styles))
+            (%network-write-text target rectangle (+ x column-width) y
+                                 (format nil "Total RX: ~A" (third values))
+                                 right-content-width (third styles))
+            (%network-write-text target rectangle x (1+ y)
+                                 (format nil "TX: ~A" (second values))
+                                 left-content-width (second styles))
+            (%network-write-text target rectangle (+ x column-width) (1+ y)
+                                 (format nil "Total TX: ~A" (fourth values))
+                                 right-content-width (fourth styles)))))))
 
 (defun %draw-network-basic-packets (target layout-rectangle
                                            text-rectangle

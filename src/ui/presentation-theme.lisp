@@ -22,12 +22,12 @@
                            ((:fg 12)) ((:fg 6)) ((:fg 2)) ((:fg 4)))
      :disk-io-write-colors (((:fg 10)) ((:fg 12)) ((:fg 9)) ((:fg 6))
                             ((:fg 2)) ((:fg 4)) ((:fg 1)))
-     :border nil
+     :border ((:fg 7))
      :highlighted-border ((:fg 12))
      :text ((:fg 7))
      :selected-text ((:fg 0) (:bg 12))
      :table-header (:bold (:fg 12))
-     :widget-title nil
+     :widget-title ((:fg 7))
      :general-widget nil
      :graph ((:fg 7))
      :graph-legend ((:fg 7))

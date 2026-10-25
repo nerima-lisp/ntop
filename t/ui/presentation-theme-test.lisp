@@ -31,12 +31,12 @@
                               ((:fg 12)) ((:fg 6)) ((:fg 2)) ((:fg 4)))
         :disk-io-write-colors (((:fg 10)) ((:fg 12)) ((:fg 9)) ((:fg 6))
                                ((:fg 2)) ((:fg 4)) ((:fg 1)))
-        :border nil
+        :border ((:fg 7))
         :highlighted-border ((:fg 12))
         :text ((:fg 7))
         :selected-text ((:fg 0) (:bg 12))
         :table-header (:bold (:fg 12))
-        :widget-title nil
+        :widget-title ((:fg 7))
         :general-widget nil
         :graph ((:fg 7))
         :graph-legend ((:fg 7))
@@ -344,18 +344,21 @@
              (ntop.ui::presentation-theme-style theme-name role)
              :to-equal expected))))))
  (cl-weave:it-each ((:default :text ((:fg 7)) "38;5;7m")
-                     (:default :table-header (:bold (:fg 12)) "1;38;5;12m")
-                     (:default :selected-text ((:fg 0) (:bg 12)) "38;5;0;48;5;12m")
-                     (:gruvbox :text ((:fg 235 219 178)) "38;2;235;219;178m")
-                     (:gruvbox :selected-text
-                      ((:fg 29 32 33) (:bg 235 219 178))
-                      "38;2;29;32;33;48;2;235;219;178m"))
-
-      "encodes ~A ~A attributes through cl-tty-kit"
-      (theme-name role expected-style sgr)
-    (let ((style (ntop.ui::presentation-theme-style theme-name role)))
-      (cl-weave:expect style :to-equal expected-style)
-      (cl-weave:expect
-       (apply #'cl-tty-kit:style-ansi style)
-       :to-equal (format nil "~c[~a" #\Escape sgr))))
+                    (:default :table-header (:bold (:fg 12)) "1;38;5;12m")
+                    (:default :selected-text ((:fg 0) (:bg 12)) "38;5;0;48;5;12m")
+                    (:gruvbox :text ((:fg 235 219 178)) "38;2;235;219;178m")
+                    (:gruvbox :selected-text
+                     ((:fg 29 32 33) (:bg 235 219 178))
+                     "38;2;29;32;33;48;2;235;219;178m")
+                    (:default :border ((:fg 7)) "38;5;7m")
+                    (:default :widget-title ((:fg 7)) "38;5;7m"))
+    "encodes ~A ~A attributes through cl-tty-kit"
+    (theme-name role expected-style sgr)
+  ;; BTM 0.14.9 uses Color::Gray for these default roles in
+  ;; bottom-0.14.9/src/options/config/style/themes/default.rs:21,63-71.
+  (let ((style (ntop.ui::presentation-theme-style theme-name role)))
+    (cl-weave:expect style :to-equal expected-style)
+    (cl-weave:expect
+     (apply #'cl-tty-kit:style-ansi style)
+     :to-equal (format nil "~c[~a" #\Escape sgr))))
 )

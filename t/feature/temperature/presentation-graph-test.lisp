@@ -145,6 +145,28 @@
                        373.15d0
                        (list "0K" "187K" "374K")))))
  (cl-weave:it
+  "uses the configured time window relative to the latest sample"
+  (let* ((config
+           (ntop.shared.application:make-application-config
+            :time-window-seconds 60))
+         (series
+           (ntop.temperature.presentation::%temperature-graph-series
+            (%f6-temperature-graph-fixture-series)
+            "default"
+            :celsius))
+         (chart
+           (ntop.temperature.presentation::%temperature-graph-config
+            "default"
+            config
+            series
+            t)))
+    (cl-weave:expect
+     (list (ntop.ui:chart-config-x-start chart)
+           (ntop.ui:chart-config-x-end chart)
+           (ntop.ui:chart-config-x-labels chart))
+     :to-equal
+     (list -58d0 2d0 (list "60s" "0s")))))
+ (cl-weave:it
   "keeps the btm legend width and height limits and forwards dot markers"
   (let* ((config
           (ntop.shared.application:make-application-config :dot-marker-p t))

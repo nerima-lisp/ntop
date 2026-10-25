@@ -160,7 +160,7 @@
                                    255)))
                    (cl-weave:it
                     "draws a horizontal Braille line including both endpoints"
-                    (let ((dots (make-array '(5 1) :initial-element 0))
+                    (let ((dots (make-array '(6 4) :initial-element 0))
                           (styles (make-array '(3 1) :initial-element nil)))
                       (ntop.ui::%draw-braille-line dots
                                                    styles
