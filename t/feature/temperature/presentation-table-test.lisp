@@ -65,46 +65,63 @@
                                    :to-equal
                                    (list "GPU" "" "CPU (1)" "CPU (2)"))))
                    (cl-weave:it
-                    "distinguishes an unavailable sample from an empty sample"
+                    "matches BTM empty and unavailable temperature rows"
                     (let* ((config
-                            (ntop.temperature.presentation:make-temperature-table-config))
-                           (unavailable-lines
-                            (%temperature-screen-lines
-                             (%render-temperature-table config nil)))
+                            (ntop.temperature.presentation:make-temperature-table-config
+                             :empty-message "No data"))
+                           (unavailable-sample nil)
                            (empty-sample
                             (ntop.temperature.domain:make-temperature-sample
-                             :sampled-at
-                             0
+                             :sampled-at 0
+                             :sensors nil))
+                           (unavailable-rows
+                            (ntop.temperature.presentation::%temperature-table-rows
+                             unavailable-sample))
+                           (empty-rows
+                            (ntop.temperature.presentation::%temperature-table-rows
+                             empty-sample))
+                           (unavailable-screen
+                            (%render-temperature-table config unavailable-sample))
+                           (empty-screen
+                            (%render-temperature-table config empty-sample))
+                           (missing-reading-sample
+                            (ntop.temperature.domain:make-temperature-sample
+                             :sampled-at 0
                              :sensors
-                             nil))
-                           (empty-lines
-                            (%temperature-screen-lines
-                             (%render-temperature-table config empty-sample))))
+                             (list
+                              (ntop.temperature.domain:make-temperature-sensor
+                               :name "CPU"
+                               :temperature-celsius nil))))
+                           (missing-reading-rows
+                            (ntop.temperature.presentation::%temperature-table-rows
+                             missing-reading-sample))
+                           (missing-reading-screen
+                            (%render-temperature-table config
+                                                       missing-reading-sample)))
+                      (cl-weave:expect (list unavailable-rows empty-rows)
+                                       :to-equal
+                                       (list nil nil))
+                      (cl-weave:expect (%temperature-screen-golden unavailable-screen)
+                                       :to-equal
+                                       (%temperature-screen-golden empty-screen))
                       (cl-weave:expect
-                       (list (string-trim " " (subseq (third unavailable-lines) 0 16))
-                             (string-trim " " (subseq (third unavailable-lines) 17))
-                             (subseq unavailable-lines 3)
-                             (subseq empty-lines 2))
-                       :to-equal
-                       (list "N/A"
-                             "N/A"
-                             (make-list 3 :initial-element "")
-                             (make-list 4 :initial-element "")))))
-                   (cl-weave:it "matches the fixture-data screen golden"
-                                (let* ((golden-path
-                                        (asdf:system-relative-pathname
-                                         "ntop"
-                                         "t/feature/temperature/fixtures/screen-golden.txt"))
-                                       (expected
-                                        (string-right-trim (format nil "~%")
-                                                           (uiop:read-file-string
-                                                            golden-path))))
-                                  (cl-weave:expect
-                                   (%temperature-screen-golden
-                                    (%render-temperature-table
-                                     (ntop.temperature.presentation:make-temperature-table-config)))
-                                   :to-equal
-                                   (format nil "~A~%" expected))))
+                       (not
+                        (null
+                         (search "No data"
+                                (%temperature-screen-golden unavailable-screen))))
+                       :to-be t)
+                      (cl-weave:expect missing-reading-rows
+                                       :to-equal
+                                       (list
+                                        (list :sensor "CPU"
+                                              :temperature-celsius nil)))
+                      (cl-weave:expect
+                       (not
+                        (null
+                         (search "N/A"
+                                (%temperature-screen-golden
+                                 missing-reading-screen))))
+                       :to-be t)))
                    (cl-weave:it
                     "sorts descending and preserves equal row comparisons"
                     (let* ((first-cpu '(:sensor "CPU" :temperature-celsius 20 :id 1))

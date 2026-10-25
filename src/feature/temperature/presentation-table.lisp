@@ -61,16 +61,15 @@
                              show-current-entry-when-unfocused-p))
 
 (defun %temperature-table-rows (sample)
-  (if sample
-      (loop for sensor-label in (ntop.temperature.domain:temperature-sensor-labels
-                                 (ntop.temperature.domain:temperature-sample-sensors
-                                  sample))
-            collect (list :sensor
-                          (cdr sensor-label)
-                          :temperature-celsius
-                          (ntop.temperature.domain:temperature-sensor-temperature-celsius
-                           (car sensor-label))))
-      (list (list :sensor "N/A" :temperature-celsius nil))))
+  (when sample
+    (loop for sensor-label in
+            (ntop.temperature.domain:temperature-sensor-labels
+             (ntop.temperature.domain:temperature-sample-sensors sample))
+          collect
+          (list :sensor (cdr sensor-label)
+                :temperature-celsius
+                (ntop.temperature.domain:temperature-sensor-temperature-celsius
+                 (car sensor-label))))))
 
 (defun %temperature-row-comparison (left right sort-column)
   (ecase sort-column

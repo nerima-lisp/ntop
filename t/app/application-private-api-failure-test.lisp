@@ -245,26 +245,17 @@
                       (position #\┐ title-line
                                 :start (+ title-position
                                           (length "Temperatures")))))
-               (header-line (and title-index (nth (1+ title-index) lines)))
-               (temperature-row
-                 (and title-index (nth (+ title-index 2) lines)))
-               (temperature-column-position
+               (empty-message-row
+                 (and title-index (nth (1+ title-index) lines)))
+               (empty-message-position
                  (and widget-left
                       widget-right
-                      header-line
-                      (search "Temp(t)" header-line
+                      empty-message-row
+                      (search "No data" empty-message-row
                               :start2 (1+ widget-left)
-                              :end2 widget-right)))
-               (temperature-value-position
-                 (and temperature-column-position
-                      temperature-row
-                      (search "N/A" temperature-row
-                              :start2 temperature-column-position
                               :end2 widget-right))))
-          (and temperature-column-position
-               temperature-value-position
-               (= temperature-column-position
-                  temperature-value-position)))
+          (and empty-message-position
+               (= empty-message-position (1+ widget-left))))
         :to-be t)
        (cl-weave:expect
         (not (null (search "fixture-worker" screen-text)))
