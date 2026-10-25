@@ -47,6 +47,29 @@
                         target-pids))
       (error "Every process signal target must be a positive PID integer."))
     (check-type signal-number integer)
-    (dolist (pid target-pids)
-      (sb-posix:kill pid signal-number))
-    t)
+    (let ((sent-count 0)
+          (target-count (length target-pids)))
+      (dolist (pid target-pids)
+        (handler-case
+            (progn
+              (sb-posix:kill pid signal-number)
+              (incf sent-count))
+          (sb-posix:syscall-error (condition)
+            (let* ((errno (sb-posix:syscall-errno condition))
+                   (message
+                    (cond
+                      ((= errno sb-posix:esrch)
+                       "the target process did not exist.")
+                      ((= errno sb-posix:eperm)
+                       (concatenate (quote string)
+                                    "the calling process does not have the permissions to "
+                                    "terminate the target process(es)."))
+                      ((= errno sb-posix:einval)
+                       "an invalid signal was specified.")
+                      (t "Unknown error occurred."))))
+              (if (> target-count 1)
+                  (error
+                   "PID ~D failed after successfully signaling ~D of ~D targets. Error code ~D - ~A"
+                   pid sent-count target-count errno message)
+                (error "Error code ~D - ~A" errno message))))))
+      t))

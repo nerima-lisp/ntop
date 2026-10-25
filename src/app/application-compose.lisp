@@ -354,16 +354,21 @@
   (defun make-application-composition
     (config &key on-action
                  (draw-screen
-                   (function ntop.app.presentation:draw-application-screen)))
+                   (function ntop.app.presentation:draw-application-screen))
+                 (process-signal-sender
+                   (function ntop.process.infrastructure:send-process-signal)))
   (check-type config ntop.shared.application:application-config)
   (unless (or (null on-action) (functionp on-action))
     (error "ON-ACTION must be a function or NIL."))
   (unless (functionp draw-screen)
     (error "DRAW-SCREEN must be a function."))
+  (unless (functionp process-signal-sender)
+    (error "PROCESS-SIGNAL-SENDER must be a function."))
   (let ((composition
           (%make-application-composition :config config
                                          :draw-screen draw-screen
-                                         :external-on-action on-action)))
+                                         :external-on-action on-action
+                                         :process-signal-sender process-signal-sender)))
     (setf (application-composition-render composition)
           (lambda (state current-config snapshot columns rows reasons
                    &optional current-time-unix-seconds)

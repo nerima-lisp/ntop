@@ -4,6 +4,7 @@
   config
   draw-screen
   external-on-action
+  process-signal-sender
   (history-stores (make-array 0 :adjustable t :fill-pointer 0))
   (history-index (make-hash-table :test (function equal)))
   (history-names (make-hash-table :test (function equal)))

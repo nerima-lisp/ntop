@@ -11,6 +11,7 @@
   termination-state
   process-name
   mode
+  error-message
   (selection-state (ntop.ui:make-table-state) :type ntop.ui:table-state))
 
 (defun %process-termination-mode (config)
@@ -450,11 +451,3 @@
                                           index)
              areas))))
       (nreverse areas))))
-
-(ntop.ui:define-widget :process-termination-dialog
-                       (target rectangle state config sample)
-                       (declare (ignore config))
-                       (%draw-process-termination-dialog target
-                                                         rectangle
-                                                         state
-                                                         sample))

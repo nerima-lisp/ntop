@@ -96,4 +96,5 @@
    #:move-process-termination-dialog-selection
    #:select-process-termination-dialog-choice
    #:confirm-process-termination-dialog
+   #:process-termination-dialog-state-error-message
    #:copy-process-termination-dialog-state))

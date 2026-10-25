@@ -141,6 +141,7 @@
    (:file "src/feature/process/presentation-search-render")
    (:file "src/feature/process/presentation-sort-menu")
    (:file "src/feature/process/presentation-termination-dialog")
+   (:file "src/feature/process/presentation-termination-error-dialog")
    (:file "src/app/infrastructure-clock")
    ;; WP13: platform collector assembly.
    (:file "src/app/infrastructure-collectors")
@@ -155,6 +156,7 @@
    (:file "src/app/presentation-screen")
    (:file "src/app/application-compose-process-selection")
    (:file "src/app/application-compose-dialogs")
+   (:file "src/app/application-compose-process-dialog-actions")
    (:file "src/app/application-compose-navigation")
    (:file "src/app/application-compose")
    ;; WP13: CLI option generation, configuration mapping, and process entry point.

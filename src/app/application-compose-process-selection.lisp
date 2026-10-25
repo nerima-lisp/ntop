@@ -155,3 +155,11 @@
              table-config
              (%process-row-navigation-viewport-height
               composition state config))))))))
+
+(defun %confirm-process-kill-dialog (composition dialog sample)
+  (nth-value
+   1
+   (ntop.process.presentation:confirm-process-termination-dialog
+    dialog sample
+    (application-composition-config composition)
+    (application-composition-process-signal-sender composition))))
