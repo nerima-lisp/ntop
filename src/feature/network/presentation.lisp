@@ -190,9 +190,10 @@
          (prefix-system (%network-prefix-system config))
          (unit (ntop.shared.application:application-config-data-unit config))
          (main
-          (if (and rate-value total-bits)
+          (if (and packets-visible rate-value total-bits)
               (ntop.ui:format-network-legend direction rate-value total-bits prefix-system unit)
-              (%network-partial-legend direction rate-value total-bits prefix-system unit)))
+              (%network-chart-legend-main direction rate-value total-bits prefix-system unit
+                                       packets-visible)))
          (packet-rate
           (and previous
                latest
@@ -214,22 +215,24 @@
                 (%network-average-packet-size-text average config))
         main)))
 
-(defun %network-partial-legend (direction rate total-bits prefix-system unit)
-  (format nil
-          "~A: ~A All: ~A"
-          direction
-          (ntop.ui::format-aligned
-           (if rate
-               (ntop.ui:format-network-rate rate prefix-system unit)
-               "N/A")
-           10
-           :left)
-          (ntop.ui::format-aligned
-           (if total-bits
-               (ntop.ui:format-network-total total-bits prefix-system)
-               "N/A")
-           8
-           :left)))
+(defun %network-chart-legend-main (direction rate total-bits prefix-system unit
+                                 &optional pad-total-p)
+  (let ((total-text
+          (if total-bits
+              (ntop.ui:format-network-total total-bits prefix-system)
+              "N/A")))
+    (format nil
+            "~A: ~A All: ~A"
+            direction
+            (ntop.ui::format-aligned
+             (if rate
+                 (ntop.ui:format-network-rate rate prefix-system unit)
+                 "N/A")
+             10
+             :left)
+            (if pad-total-p
+                (ntop.ui::format-aligned total-text 8 :left)
+                total-text))))
 
 (defun %network-average-packet-size-text (quantity config)
   (if (null quantity)

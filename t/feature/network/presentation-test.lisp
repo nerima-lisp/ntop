@@ -71,7 +71,7 @@
                                         :to-be
                                         t)))
                    (cl-weave:it
-  "uses the shared linear axis formatter and network legend constraints"
+  "uses shared chart axes and matches BTM legend formatting"
   (let* ((rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 80 :height 20))
          (latest (aref (%f4-network-presentation-samples) 1))
          (config (ntop.shared.application:make-application-config))
@@ -79,14 +79,26 @@
            (ntop.network.presentation::%network-chart-config rectangle
                                                              latest
                                                              2000d0
-                                                             config)))
+                                                             config))
+         (packet-legend
+           (ntop.network.presentation::%network-legend-name
+            "RX" nil 1024 nil nil :rx t config)))
     (cl-weave:expect
      (list (ntop.ui:chart-config-y-scale chart-config)
            (ntop.ui:chart-config-y-max chart-config)
            (ntop.ui:chart-config-legend-width-ratio chart-config)
            (ntop.ui:chart-config-legend-height-ratio chart-config))
      :to-equal
-     (quote (:linear 3000d0 9/10 3/4)))))
+     (quote (:linear 3000d0 9/10 3/4)))
+    (cl-weave:expect
+     (ntop.network.presentation::%network-legend-name
+      "RX" nil 1024 nil nil :rx nil config)
+     :to-equal
+     "RX: N/A        All: 1.0KB")
+    (cl-weave:expect
+     (not (null (search "All: 1.0KB    Packets:" packet-legend)))
+     :to-be
+     t)))
                    (cl-weave:it-each
                     ((:decimal-below 999999d0 nil 6d0 :log10)
                      (:decimal-edge 1000000d0 nil 9d0 :log10)
@@ -251,7 +263,7 @@
      (quote (1d0 9/10 3/4)))
     (cl-weave:expect
      (list (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 1 0))
-           (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 21 2)))
+           (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 24 2)))
      :to-equal
      (list (ntop.ui:presentation-theme-style :default :widget-title)
            (ntop.ui:presentation-theme-style :default :rx)))))

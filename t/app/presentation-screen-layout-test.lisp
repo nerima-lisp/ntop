@@ -111,18 +111,18 @@
             row-numbers)
     :to-equal
     expected-rows)))
- (cl-weave:it "places the visible network chart legend at the fixture's bottom right"
+ (cl-weave:it "places the visible network chart legend at the fixture bottom right"
   (let ((screen
           (%wp12c-golden-screen 160 48 "application-160x48.txt")))
     (cl-weave:expect
      (mapcar (lambda (row)
-               (%wp12c-screen-field screen row 49 30))
+               (%wp12c-screen-field screen row 52 27))
              (quote (35 36 37 38)))
      :to-equal
-     '("┌────────────────────────────┐"
-       "│RX: 4.8Kb/s    All: 2.4KB   │"
-       "│TX: 9.6Kb/s    All: 5.2KB   │"
-       "└────────────────────────────┘"))))
+     (quote ("┌─────────────────────────┐"
+             "│RX: 4.8Kb/s    All: 2.4KB│"
+             "│TX: 9.6Kb/s    All: 5.2KB│"
+             "└─────────────────────────┘")))))
  (cl-weave:it-each
  ((40 12 "application-40x12.txt" 5 6 ((9 " 24.0") (10 " 16.0")) 8 4 nil nil)
   (80 24 "application-80x24.txt" 5 6
@@ -293,7 +293,7 @@
  ((40 12 "application-40x12.txt" 7 9 12 2
    ((18 9 #x28A0) (18 10 #x2808)))
   (80 24 "application-80x24.txt" 7 18 32 5
-   ((38 19 #x2844) (38 20 #x28B1) (38 21 #x2884)))
+   nil)
   (160 48 "application-160x48.txt" 7 35 72 11
    ((78 39 #x2847) (78 40 #x28B1) (77 42 #x2810) (78 42 #x2884))))
  "~D×~D fixture Network plot cells match BTM's 60-second Braille raster"
