@@ -3,6 +3,144 @@
 (defparameter *missing-option-value*
   (gensym "MISSING"))
 
+(defparameter *default-config-text*
+  (uiop:read-file-string
+   (asdf:system-relative-pathname "ntop" "src/cli/default-config.toml")))
+
+(progn
+  (sb-alien:define-alien-routine ("close" %config-close) sb-alien:int (fd sb-alien:int))
+  (sb-alien:define-alien-routine ("mkdirat" %config-mkdirat) sb-alien:int
+    (directory-fd sb-alien:int) (path sb-alien:c-string) (mode sb-alien:unsigned-int))
+  (sb-alien:define-alien-routine ("openat" %config-openat) sb-alien:int
+    (directory-fd sb-alien:int) (path sb-alien:c-string) (flags sb-alien:int)
+    (mode sb-alien:unsigned-int))
+(defun %config-location-status (path)
+  (labels ((component-name (component)
+             (if (eq component :up) ".." component))
+           (directory-prefix (absolute components count)
+             (if (zerop count)
+                 (if absolute #P"/" #P"./")
+                 (make-pathname :directory
+                                (cons (if absolute :absolute :relative)
+                                      (subseq components 0 count))
+                                :name nil
+                                :type nil)))
+           (path-parts (path)
+             (when (and (stringp path) (not (find #\Null path)))
+               (let* ((pathname (pathname path))
+                      (leaf (file-namestring pathname))
+                      (directory (pathname-directory pathname))
+                      (absolute (and directory (eq (first directory) :absolute)))
+                      (components
+                        (if (member (first directory) '(:absolute :relative))
+                            (rest directory)
+                            directory)))
+                 (when (and (plusp (length leaf))
+                            (not (member leaf '("." "..") :test #'string=))
+                            (not (wild-pathname-p pathname))
+                            (every (lambda (component)
+                                     (or (stringp component) (eq component :up)))
+                                   components))
+                   (loop for count downfrom (length components) to 0
+                         for candidate = (directory-prefix absolute components count)
+                         when (probe-file candidate)
+                           do (let* ((resolved (truename candidate))
+                                     (resolved-components
+                                       (rest (pathname-directory resolved))))
+                                (return-from path-parts
+                                  (values t
+                                          (mapcar #'component-name resolved-components)
+                                          (mapcar #'component-name
+                                                  (subseq components count))
+                                          leaf))))))
+             (values nil nil nil nil))) (open-directory-chain (components)
+             (block open-directory-chain
+               (let ((directory-fd
+                     (sb-posix:open "/"
+                                    (logior sb-posix:o-rdonly sb-posix:o-directory))))
+               (unless (and (integerp directory-fd) (>= directory-fd 0))
+                 (return-from open-directory-chain nil))
+               (unwind-protect
+                    (progn
+                      (dolist (component components)
+                        (unless (member component '("" ".") :test #'string=)
+                          (let ((next-fd
+                                  (%config-openat
+                                   directory-fd component
+                                   (logior sb-posix:o-rdonly
+                                           sb-posix:o-directory
+                                           sb-posix:o-nofollow)
+                                   0)))
+                            (when (= next-fd -1)
+                              (%config-mkdirat directory-fd component #o777)
+                              (setf next-fd
+                                    (%config-openat
+                                     directory-fd component
+                                     (logior sb-posix:o-rdonly
+                                             sb-posix:o-directory
+                                             sb-posix:o-nofollow)
+                                     0)))
+                            (when (= next-fd -1)
+                              (return-from open-directory-chain nil))
+                            (%config-close directory-fd)
+                            (setf directory-fd next-fd))))
+                      (prog1 directory-fd
+                        (setf directory-fd nil)))
+                 (when directory-fd
+                   (%config-close directory-fd)))))) (write-default-config (fd mask)
+  (let ((stream nil))
+    (unwind-protect
+         (when (zerop (sb-posix:fchmod fd (logand #o666 (lognot mask))))
+           (setf stream
+                 (sb-sys:make-fd-stream
+                  fd :output t :element-type 'character
+                  :external-format :utf-8))
+           (write-string *default-config-text* stream)
+           (finish-output stream)
+           t)
+      (if stream
+          (ignore-errors (close stream))
+          (ignore-errors (%config-close fd)))))) (existing-file-startable-p (directory-fd leaf)
+  (labels ((open-file-p (access-flag permission-mask)
+             (let ((fd
+                     (%config-openat
+                      directory-fd leaf
+                      (logior access-flag sb-posix:o-nofollow sb-posix:o-nonblock)
+                      0)))
+               (when (>= fd 0)
+                 (unwind-protect
+                      (let ((mode (sb-posix:stat-mode (sb-posix:fstat fd))))
+                        (and (sb-posix:s-isreg mode)
+                             (not (zerop (logand mode permission-mask)))))
+                   (%config-close fd))))))
+    (or (open-file-p sb-posix:o-rdonly #o444)
+        (open-file-p sb-posix:o-wronly #o222)))))
+    (handler-case
+        (multiple-value-bind (valid prefix missing leaf) (path-parts path)
+          (unless valid
+            (return-from %config-location-status 1))
+          (let ((directory-fd (open-directory-chain (append prefix missing))))
+            (unless directory-fd
+              (return-from %config-location-status 1))
+            (unwind-protect
+  (let ((mask (sb-posix:umask #o777))
+        (fd nil))
+    ;; Config creation runs before the application starts worker threads.
+    (unwind-protect
+         (setf fd
+               (%config-openat
+                directory-fd leaf
+                (logior sb-posix:o-creat sb-posix:o-excl
+                        sb-posix:o-wronly sb-posix:o-nofollow)
+                0))
+      (sb-posix:umask mask))
+    (if (>= fd 0)
+        (if (write-default-config fd mask) 0 1)
+        (if (existing-file-startable-p directory-fd leaf) 0 1)))
+  (%config-close directory-fd))))
+      (error () 1))))
+)
+
 (defparameter *boolean-config-bindings*
   '(("autohide_time" . :auto-hide-time-p) ("basic" . :basic-p)
     ("disable_click" . :disable-click-p)
@@ -40,7 +178,8 @@
 (defun %option-value (invocation entry)
   (cl-cli:option-value invocation
                        (intern
-                        (string-upcase (ntop.app.domain:parity-flag-snake-case entry))
+                        (string-upcase
+                         (ntop.app.domain:parity-flag-snake-case entry))
                         :keyword)
                        *missing-option-value*))
 
@@ -69,10 +208,15 @@
                           :test
                           #'string-equal)))
            (ntop.app.domain:btm-parity-catalog)))
-         (memory-as-value (%provided-name-p invocation "process_memory_as_value"))
+         (memory-as-value
+          (%provided-name-p invocation "process_memory_as_value"))
          (column
-          (if (and (member value '("mem" "mem%" "memory" "memory%") :test #'string-equal)
-                   (> (length columns) 1))
+          (if (and
+               (member value
+                       '("mem" "mem%" "memory" "memory%")
+                       :test
+                       #'string-equal)
+               (> (length columns) 1))
               (find
                (if memory-as-value
                    "MemValue"
@@ -102,7 +246,8 @@
           ((string= field "Time") :runtime-seconds)
           ((string= field "Nice") :nice)
           ((string= field "Priority") :priority)
-          ((member field '("GpuMemValue" "GpuMemPercent") :test #'string=) :gpu-memory)
+          ((member field '("GpuMemValue" "GpuMemPercent") :test #'string=)
+           :gpu-memory)
           ((string= field "GpuUtilPercent") :gpu-usage-percent))))))
 
 (defparameter *duration-units*
@@ -158,7 +303,12 @@
    (lambda (unit)
      (let ((name (car unit)))
        (and (<= (+ position (length name)) (length text))
-            (string-equal name text :start2 position :end2 (+ position (length name))))))
+            (string-equal name
+                          text
+                          :start2
+                          position
+                          :end2
+                          (+ position (length name))))))
    *duration-units*))
 
 (defun %parse-duration-ms (text)
@@ -226,7 +376,8 @@
     ((string-equal value "cpu") :cpu)
     ((member value '("mem" "memory") :test #'string-equal) :memory)
     ((member value '("net" "network") :test #'string-equal) :network)
-    ((member value '("proc" "process" "processes") :test #'string-equal) :process)
+    ((member value '("proc" "process" "processes") :test #'string-equal)
+     :process)
     ((member value '("temp" "temperature") :test #'string-equal) :temperature)
     ((string-equal value "disk") :disk)
     ((member value '("batt" "battery") :test #'string-equal) :battery)))
@@ -252,14 +403,21 @@
       (return-from %config-binding
         (values (cdr boolean-binding) value 0))))
   (cond
-    ((member name '("default_time_value" "rate" "retention" "time_delta") :test #'string=)
-     (%duration-config-binding name value))
-    ((string= name "default_widget_count") (values :default-widget-count value 0))
+    ((member name
+             '("default_time_value" "rate" "retention" "time_delta")
+             :test
+             #'string=) (%duration-config-binding name value))
+    ((string= name "default_widget_count")
+     (values :default-widget-count value 0))
     ((string= name "default_widget_type")
      (values :default-widget-type (%widget-type-value value) 0))
     ((string= name "process_default_sort")
      (let ((sort-key (%column-sort-key value invocation)))
-       (values :process-sort-column sort-key (if sort-key 0 1))))
+       (values :process-sort-column
+               sort-key
+               (if sort-key
+                   0
+                   1))))
     ((string= name "default_cpu_entry")
      (values :default-cpu-entry
              (if (member value '("avg" "average") :test #'string-equal)
@@ -277,14 +435,12 @@
     ((member name '("celsius" "fahrenheit" "kelvin") :test #'string=)
      (multiple-value-bind (unit status) (%temperature-value invocation)
        (values :temperature-unit unit status)))
-    ((string= name "theme") (values :theme (intern (string-upcase value) :keyword) 0))
-    ((string= name "config_location") (values nil nil 2))
+    ((string= name "theme")
+     (values :theme (intern (string-upcase value) :keyword) 0))
+    ((string= name "config_location") (values nil nil 0))
     (t (values nil nil 0))))
 
 (defun %config-from-invocation (invocation)
-  (when (%provided-name-p invocation "config_location")
-    (return-from %config-from-invocation
-      (values nil 2)))
   (when
       (and (%provided-name-p invocation "hide_k_threads")
            (not (member :linux *features*)))
@@ -312,4 +468,12 @@
               (values nil code)))
           (when key
             (setf initargs (append initargs (list key value)))))))
-    (values (apply #'ntop.shared.application:make-application-config initargs) 0)))
+    (when (%provided-name-p invocation "config_location")
+      (let ((status
+              (%config-location-status
+               (cl-cli:option-value invocation :config_location))))
+        (unless (zerop status)
+          (return-from %config-from-invocation
+            (values nil status)))))
+    (values (apply #'ntop.shared.application:make-application-config initargs)
+            0)))
