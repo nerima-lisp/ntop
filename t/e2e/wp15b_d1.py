@@ -27,7 +27,7 @@ RATE_MS, TARGET_BPS = 700, 1_000_000
 SAMPLE_LIMIT, MAX_SECONDS, QUIET_SECONDS = 20, 90, 0.25
 WRITER_TOKEN = "WP15B_D1_WRITER"
 RATE_TOKEN = re.compile(
-    r"(?<![\w.])(N/A|\d+(?:\.\d+)?(?:[KMGT]B)?/s)(?![\w])", re.I
+    r"(?<![\w.])(N/A|\d+(?:\.\d+)?(?:[KMGT]?B)?/s)(?![\w])", re.I
 )
 
 
@@ -265,8 +265,6 @@ def displayed_writer_rate(grid, writer_pid):
     writer_row = writer_rows[0]
     evidence["writer_row"] = writer_row
     evidence["writer_command_token_found"] = WRITER_TOKEN in writer_row
-    if not evidence["writer_command_token_found"]:
-        return None, "writer-command-unmatched", evidence
 
     values = RATE_TOKEN.findall(writer_row)
     evidence["rate_values"] = values
@@ -296,7 +294,7 @@ def collect_samples(ntop_child, writer, raw_dir, started):
     samples, observations = [], []
     transcript = bytearray()
     last_output = None
-    last_evaluated = None
+    last_sample_at = None
     last_signature = None
     pid_filter_sent = False
     deadline = started + MAX_SECONDS
@@ -309,7 +307,13 @@ def collect_samples(ntop_child, writer, raw_dir, started):
             now = time.monotonic()
             timeout = min(0.1, max(0.0, deadline - now))
             if last_output is not None:
-                timeout = min(timeout, max(0.0, last_output + QUIET_SECONDS - now))
+                quiet_at = last_output + QUIET_SECONDS
+                if now < quiet_at:
+                    timeout = min(timeout, quiet_at - now)
+            if last_sample_at is not None:
+                sample_at = last_sample_at + RATE_MS / 1000
+                if now < sample_at:
+                    timeout = min(timeout, sample_at - now)
             readable, _, _ = select.select([ntop_child.fd], [], [], timeout)
             if readable:
                 try:
@@ -327,10 +331,12 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                     break
                 continue
             now = time.monotonic()
-            if (last_output is None or now - last_output < QUIET_SECONDS
-                    or last_output == last_evaluated):
+            if last_output is None or now - last_output < QUIET_SECONDS:
                 continue
-            last_evaluated = last_output
+            if (last_sample_at is not None
+                    and now - last_sample_at < RATE_MS / 1000):
+                continue
+            last_sample_at = now
             grid = TerminalGrid(ROWS, COLUMNS)
             if not grid.feed(bytes(transcript)):
                 observations.append({
@@ -338,18 +344,19 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                     "valid": False,
                     "reason": "ansi-grid-invalid",
                     "writer_pid": writer.pid,
+                    "terminal_frame_repeated": None,
                     "load_average": load_average(),
                 })
                 continue
             signature = grid.signature()
-            if signature == last_signature:
-                continue
+            terminal_frame_repeated = signature == last_signature
             last_signature = signature
             rate, reason, detail = displayed_writer_rate(grid, writer.pid)
             observation = {
                 "elapsed_seconds": now - started,
                 "valid": rate is not None,
                 "writer_pid": writer.pid,
+                "terminal_frame_repeated": terminal_frame_repeated,
                 "process_header": detail.get("process_header"),
                 "visible_process_rows": detail.get("visible_process_rows"),
                 "writer_command_token_found": detail.get(
