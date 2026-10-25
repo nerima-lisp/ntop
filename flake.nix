@@ -223,7 +223,11 @@
           clParserKit
         ];
 
-      lispCheckDependencies = ctx: with siblingsFor ctx; [ clWeave clJsonKit ];
+      lispCheckDependencies =
+        ctx: with siblingsFor ctx; [
+          clWeave
+          clJsonKit
+        ];
 
       extraOutputs =
         ctx:
