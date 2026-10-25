@@ -184,8 +184,15 @@
         (let ((processes (ntop.process.domain:process-sample-processes sample))
               (signals (ntop.process.domain:process-sample-signals sample)))
           (cl-weave:expect (plusp (length processes)) :to-be t)
-          (cl-weave:expect (%f8a-darwin-record sample (sb-posix:getpid))
-                           :to-be-truthy)
+          (cl-weave:expect
+           (let* ((pid (sb-posix:getpid))
+                  (record (%f8a-darwin-record sample pid)))
+             (and record
+                  (eq record
+                      (gethash
+                       pid
+                       (ntop.process.domain::process-sample-pid-index sample)))))
+           :to-be t)
           (cl-weave:expect (length signals) :to-be 31)
           (cl-weave:expect
            (ntop.process.domain:process-signal-operating-system (first signals))
@@ -385,40 +392,30 @@
 (cl-weave:describe
  "Darwin process fallback error paths"
  (cl-weave:it
-  "handles empty, malformed, and rejected ps CPU fallback output"
+  "filters command capture to current-user rows and keeps ps fallbacks"
   (multiple-value-bind (values reason)
       (ntop.process.infrastructure::%darwin-ps-cpu-values nil)
     (cl-weave:expect (hash-table-p values) :to-be t)
     (cl-weave:expect (hash-table-count values) :to-be 0)
     (cl-weave:expect reason :to-be-null))
-  (let* ((stdout
-           (format nil
-                   "41 2.5~%not-a-pid 3.0~%42 12.5 trailing~%43 nope~%44 4.0 extra columns~%"))
-         (success
-           (host-kit::make-process-result
-            :program "/bin/ps" :arguments nil :exit-code 0 :signal nil
-            :stdout stdout :stderr ""
-            :timed-out-p nil :stdout-truncated-p nil :stderr-truncated-p nil))
-         (exit-failure
-           (host-kit::make-process-result
-            :program "/bin/ps" :arguments nil :exit-code 1 :signal nil
-            :stdout "" :stderr ""
-            :timed-out-p nil :stdout-truncated-p nil :stderr-truncated-p nil))
-         (timeout-failure
-           (host-kit::make-process-result
-            :program "/bin/ps" :arguments nil :exit-code 0 :signal nil
-            :stdout "" :stderr ""
-            :timed-out-p t :stdout-truncated-p nil :stderr-truncated-p nil))
-         (stdout-failure
-           (host-kit::make-process-result
-            :program "/bin/ps" :arguments nil :exit-code 0 :signal nil
-            :stdout "" :stderr ""
-            :timed-out-p nil :stdout-truncated-p t :stderr-truncated-p nil))
-         (stderr-failure
-           (host-kit::make-process-result
-            :program "/bin/ps" :arguments nil :exit-code 0 :signal nil
-            :stdout "" :stderr ""
-            :timed-out-p nil :stdout-truncated-p nil :stderr-truncated-p t))
+  (cl-weave:expect
+   (nth-value 1
+              (ntop.process.infrastructure::%darwin-space-fields
+               "41 2.5 7 /usr/bin/worker --flag value"))
+   :to-be 9)
+  (let* ((own-uid (sb-posix:getuid))
+         (other-uid (if (zerop own-uid) 1 0))
+         (rows (list (list :pid 41 :ruid own-uid) (list :pid 42 :ruid other-uid)
+                     (list :pid 43 :ruid other-uid) (list :pid 44 :ruid other-uid)))
+         (stdout
+           (format nil "~{~A~%~}" '("41 2.5 7 /usr/bin/worker --flag value"
+                                    "42 nope 6 /bad" "43 4.0 invalid /bad"
+                                    "44 8.5 10 /usr/bin/other --flag")))
+         (success (host-kit::make-process-result :exit-code 0 :stdout stdout))
+         (exit-failure (host-kit::make-process-result :exit-code 1))
+         (timeout-failure (host-kit::make-process-result :exit-code 0 :timed-out-p t))
+         (stdout-failure (host-kit::make-process-result :exit-code 0 :stdout-truncated-p t))
+         (stderr-failure (host-kit::make-process-result :exit-code 0 :stderr-truncated-p t))
          (mode :success))
     (cl-weave:with-mocked-functions
      (((symbol-function 'host-kit:run-program)
@@ -432,24 +429,29 @@
            (:stderr-truncated stderr-failure)
            (otherwise success)))))
      (multiple-value-bind (values reason)
-         (ntop.process.infrastructure::%darwin-ps-cpu-values '(41 42 43 44))
+         (ntop.process.infrastructure::%darwin-ps-cpu-values rows)
        (cl-weave:expect reason :to-be-null)
-       (cl-weave:expect (gethash 41 values) :to-be 2.5d0)
+       (cl-weave:expect
+        (ntop.process.domain:process-record-command
+         (ntop.process.infrastructure::%darwin-process-record '(:pid 41) values))
+        :to-equal "/usr/bin/worker --flag value")
        (cl-weave:expect (gethash 42 values) :to-be-null)
-       (cl-weave:expect (gethash 43 values) :to-be-null)
-       (cl-weave:expect
-        (ntop.process.infrastructure::%darwin-ps-number "12.5 trailing")
-        :to-be-null)
-       (cl-weave:expect
-        (ntop.process.infrastructure::%darwin-ps-number "nope")
-        :to-be-null))
+       (cl-weave:expect (getf (gethash 43 values) :cpu) :to-be 4d0)
+       (cl-weave:expect (getf (gethash 43 values) :priority) :to-be-null)
+       (let ((record
+               (ntop.process.infrastructure::%darwin-process-record
+                '(:pid 44) values)))
+         (cl-weave:expect
+          (list (ntop.process.domain:process-record-command record)
+                (ntop.process.domain:process-record-priority record)
+                (ntop.process.domain:process-record-ps-fallback-cpu-percent record))
+          :to-equal '(nil 10 8.5d0))))
      (dolist (bad-mode
               '(:exit :timeout :stdout-truncated :stderr-truncated :raise))
        (setf mode bad-mode)
        (multiple-value-bind (values reason)
-           (ntop.process.infrastructure::%darwin-ps-cpu-values '(41))
-         (cl-weave:expect values :to-be-null)
-         (cl-weave:expect reason :to-be :read-failed))))))
+           (ntop.process.infrastructure::%darwin-ps-cpu-values rows)
+         (cl-weave:expect (and (null values) (eq reason :read-failed)) :to-be t))))))
  (cl-weave:it
   "uses a numeric user name when lookup misses or errors"
   (let ((fail-lookup nil))
@@ -470,6 +472,23 @@
      (cl-weave:expect
       (ntop.process.infrastructure::%darwin-user-name "4242")
       :to-be-null))))
+ (cl-weave:it
+ "omits command output from ps when command display is disabled"
+ (let* ((rows (list (list :pid 41 :ruid (sb-posix:getuid))))
+        (stdout (format nil "41 2.5 7~%"))
+        (success (host-kit::make-process-result :exit-code 0 :stdout stdout)))
+   (cl-weave:with-mocked-functions
+    (((symbol-function (quote host-kit:run-program))
+      (lambda (&rest arguments)
+        (cl-weave:expect (third (second arguments))
+         :to-equal "pid=,pcpu=,pri=")
+        success)))
+    (multiple-value-bind (values reason)
+        (ntop.process.infrastructure::%darwin-ps-cpu-values rows nil)
+      (cl-weave:expect reason :to-be-null)
+      (cl-weave:expect (getf (gethash 41 values) :cpu) :to-be 2.5d0)
+      (cl-weave:expect (getf (gethash 41 values) :priority) :to-be 7)
+      (cl-weave:expect (getf (gethash 41 values) :command) :to-be-null)))))
 )
 
 )

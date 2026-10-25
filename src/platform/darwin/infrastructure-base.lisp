@@ -174,6 +174,15 @@
     (argument sb-alien:int)))
 
 #+darwin
+(declaim (inline %sysctl-result-octets))
+
+#+darwin
+(defun %sysctl-result-octets (buffer result-length)
+  (if (= result-length (length buffer))
+      buffer
+      (subseq buffer 0 result-length)))
+
+#+darwin
 (defun %read-sysctl (query on-value on-error)
   (sb-alien:with-alien ((length sb-alien:unsigned-long 0))
     (let ((status (funcall query (sb-sys:int-sap 0) (sb-alien:addr length))))
@@ -197,7 +206,7 @@
           ((> length capacity)
            (funcall on-error (list :sysctl-buffer-grew capacity length)))
           (t
-           (funcall on-value (subseq buffer 0 length))))))))
+           (funcall on-value (%sysctl-result-octets buffer length))))))))
 
 #+darwin
 (defun sysctl-read-by-name (name on-value on-error)
@@ -209,19 +218,19 @@
 
 #+darwin
 (defun sysctl-read-mib (mib on-value on-error)
-  (let ((codes (coerce mib 'vector)))
-    (when (zerop (length codes))
+  (let ((code-count (length mib)))
+    (when (zerop code-count)
       (error "A sysctl MIB must contain at least one integer."))
-    (let ((storage (sb-alien:make-alien sb-alien:int (length codes))))
+    (let ((storage (sb-alien:make-alien sb-alien:int code-count)))
       (unwind-protect
            (progn
-             (loop for code across codes
-                   for index from 0
+             (loop for index below code-count
+                   for code = (elt mib index)
                    do (check-type code (signed-byte 32))
                       (setf (sb-alien:deref storage index) code))
              (%read-sysctl
               (lambda (old-value old-length)
-                (%sysctl storage (length codes) old-value old-length
+                (%sysctl storage code-count old-value old-length
                          (sb-sys:int-sap 0) 0))
               on-value
               on-error))

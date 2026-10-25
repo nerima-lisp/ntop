@@ -201,6 +201,35 @@
                                                               1
                                                               2))))
                      (cl-weave:it-run-if (member :darwin *features*)
+                                         "returns exact buffers and slices short results"
+                                         (let* ((buffer (make-array 3
+                                                                    :element-type '(unsigned-byte 8)
+                                                                    :initial-contents '(7 8 9)))
+                                                (result
+                                                  (ntop.platform.darwin::%sysctl-result-octets
+                                                   buffer
+                                                   3)))
+                                           (cl-weave:expect (eq result buffer) :to-be t))
+                                         (let* ((buffer (make-array 3
+                                                                    :element-type '(unsigned-byte 8)
+                                                                    :initial-contents '(7 8 9)))
+                                                (result
+                                                  (ntop.platform.darwin::%sysctl-result-octets
+                                                   buffer
+                                                   2)))
+                                           (cl-weave:expect (eq result buffer) :to-be nil)
+                                           (cl-weave:expect (length result) :to-be 2)
+                                           (cl-weave:expect (equalp result #(7 8)) :to-be t))
+                                         (let* ((buffer (make-array 1
+                                                                    :element-type '(unsigned-byte 8)
+                                                                    :initial-contents '(0)))
+                                                (result
+                                                  (ntop.platform.darwin::%sysctl-result-octets
+                                                   buffer
+                                                   0)))
+                                           (cl-weave:expect (length result) :to-be 0)
+                                           (cl-weave:expect (equalp result #()) :to-be t)))
+                     (cl-weave:it-run-if (member :darwin *features*)
                                          "reports width mismatches and reads sysctl strings"
                                          (let ((reason nil)
                                                (signed-value nil)

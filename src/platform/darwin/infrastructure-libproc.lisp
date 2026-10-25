@@ -181,17 +181,37 @@
     (unless path-end
       (error "A KERN_PROCARGS2 path must be NUL-terminated."))
     (let ((path (%darwin-process-string octets 4 (- path-end 4)))
-          (start (1+ path-end))
-          (arguments nil))
+          (start (1+ path-end)))
       (loop while (and (< start (length octets)) (zerop (aref octets start)))
             do (incf start))
-      (loop repeat argc
-            for end = (or (position 0 octets :start start)
-                          (error "A KERN_PROCARGS2 argument is truncated."))
-            do (push (%darwin-process-string octets start (- end start))
-                     arguments)
-               (setf start (1+ end)))
-      (if arguments (format nil "~{~A~^ ~}" (nreverse arguments)) path))))
+      (if (zerop argc)
+          path
+          (let ((total-length (1- argc))
+                (cursor start))
+            (loop repeat argc
+                  for end = (or (position 0 octets :start cursor)
+                                (error "A KERN_PROCARGS2 argument is truncated."))
+                  do (incf total-length (- end cursor))
+                     (setf cursor (1+ end)))
+            (let ((arguments
+                    (make-array total-length
+                                :element-type '(unsigned-byte 8)))
+                  (output-index 0))
+              (setf cursor start)
+              (loop for argument-index below argc
+                    for end = (or (position 0 octets :start cursor)
+                                  (error "A KERN_PROCARGS2 argument is truncated."))
+                    do (when (plusp argument-index)
+                         (setf (aref arguments output-index) 32)
+                         (incf output-index))
+                       (replace arguments octets
+                                :start1 output-index
+                                :start2 cursor
+                                :end2 end)
+                       (incf output-index (- end cursor))
+                       (setf cursor (1+ end)))
+              (decode-c-string arguments))))))
+)
   #+darwin
   (eval-when (:load-toplevel :execute)
     (sb-alien:load-shared-object "/usr/lib/libproc.dylib"))
@@ -261,11 +281,10 @@
       (error () nil)))
   #+darwin
 (defun %darwin-info-decoded (pid flavor size decoder &optional (argument 0))
-  (let ((octets (%darwin-try
-                 (lambda ()
-                   (%darwin-info pid flavor size t argument)))))
-    (and octets
-         (%darwin-try (lambda () (funcall decoder octets))))))
+  (handler-case
+      (let ((octets (%darwin-info pid flavor size t argument)))
+        (and octets (funcall decoder octets)))
+    (error () nil)))
   #+darwin
 (defun %darwin-metadata (pid)
   (let* ((layout +darwin-process-layout+)
@@ -274,35 +293,33 @@
             pid (getf layout :proc-pidinfo-bsdinfo)
             (getf layout :bsdinfo-size) #'decode-darwin-proc-bsdinfo))
          (kernel-octets
-           (%darwin-try
-            (lambda ()
-              (%darwin-sysctl
-               (list (getf layout :sysctl-kern)
-                     (getf layout :sysctl-proc)
-                     (getf layout :sysctl-proc-pid)
-                     pid)))))
+           (unless bsd
+             (%darwin-try
+              (lambda ()
+                (%darwin-sysctl
+                 (list (getf layout :sysctl-kern)
+                       (getf layout :sysctl-proc)
+                       (getf layout :sysctl-proc-pid)
+                       pid))))))
          (kernel
            (and kernel-octets
                 (= (length kernel-octets) (getf layout :kinfo-size))
                 (%darwin-try
                  (lambda () (decode-darwin-kinfo-proc kernel-octets))))))
-    (if bsd
-        (progn
-          (setf (getf bsd :priority) (getf kernel :priority))
-          bsd)
-        kernel)))
+    (or bsd kernel)))
   #+darwin
 (defun %darwin-command-line (pid)
   (let* ((layout +darwin-process-layout+)
          (octets
-           (%darwin-try
-            (lambda ()
-              (%darwin-sysctl
-               (list (getf layout :sysctl-kern)
-                     (getf layout :sysctl-procargs2)
-                     pid))))))
+           (handler-case
+               (%darwin-sysctl
+                (list (getf layout :sysctl-kern)
+                      (getf layout :sysctl-procargs2)
+                      pid))
+             (error () nil))))
     (and octets
-         (%darwin-try (lambda () (decode-darwin-procargs2 octets))))))
+         (handler-case (decode-darwin-procargs2 octets)
+           (error () nil)))))
   #+darwin
 (progn
   (defun %darwin-thread-ids (pid)
@@ -341,12 +358,11 @@
                            (getf +darwin-process-layout+ :taskallinfo-size)
                            #'decode-darwin-taskallinfo)))
                (usage (and own-p
-                           (%darwin-try
-                            (lambda ()
-                              (let ((bytes (%darwin-rusage pid)))
-                                (and bytes
-                                     (decode-darwin-rusage-info bytes)))))))
-               (command (and own-p (%darwin-command-line pid)))
+                           (handler-case
+                               (let ((bytes (%darwin-rusage pid)))
+                                 (and bytes
+                                      (decode-darwin-rusage-info bytes)))
+                             (error () nil))))
                (threads (and own-p include-threads-p
                              (%darwin-thread-rows pid))))
           (list :pid (getf metadata :pid)
@@ -368,7 +384,7 @@
                 :virtual-memory-bytes (getf task :virtual-memory-bytes)
                 :read-bytes (getf usage :read-bytes)
                 :write-bytes (getf usage :write-bytes)
-                :command command
+                :command nil
                 :threads threads))))))
   #+darwin
 (defun read-darwin-process-rows (on-value on-unavailable
@@ -379,13 +395,14 @@
     (if failure
         (funcall on-unavailable failure)
         (let ((real-uid (sb-posix:getuid)))
-          (funcall on-value
-                   (loop for pid in pids
-                         for row = (%darwin-try
-                                    (lambda ()
-                                      (%darwin-process-row
-                                       pid real-uid include-threads-p)))
-                         when row collect row))))))
+          (funcall
+           on-value
+           (loop for pid in pids
+                 for row =
+                   (handler-case
+                       (%darwin-process-row pid real-uid include-threads-p)
+                     (error () nil))
+                 when row collect row))))))
   #-darwin
   (defun read-darwin-process-rows (on-value on-unavailable
                                    &key include-threads-p)

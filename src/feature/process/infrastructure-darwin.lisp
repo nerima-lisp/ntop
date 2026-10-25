@@ -16,20 +16,27 @@
                    :name name
                    :number number)))
 
-  (defun %darwin-space-fields (line)
-    (let ((fields nil)
-          (start nil))
-      (loop for index from 0 to (length line)
-            for separator = (or (= index (length line))
-                                (find (char line index)
-                                      '(#\Space #\Tab #\Return)))
-            do (cond
-                 ((and separator start)
-                  (push (subseq line start index) fields)
-                  (setf start nil))
-                 ((and (not separator) (null start))
-                  (setf start index))))
-      (nreverse fields)))
+(defun %darwin-space-fields (line)
+  (let ((fields nil)
+        (start nil)
+        (command-start nil))
+    (loop for index from 0 to (length line)
+          for separator = (or (= index (length line))
+                              (find (char line index)
+                                    '(#\Space #\Tab #\Return)))
+          do (cond
+               ((and separator start)
+                (when (< (length fields) 3)
+                  (push (subseq line start index) fields))
+                (setf start nil))
+               ((and (not separator) (null start))
+                (cond
+                  ((< (length fields) 3)
+                   (setf start index))
+                  (t
+                   (setf command-start index)
+                   (return))))))
+    (values (nreverse fields) command-start)))
 
   (defun %darwin-ps-number (text)
     (let ((*read-eval* nil))
@@ -39,18 +46,32 @@
              (realp value)
              (float value 1d0)))))
 
-  (defun %darwin-ps-cpu-values (pids)
-  (if (null pids)
-      (values (make-hash-table :test #'eql) nil)
+(defun %darwin-ps-cpu-values (rows &optional (include-command-p t))
+  (if (null rows)
+      (values (make-hash-table :test (function eql)) nil)
       (handler-case
-          (let* ((pid-list (format nil "~{~D~^,~}" pids))
-                 (result (host-kit:run-program
-                          "/bin/ps"
-                          (list "-o" "pid=,pcpu=" "-p" pid-list)
-                          :timeout 5
-                          :environment '("LC_ALL=C")
-                          :max-output-characters 1048576))
-                 (values (make-hash-table :test #'eql)))
+          (let* ((pids (mapcar (lambda (row) (getf row :pid)) rows))
+                 (command-pids
+                   (when include-command-p
+                     (let ((table (make-hash-table :test (function eql)))
+                           (user-id (sb-posix:getuid)))
+                       (dolist (row rows)
+                         (when (eql (getf row :ruid) user-id)
+                           (setf (gethash (getf row :pid) table) t)))
+                       table)))
+                 (pid-list (format nil "~{~D~^,~}" pids))
+                 (result
+                   (host-kit:run-program
+                    "/bin/ps"
+                    (list "-ww" "-o"
+                          (if include-command-p
+                              "pid=,pcpu=,pri=,command="
+                              "pid=,pcpu=,pri=")
+                          "-p" pid-list)
+                    :timeout 5
+                    :environment (quote ("LC_ALL=C"))
+                    :max-output-characters (* 4 1024 1024)))
+                 (ps-values (make-hash-table :test (function eql))))
             (unless (and (zerop (host-kit:process-result-exit-code result))
                          (not (host-kit:process-result-timed-out-p result))
                          (not (host-kit:process-result-stdout-truncated-p result))
@@ -60,14 +81,29 @@
                 (input (host-kit:process-result-stdout result))
               (loop for line = (read-line input nil nil)
                     while line
-                    for fields = (%darwin-space-fields line)
-                    when (= (length fields) 2)
-                      do (let ((pid (ignore-errors
-                                      (parse-integer (first fields))))
-                               (cpu (%darwin-ps-number (second fields))))
-                           (when (and pid cpu)
-                             (setf (gethash pid values) cpu))))
-              (values values nil)))
+                    do (multiple-value-bind (fields command-start)
+                           (%darwin-space-fields line)
+                         (when (<= 2 (length fields) 3)
+                           (let* ((pid (ignore-errors
+                                         (parse-integer (first fields))))
+                                  (cpu (%darwin-ps-number (second fields)))
+                                  (priority
+                                    (and (= (length fields) 3)
+                                         (ignore-errors
+                                           (parse-integer (third fields)))))
+                                  (command
+                                    (and include-command-p
+                                         pid
+                                         (gethash pid command-pids)
+                                         priority
+                                         command-start
+                                         (subseq line command-start))))
+                             (when (and pid cpu)
+                               (setf (gethash pid ps-values)
+                                     (list :cpu cpu
+                                           :priority priority
+                                           :command command))))))))
+            (values ps-values nil))
         (error () (values nil :read-failed)))))
 
   (defun %darwin-user-name (uid)
@@ -78,13 +114,16 @@
             (error () nil))
           (write-to-string uid))))
 
-  (defun %darwin-process-record (row cpu-values)
-  (let ((ruid (getf row :ruid)))
+(defun %darwin-process-record (row ps-values)
+  (let* ((ruid (getf row :ruid))
+         (pid (getf row :pid))
+         (process-ps-values (and (hash-table-p ps-values)
+                                 (gethash pid ps-values))))
     (ntop.process.domain:make-process-record
-     :pid (getf row :pid)
+     :pid pid
      :ppid (getf row :ppid)
      :name (getf row :name)
-     :command (getf row :command)
+     :command (or (getf process-ps-values :command) (getf row :command))
      :cpu-time-ns (getf row :cpu-time-ns)
      :resident-memory-bytes (getf row :resident-memory-bytes)
      :virtual-memory-bytes (getf row :virtual-memory-bytes)
@@ -94,7 +133,7 @@
      :user-name (%darwin-user-name ruid)
      :state (getf row :state)
      :start-time-unix-seconds (getf row :start-time-unix-seconds)
-     :priority (getf row :priority)
+     :priority (or (getf row :priority) (getf process-ps-values :priority))
      :nice (getf row :nice)
      :kernel-thread-p (getf row :kernel-thread-p)
      :threads
@@ -108,14 +147,16 @@
          :priority (getf thread-row :priority)
          :nice (getf thread-row :nice)))
       (getf row :threads))
-     :ps-fallback-cpu-percent
-     (gethash (getf row :pid) cpu-values))))
+     :ps-fallback-cpu-percent (getf process-ps-values :cpu))))
 
   (defun read-darwin-process-data (collector on-value on-unavailable)
   (ntop.platform.darwin::read-darwin-process-rows
    (lambda (rows)
      (multiple-value-bind (cpu-values cpu-failure)
-         (%darwin-ps-cpu-values (mapcar (lambda (row) (getf row :pid)) rows))
+         (%darwin-ps-cpu-values
+          rows
+          (ntop.shared.application:application-config-process-show-command-p
+           (ntop.process.infrastructure::%process-collector-config collector)))
        (declare (ignore cpu-failure))
        (funcall on-value
                 (loop for row in rows
