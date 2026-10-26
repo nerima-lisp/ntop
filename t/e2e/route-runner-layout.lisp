@@ -100,6 +100,7 @@
        (quote (((battery nil :default)))))
       ((string-equal context "CPU legend")
        (quote (((cpu nil :default)))))
+      ((string-equal context "process tree") (quote (((proc 1 :default)))))
       ((and (eq (route-kind route) :key)
             (member (route-id route) (quote ("key-9" "key-11"))
                     :test (function string=)))

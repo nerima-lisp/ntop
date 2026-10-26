@@ -72,34 +72,71 @@
               (append
                (list
                 (list "key-5" (list 1) :graph :graph)
-                (list "key-6" (list 1) :dashboard :selection)
+                (list "key-6" (list 1) :dashboard :selection nil
+                      (list :selection-mode :expand-restore))
                 (list "key-7" (list 1) :graph :graph)
                 (list "key-8" (list 1 2 3 4) :dashboard :selection)
-                (list "key-12" (list 1 2) :processes :navigation)
-                (list "key-13" (list 1 2) :processes :navigation)
-                (list "key-14" (list 1 2) :processes :navigation)
-                (list "key-15" (list 1) :processes :navigation)
-                (list "key-16" (list 1) :processes :navigation)
-                (list "key-17" (list 1) :processes :navigation)
-                (list "key-18" (list 1) :processes :navigation)
-                (list "key-19" (list 1) :processes :navigation)
-                (list "key-20" (list 1 2) :process-tree :tree)
+                (list "key-9" (list 2) :dashboard :selection)
+                (list "key-10" (list 2 3 4) :dashboard :selection)
+                (list "key-11" (list 1 2 4) :dashboard :selection)
+                (list "key-12" (list 1 2) :processes :navigation nil
+                      (list :fixture-navigation-start :last
+                            :fixture-process-count 64))
+                (list "key-13" (list 1 2) :processes :navigation nil
+                      (list :fixture-navigation-start :first
+                            :fixture-process-count 64))
+                (list "key-14" (list 1 2) :processes :navigation nil
+                       (list :fixture-navigation-start :last
+                             :fixture-process-count 64))
+                (list "key-15" (list 1) :processes :navigation nil
+                       (list :fixture-navigation-start :first
+                             :fixture-process-count 64))
+                (list "key-16" (list 1) :processes :navigation nil
+                       (list :fixture-navigation-start :last
+                             :fixture-process-count 64))
+                (list "key-17" (list 1) :processes :navigation nil
+                       (list :fixture-navigation-start :first
+                             :fixture-process-count 64))
+                (list "key-18" (list 1) :processes :navigation nil
+                       (list :fixture-navigation-start :last
+                             :fixture-process-count 64))
+                (list "key-19" (list 1) :processes :navigation nil
+                       (list :fixture-navigation-start :first
+                             :fixture-process-count 64))
+                (list "key-20" (list 1 2) :process-tree :tree nil
+                       (list :fixture-tree-query "ntop-t-"
+                             :fixture-tree-focus :parent
+                             :fixture-tree-expanded t
+                             :observer-quiet-seconds 1.5d0))
                 (list "key-20" (list 3 4) :search :search-cursor)
                 (list "key-20" (list 5 6) :battery :selection :battery-tabs)
-                (list "key-21" (list 1 2) :process-tree :tree)
+                (list "key-21" (list 1 2) :process-tree :tree nil
+                       (list :fixture-tree-query "ntop-t-"
+                             :fixture-tree-focus :parent
+                             :fixture-tree-expanded nil
+                             :observer-quiet-seconds 1.5d0))
                 (list "key-21" (list 3 4) :search :search-cursor)
                 (list "key-21" (list 5 6) :battery :selection :battery-tabs)
-                (list "key-25" (list 1 2 3 4 5 6) :processes :search-results)
-                (list "key-26" (list 1 2 3 4 5) :processes :search-results)
-                (list "key-27" (list 1 2 3 4) :processes :search-results)
-                (list "key-28" (list 1 2) :search :query-edit)
-                (list "key-29" (list 1 2) :search :query-edit)
-                (list "key-30" (list 1 2) :search :query-edit)
-                (list "key-31" (list 1 2) :search :query-edit)
-                (list "key-32" (list 1 2 3 4) :search :query-edit)
-                (list "key-33" (list 1 2) :search :query-edit)
-                (list "key-35" (list 1 3) :processes :modal)
-                (list "key-36" (list 6) :processes :modal)
+                (list "key-25" (list 1 2 3 4 5 6) :processes :search-results
+                      nil (list :query-procedure :toggle-case))
+                (list "key-26" (list 1 2 3 4 5) :processes :search-results
+                      nil (list :query-procedure :toggle-whole-word))
+                (list "key-27" (list 1 2 3 4) :processes :search-results
+                      nil (list :query-procedure :toggle-regex))
+                (list "key-28" (list 1 2) :search :query-edit
+                      nil (list :query-procedure :cursor-start))
+                (list "key-29" (list 1 2) :search :query-edit
+                      nil (list :query-procedure :cursor-end))
+                (list "key-30" (list 1 2) :search :query-edit
+                      nil (list :query-procedure :clear))
+                (list "key-31" (list 1 2) :search :query-edit
+                      nil (list :query-procedure :delete-previous-word))
+                (list "key-32" (list 1 2 3 4) :search :query-edit
+                      nil (list :query-procedure :delete-previous-character))
+                (list "key-33" (list 1 2) :search :query-edit
+                      nil (list :query-procedure :delete-next-character))
+                (list "key-35" (list 1 3) :processes :modal nil (list :modal-action :accept))
+                (list "key-36" (list 6) :processes :modal nil (list :modal-action :close))
                 (list "key-37" (list 1) :processes :modal)
                 (list "key-38" (list 1) :processes :sort)
                 (list "key-39" (list 1) :processes :sort)
@@ -110,8 +147,16 @@
                 (list "key-44" (list 1) :processes :table)
                 (list "key-46" (list 1) :processes :sort)
                 (list "key-47" (list 1 2) :processes :tree)
-                (list "key-49" (list 1) :process-tree :tree)
-                (list "key-50" (list 1 2) :process-tree :tree)
+                (list "key-49" (list 1) :process-tree :tree nil
+                       (list :fixture-tree-query "ntop-t-"
+                             :fixture-tree-focus :parent
+                             :fixture-tree-expanded t))
+                (list "key-50" (list 1 2) :process-tree :tree nil
+                       (list :fixture-tree-query "ntop-t-"
+                             :fixture-tree-focus :parent
+                             :fixture-tree-expansion-by-input
+                             (list (list "+" :collapsed)
+                                   (list "-" :expanded))))
                 (list "key-51" (list 1) :graph :graph)
                 (list "key-52" (list 1) :graph :graph)
                 (list "key-53" (list 1) :graph :graph)
@@ -124,78 +169,135 @@
                 (list "mouse-79" (list 3) :capability :mouse :mouse-other)
                 (list "flag-100" (list 1 2) :capability :transition :linux-only)
                 (list "cpu-frequency" (list 1) :capability :cpu-frequency :powermetrics)
-                (list "search-field-153" (list 1) :search :query-edit)
-                (list "search-field-154" (list 1) :search :query-edit)
+                (list "search-field-153" (list 1) :search :query-edit
+                      nil (list :query-procedure :field-token))
+                (list "search-field-154" (list 1) :search :query-edit
+                      nil (list :query-procedure :field-token))
                 (list "resize" (list 1) :dashboard :resize)
-                (list "restore-exception" (list 1) :capability :restore)
-                (list "extension-170" (list 1 2 3) :dashboard :extension)
-                (list "extension-171" (list 1) :dashboard :extension)
-                (list "extension-172" (list 1) :dashboard :extension)
-                (list "extension-173" (list 1) :dashboard :extension))
+                (list "restore-exception" (list 1) :capability :restore
+                      nil
+                      (list :btm-self-na-reason
+                            "The injected Lisp exception has no btm-self equivalent."))
+                (list "extension-170" (list 1 2 3) :dashboard :extension
+                      nil
+                      (list :btm-self-na-reason
+                            "The extension action has no btm-self equivalent."))
+                (list "extension-171" (list 1) :dashboard :extension
+                      nil
+                      (list :btm-self-na-reason
+                            "The extension action has no btm-self equivalent."))
+                (list "extension-172" (list 1) :dashboard :extension
+                      nil
+                      (list :btm-self-na-reason
+                            "The extension action has no btm-self equivalent."))
+                (list "extension-173" (list 1) :dashboard :extension
+                      nil
+                      (list :btm-self-na-reason
+                            "The extension action has no btm-self equivalent.")))
                (loop for index from 56 to 65
                      collect (list (format nil "key-~d" index) (list 1) :table :table))
                (loop for index from 133 to 152
                      collect (list (format nil "column-~d" index) (list 1)
                                    :processes :column))))
 
-(defun %route-subcase-fixture (route-id context fixture)
+(defun %route-subcase-fixture (context fixture)
   (let ((context (or context "")))
     (cond
-     ((and (member route-id
-                   (list "key-12" "key-13" "key-14" "key-15" "key-16"
-                         "key-17" "key-18" "key-19" "key-67")
-                   :test (function string=))
-           (string-equal context "help"))
-      :help)
-     ((and (member route-id
-                   (list "key-25" "key-26" "key-27")
-                   :test (function string=))
+      ((or (string-equal context "help")
            (search "help" context :test (function char-equal)))
-      :help)
-     ((member route-id
-              (list "key-25" "key-26" "key-27")
-              :test (function string=))
-      :processes)
-     ((and (member route-id
-                   (list "key-28" "key-29" "key-30" "key-31" "key-32"
-                         "key-33" "search-field-153" "search-field-154")
-                   :test (function string=))
-           (search "help" context :test (function char-equal)))
-      :help)
-     ((member route-id
-              (list "key-35" "key-36" "key-37")
-              :test (function string=))
-      (cond
-       ((search "expanded widget" context :test (function char-equal))
-        :dashboard)
-       ((search "help" context :test (function char-equal)) :help)
-       ((search "search" context :test (function char-equal)) :search)
-       (t fixture)))
-     (t fixture))))
+       :help)
+      ((search "expanded widget" context :test (function char-equal))
+       :dashboard)
+      ((search "search" context :test (function char-equal))
+       :search)
+      (t fixture))))
 
-(defun %route-subcase-metadata (route-id index context)
+(defun %route-subcase-metadata (route-id index subcase)
   (let ((plan
-         (find-if
-          (lambda (entry)
-            (and (string= route-id (first entry))
-                 (member index (second entry))))
-          +route-subcase-plans+)))
+          (find-if
+           (lambda (entry)
+             (and (string= route-id (first entry))
+                  (member index (second entry))))
+           +route-subcase-plans+)))
     (when plan
-      (append
-       (list :fixture
-             (%route-subcase-fixture route-id context (third plan))
-             :probe (fourth plan))
-       (when (fifth plan)
-         (list :applicability (fifth plan)))))))
+      (let* ((probe (fourth plan))
+             (input (getf subcase :input))
+             (fixture (%route-subcase-fixture
+                       (getf subcase :context) (third plan)))
+             (query-procedure (getf (sixth plan) :query-procedure))
+             (query-fixture
+               (when query-procedure
+                 (cond
+                   ((eq fixture :help) :help-search)
+                   ((member query-procedure
+                            '(:toggle-case :toggle-whole-word :toggle-regex))
+                    :sleep-variants)
+                   (t :process-search))))
+             (query-initial
+               (case query-procedure
+                 ((:toggle-case :toggle-whole-word)
+                  (if (eq query-fixture :help-search)
+                      "process"
+                    "ntop-t-sleep"))
+                 (:toggle-regex
+                  (if (eq query-fixture :help-search)
+                      "process"
+                    "^ntop-t-sleep$"))
+                 ((:cursor-start :cursor-end :clear
+                   :delete-previous-character :delete-next-character)
+                  "abcd")
+                 (:delete-previous-word "alpha beta")))
+             (query-cursor
+               (case query-procedure
+                 (:cursor-start 4)
+                 (:cursor-end 0)
+                 (:clear 2)
+                 (:delete-previous-word 10)
+                 ((:delete-previous-character :delete-next-character) 2)))
+             (query-sentinel
+               (when (member query-procedure '(:cursor-start :cursor-end))
+                 "X"))
+             (option-label
+               (and (eq probe :search-results)
+                    (cond
+                      ((member input (list "F1" "Alt+c" "Alt+C")
+                               :test (function string=))
+                       "Case")
+                      ((member input (list "F2" "Alt+w" "Alt+W")
+                               :test (function string=))
+                       "Whole")
+                      ((member input (list "F3" "Alt+r" "Alt+R")
+                               :test (function string=))
+                       "Regex")))))
+        (append
+         (list :fixture fixture :probe probe)
+         (when (fifth plan)
+           (list :applicability (fifth plan)))
+         (sixth plan)
+         (when query-fixture
+           (list :query-fixture query-fixture))
+         (when (eq query-fixture :sleep-variants)
+           (list :query-fixture-prefix "ntop-t-"
+                 :query-fixture-tags '("sleep" "sleepy" "Sleep")))
+         (when (eq fixture :process-tree)
+           (list :fixture-tree-parent-name "ntop-t-parent"
+                 :fixture-tree-child-name "ntop-t-child"))
+         (when query-initial
+           (list :query-initial query-initial))
+         (when (integerp query-cursor)
+           (list :query-cursor query-cursor))
+         (when query-sentinel
+           (list :query-sentinel query-sentinel))
+         (when option-label
+           (list :search-option-label option-label)))))))
 
 (defun %route-subcases-with-metadata (route-id subcases)
   (loop for subcase in subcases
         for index from 1
-        for metadata = (%route-subcase-metadata
-                        route-id index (getf subcase :context))
+        for metadata = (%route-subcase-metadata route-id index subcase)
         collect (if metadata
                     (append (copy-list subcase) metadata)
-                  subcase)))
+                    subcase)))
 
 (defun %route-action (entry kind)
   (case kind

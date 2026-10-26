@@ -139,7 +139,9 @@
   (unless (string-equal context "normal process table")
     (let ((type (%route-widget-type context)))
       (when type
-        (list "--default-widget-type" type "--default-widget-count" "1")))))
+        (append (list "--default-widget-type" type "--default-widget-count" "1")
+                (when (string-equal context "process tree")
+                  (list "--tree")))))))
 
 (defun %route-flag-switch (entry variant &optional alias)
   (let ((name (ecase variant

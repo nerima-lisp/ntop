@@ -60,10 +60,11 @@
                clusters
                (every
                 (lambda (value)
-                  (some
-                   (lambda (cluster)
-                     (%route-observer-frequency-match-p value (cdr cluster)))
-                   clusters))
+                  (= 1
+                     (count-if
+                      (lambda (cluster)
+                        (%route-observer-frequency-match-p value (cdr cluster)))
+                      clusters)))
                 displayed)
                (every
                 (lambda (cluster)
@@ -75,4 +76,4 @@
     (values matches-p
             (list :ui-mhz displayed :cluster-averages clusters)
             (unless matches-p
-              "CPU MHz values did not match powermetrics within 10%"))))
+              "CPU MHz values did not map uniquely to powermetrics clusters within 10%"))))

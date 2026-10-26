@@ -124,7 +124,7 @@
                 (count app applicable
                        :key (lambda (entry)
                               (getf (cdr entry) :applicability)))))
-    :to-equal (list 422 132 123 9 (list 5 2 1 1)))
+    :to-equal (list 422 139 130 9 (list 5 2 1 1)))
    (cl-weave:expect
     (every
      (lambda (entry)
@@ -259,7 +259,10 @@
     :to-satisfy (function plusp))
    (cl-weave:expect (search "extension-170-001" report)
                     :to-satisfy (function plusp))
-   (cl-weave:expect (search "BTM has no" report) :to-satisfy (function plusp))
+   (cl-weave:expect
+    (not (null
+          (search "The extension action has no btm-self equivalent." report)))
+    :to-be t)
    (cl-weave:expect (search "no-btm.md" report) :to-satisfy (function plusp))
    (cl-weave:expect (search "MANUAL" output) :to-be nil)
    (cl-weave:expect (search "Procedure:" report) :to-be nil)

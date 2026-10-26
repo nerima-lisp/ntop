@@ -27,7 +27,8 @@
                                       (if (member route-id
                                                   '("resize" "mouse-75" "mouse-77") :test #'string=)
                                           (max rate 1000)
-                                        effective-rate))))
+                                        effective-rate)
+                                      (string-equal context "process tree"))))
                       (%route-base-arguments btm config-path route subcase evidence-directory)))
          (candidate-args (%route-base-arguments ntop config-path route subcase
                                                 evidence-directory)))

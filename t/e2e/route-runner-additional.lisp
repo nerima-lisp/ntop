@@ -89,40 +89,21 @@
         (setf initial-grid (%route-grid raw rows columns)
               initial-projection (project-criterion-grid initial-grid))))
     (when (plusp (length context-text))
-      (pty-send-input session (%route-octets context-text)
-                      :timeout-seconds timeout)
-      (multiple-value-bind (context-output)
-          (%route-read-widget-state
-           session raw rows columns rate timeout
-           (cond
-            ((string-equal (or (getf subcase :context) "") "expanded widget")
-             (lambda (grid)
-               (%route-expanded-widget-transition-p initial-grid grid)))
-            ((and (string-equal (or (getf subcase :context) "") "help")
-                  (member (getf subcase :gesture)
-                          (list "wheel-up" "wheel-down")
-                          :test (function string=)))
-             (lambda (grid)
-               (and (search "Help" (%route-grid-text grid) :test #'char-equal)
-                    (%route-help-section-number grid))))
-            (t nil)))
-        (%append-octets raw context-output)
-        (when (and (string= (getf subcase :gesture) "wheel-up")
-                   (string-equal (or (getf subcase :context) "") "help"))
-          (let ((preparation-before (%route-grid raw rows columns)))
-            (dolist (input
-                     (%route-mouse-action-inputs
-                      route (list :context "help" :gesture "wheel-down")
-                      preparation-before rows columns))
-              (pty-send-input session (%route-octets input)
-                              :timeout-seconds timeout)
-              (multiple-value-bind (preparation-output)
-                  (%route-read-widget-state
-                   session raw rows columns rate timeout
-                   (lambda (grid)
-                     (%route-help-section-transition-p
-                      (list :gesture "wheel-down") preparation-before grid)))
-                (%append-octets raw preparation-output)))))))
+  (pty-send-input session (%route-octets context-text)
+                  :timeout-seconds timeout)
+  (multiple-value-bind (context-output)
+      (%route-read-widget-state
+       session raw rows columns rate timeout
+       (cond
+         ((string-equal (or (getf subcase :context) "") "expanded widget")
+          (lambda (grid)
+            (%route-expanded-widget-transition-p initial-grid grid)))
+         ((string-equal (or (getf subcase :context) "") "help")
+          (lambda (grid)
+            (and (search "Help" (%route-grid-text grid) :test #'char-equal)
+                 (%route-help-section-number grid))))
+         (t nil)))
+    (%append-octets raw context-output)))
     (let* ((before-grid
             (progn
               (when fixture-state
@@ -130,50 +111,10 @@
                   (%route-fixture-prepare
                    fixture-state route subcase session raw rows columns rate timeout
                    evidence-prefix)))
-              (when (and (eq (route-kind route) :key)
-                         (member (route-action route)
-                                 (list "Zoom graph out" "Reset graph zoom")
-                                 :test (function string=))
-                         (string-equal (or (getf subcase :context) "") "graphs"))
-                ;; Move off the 60s limit before zoom-out or reset.
-                (pty-send-input session (%route-octets "+")
-                                :timeout-seconds timeout)
-                (multiple-value-bind (preparation-output)
-                    (%route-read-through-quiet-period
-                     session
-                     :quiet-seconds *route-frame-quiet-seconds*
-                     :timeout-seconds timeout
-                     :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0)))
-                  (%append-octets raw preparation-output)))
-              (progn
-                (when (and (eq (route-kind route) :key)
-                           (string= (route-action route) "Select help section")
-                           (string= (getf subcase :input) "1"))
-                  ;; Start on section 2 so selecting section 1 has a visible transition.
-                  (pty-send-input session (%route-octets "2")
-                                  :timeout-seconds timeout)
-                  (multiple-value-bind (preparation-output)
-                      (%route-read-through-quiet-period
-                       session
-                       :quiet-seconds *route-frame-quiet-seconds*
-                       :timeout-seconds timeout
-                       :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0)))
-                    (%append-octets raw preparation-output)))
-                (when (and (eq (route-kind route) :key)
-                           (string= (route-action route) "Select help section")
-                           (member (getf subcase :input) '("7" "8" "9") :test #'string=))
-                  ;; Start at section 1 so 7-9 produce a measurable jump to the bottom.
-                  (pty-send-input session (%route-octets "1")
-                                  :timeout-seconds timeout)
-                  (multiple-value-bind (preparation-output)
-                      (%route-read-through-quiet-period
-                       session
-                       :quiet-seconds *route-frame-quiet-seconds*
-                       :timeout-seconds timeout
-                       :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0)))
-                    (%append-octets raw preparation-output))))
               (%route-write-ansi
-               (merge-pathnames (format nil "~a.ansi" evidence-prefix)) raw)
+               (merge-pathnames
+                (format nil "~a.before-action.ansi" evidence-prefix))
+               raw)
               (%route-grid raw rows columns)))
            (before-action (project-criterion-grid before-grid))
            (resolved-action
@@ -214,39 +155,22 @@
                session
                :quiet-seconds *route-frame-quiet-seconds*
                :timeout-seconds timeout))
-             ((and (string= (route-id route) "key-36")
-                   (string-equal (or (getf subcase :context) "")
-                                 "expanded widget"))
+             ((getf subcase :observer-completion)
               (%route-read-widget-state
                session raw rows columns rate timeout
                (lambda (grid)
-                 (%route-expanded-widget-restored-p grid initial-grid))))
+                 (%route-observer-completion-p
+                  (getf subcase :observer-completion)
+                  subcase before-grid grid))))
              (t
-              (cond
-               ((and (eq (route-kind route) :mouse)
-                     (member (getf subcase :gesture)
-                             (list "wheel-up" "wheel-down")
-                             :test (function string=))
-                     (string-equal (or (getf subcase :context) "") "help"))
-                (%route-read-widget-state
-                 session raw rows columns rate timeout
-                 (lambda (grid)
-                   (%route-help-section-transition-p subcase before-grid grid))))
-               ((and (eq (route-kind route) :mouse)
-                     (member (getf subcase :gesture)
-                             (list "wheel-up" "wheel-down")
-                             :test (function string=))
-                     (string-equal (or (getf subcase :context) "") "graphs"))
-                (%route-read-widget-state
-                 session raw rows columns rate timeout
-                 (lambda (grid)
-                   (%route-graph-window-transition-p subcase before-grid grid))))
-               (t
-                (%route-read-through-quiet-period
-                 session
-                 :quiet-seconds *route-frame-quiet-seconds*
-                 :timeout-seconds timeout
-                 :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0)))))))
+              (%route-read-through-quiet-period
+               session
+               :quiet-seconds
+               (getf subcase :observer-quiet-seconds
+                     *route-frame-quiet-seconds*)
+               :timeout-seconds timeout
+               :initial-quiet-seconds
+               (* *route-first-frame-factor* (/ rate 1000d0)))))
           (%append-octets raw action-output))
         (push (%route-grid raw rows columns) action-grids))
       (multiple-value-bind (updated-raw after-grid)

@@ -50,41 +50,209 @@
                     (pathname (format nil "~a.fixture.txt" evidence-prefix))))
          (context (or (getf subcase :context) ""))
          (grid (%route-grid raw rows columns))
+         (navigation-inputs
+           (case (getf subcase :fixture-navigation-start)
+             (:first (list (%route-key-input "Home")))
+             (:last (list (%route-key-input "End")))
+             ((nil) nil)
+             (otherwise
+              (error "Unknown fixture navigation start: ~s."
+                     (getf subcase :fixture-navigation-start)))))
+         (tree-focus (getf subcase :fixture-tree-focus))
+         (tree-query (getf subcase :fixture-tree-query))
+         (tree-inputs
+           (when tree-focus
+             (unless (and (stringp tree-query) (plusp (length tree-query)))
+               (error "A process-tree fixture requires a nonempty query."))
+             (list (%route-key-input "/")
+                   tree-query
+                   (%route-key-input "Escape"))))
          (setup-inputs
-           (cond
-             ((and (string= (route-id route) "mouse-69")
-                   (string-equal context "help"))
-              (%route-mouse-action-inputs
-               route (list :context "help" :gesture "wheel-down")
-               grid rows columns))
-             ((and (string= (route-id route) "mouse-70")
-                   (string-equal context "graphs"))
-              (%route-mouse-action-inputs
-               route (list :context "graphs" :gesture "wheel-up")
-               grid rows columns))
-             ((and (eq (route-kind route) :key)
-                   (member (route-action route)
-                           (list "Zoom graph out" "Reset graph zoom")
-                           :test (function string=))
-                   (string-equal context "graphs"))
-              (list "+"))
-             ((and (eq (route-kind route) :key)
-                   (string= (route-action route) "Select help section"))
-              (cond
-                ((string= (getf subcase :input) "1") (list "2"))
-                ((member (getf subcase :input) (list "7" "8" "9")
-                         :test (function string=))
-                 (list "1")))))))
+           (append
+            (cond
+              ((and (eq (route-kind route) :mouse)
+                    (member (route-action route) (list "Scroll up" "Scroll down")
+                            :test (function string=))
+                    (member context (list "help" "graphs")
+                            :test (function string-equal)))
+               (%route-mouse-action-inputs
+                route
+                (list :context context
+                      :gesture (if (string= (route-action route) "Scroll up")
+                                   "wheel-down"
+                                 "wheel-up"))
+                grid rows columns))
+              ((and (eq (route-kind route) :key)
+                    (member (route-action route)
+                            (list "Zoom graph out" "Reset graph zoom")
+                            :test (function string=))
+                    (string-equal context "graphs"))
+               (list "+"))
+              ((and (eq (route-kind route) :key)
+                    (string= (route-action route) "Select help section"))
+               (cond
+                 ((string= (getf subcase :input) "1") (list "2"))
+                 ((member (getf subcase :input) (list "7" "8" "9")
+                          :test (function string=))
+                  (list "1")))))
+            navigation-inputs
+            tree-inputs)))
     (labels ((send-inputs (inputs)
                (dolist (input inputs)
-                 (pty-send-input session (%route-octets input)
-                                 :timeout-seconds timeout)
-                 (multiple-value-bind (output)
-                     (%route-read-through-quiet-period
-                      session *route-frame-quiet-seconds* timeout
-                      (* *route-first-frame-factor* (/ rate 1000d0)))
-                   (%append-octets raw output)))))
+                 (let ((expected-query
+                         (and tree-focus
+                              (string= input tree-query)
+                              tree-query)))
+                   (pty-send-input session (%route-octets input)
+                                   :timeout-seconds timeout)
+                   (multiple-value-bind (output)
+                       (%route-read-through-quiet-period
+                        session *route-frame-quiet-seconds* timeout
+                        (* *route-first-frame-factor* (/ rate 1000d0))
+                        (when expected-query
+                          (lambda (input-output)
+                            (multiple-value-bind (query)
+                                (%route-observer-prompt-state
+                                 (%route-grid-after-output
+                                  raw input-output rows columns))
+                              (and query
+                                   (string= expected-query
+                                            (string-trim '(#\Space #\│)
+                                                         query)))))))
+                     (%append-octets raw output)))))
+             (process-rows ()
+               (%route-observer-process-rows (%route-grid raw rows columns)))
+             (process-row-name-p (text name)
+               (search name text :test (function char-equal)))
+             (tree-row-index (name required-p)
+               (let* ((rows (process-rows))
+                      (index
+                        (position-if
+                         (lambda (text) (process-row-name-p text name))
+                         rows)))
+                 (when (and required-p (null index))
+                   (error
+                    "Process-tree fixture process ~s is not visible among ~d rows: ~s."
+                    name (length rows)
+                    (subseq rows 0 (min 5 (length rows)))))
+                 index))
+             (select-tree-row (index)
+               (unless (and (integerp index) (not (minusp index)))
+                 (error "Process-tree fixture row index is invalid: ~s." index))
+               (let* ((visible-rows (process-rows))
+                      (move-limit (max 1 (* 2 (length visible-rows)))))
+                 (labels ((selected-p ()
+                            (multiple-value-bind (selected-index)
+                                (%route-observer-process-selection-index
+                                 (%route-grid raw rows columns))
+                              (or (eql selected-index index)
+                                  (and (= (length visible-rows) 1)
+                                       (zerop index))))))
+                   (send-inputs (list (%route-key-input "Home")))
+                   (loop repeat move-limit
+                         until (selected-p)
+                         do (send-inputs (list (%route-key-input "Down"))))
+                   (unless (selected-p)
+                     (error "Could not select process-tree fixture row ~s."
+                            index)))))
+             (tree-target-expanded-p ()
+               (let ((mapping (getf subcase :fixture-tree-expansion-by-input)))
+                 (if mapping
+                     (let ((setting
+                             (assoc (getf subcase :input) mapping :test #'string=)))
+                       (unless setting
+                         (error "No tree expansion state is declared for input ~s."
+                                (getf subcase :input)))
+                       (case (second setting)
+                         (:expanded t)
+                         (:collapsed nil)
+                         (otherwise
+                          (error "Unknown tree expansion state: ~s."
+                                 (second setting)))))
+                   (let ((target
+                           (getf subcase :fixture-tree-expanded :missing)))
+                     (unless (or (eq target t) (null target))
+                       (error "A tree fixture requires an expansion state."))
+                     (eq target t)))))
+             (prepare-tree ()
+               (let* ((pids (getf state :tree-pids))
+                      (focus tree-focus)
+                      (parent-name (getf subcase :fixture-tree-parent-name))
+                      (child-name (getf subcase :fixture-tree-child-name))
+                      (parent-pid (first pids))
+                      (child-pid (second pids))
+                      (target-expanded-p (tree-target-expanded-p)))
+                 (unless (and (listp pids) (= (length pids) 2))
+                   (error "The process-tree fixture did not return two PIDs."))
+                 (unless (and (stringp parent-name) (plusp (length parent-name))
+                              (stringp child-name) (plusp (length child-name)))
+                   (error "The process-tree fixture must declare parent and child names."))
+                 (unless (member focus (list :parent :child))
+                   (error "Unknown process-tree fixture focus: ~s." focus))
+                 (%route-fixture-stage-progress route subcase :process-tree-filtered)
+                 (progn
+                         (select-tree-row (tree-row-index parent-name t))
+                         (let* ((selected-index
+                                  (nth-value
+                                   0
+                                   (%route-observer-process-selection-index
+                                    (%route-grid raw rows columns))))
+                                (selected-row
+                                  (and selected-index
+                                       (nth selected-index (process-rows)))))
+                           (unless (and selected-row
+                                        (process-row-name-p selected-row parent-name))
+                             (error "Could not focus process-tree parent ~s; selected row is ~s."
+                                    parent-name selected-row))
+                           (setf (getf state :tree-initial-selected-row)
+                                 selected-row)))
+                 (let* ((child-index (tree-row-index child-name nil))
+                        (expanded-p (not (null child-index))))
+                   (unless (eq expanded-p target-expanded-p)
+                     (send-inputs (list (%route-key-input "Space")))
+                     (setf child-index (tree-row-index child-name nil)
+                           expanded-p (not (null child-index))))
+                   (unless (eq expanded-p target-expanded-p)
+                     (error "Could not set the process-tree expansion state; selected row is ~s."
+                        (let* ((selected-index
+                                 (nth-value
+                                  0
+                                  (%route-observer-process-selection-index
+                                   (%route-grid raw rows columns)))))
+                          (and selected-index
+                               (nth selected-index (process-rows))))))
+                   (let* ((focus-pid (ecase focus
+                                       (:parent parent-pid)
+                                       (:child child-pid)))
+                          (focus-name (ecase focus
+                                        (:parent parent-name)
+                                        (:child child-name)))
+                          (focus-index (tree-row-index focus-name t)))
+                     (progn
+                     (select-tree-row focus-index)
+                     (multiple-value-bind (selected-index)
+                         (%route-observer-process-selection-index
+                          (%route-grid raw rows columns))
+                       (let ((selected-row
+                               (and selected-index
+                                    (nth selected-index (process-rows)))))
+                         (unless (and selected-row
+                                      (process-row-name-p selected-row focus-name))
+                           (error "Process-tree fixture selected row ~s at index ~s instead of ~s."
+                                  selected-row selected-index focus-name))
+                         (setf (getf state :tree-focus-row) selected-row))))
+                     (setf (getf state :tree-expanded) expanded-p
+                           (getf state :tree-focus) focus
+                           (getf state :tree-focus-pid) focus-pid))
+                   (%route-fixture-stage-progress route subcase :process-tree-ready)))))
+      (%route-fixture-stage-progress route subcase :prepare-start)
       (setf (getf state :evidence-path) path)
+      (when (getf subcase :query-fixture)
+        (setf setup-inputs
+              (append setup-inputs
+                      (%route-fixture-query-setup-inputs subcase))
+              (getf state :after-action-input)
+              (%route-fixture-query-after-action-input subcase)))
       (when path
         (%write-text
          path
@@ -118,6 +286,15 @@
         (%route-fixture-append-evidence path
                                         (format nil "setup inputs: ~s~%" setup-inputs))
         (send-inputs setup-inputs))
+      (when tree-focus
+        (prepare-tree)
+        (%route-fixture-append-evidence
+         path
+         (format nil "tree fixture: pids ~s; expanded ~s; focus pid ~d; selected ~s~%"
+                 (getf state :tree-pids)
+                 (getf state :tree-expanded)
+                 (getf state :tree-focus-pid)
+                 (getf state :tree-focus-row))))
       (when (eq (getf state :probe) :search-cursor)
         (pty-send-input
          session
@@ -130,6 +307,7 @@
              session *route-frame-quiet-seconds* timeout
              (* *route-first-frame-factor* (/ rate 1000d0)))
           (%append-octets raw output)))
+      (%route-fixture-stage-progress route subcase :action-ready)
       (values raw state (and path (namestring path))))))
 
 (defun %route-fixture-store-after-sample (side state)
@@ -150,24 +328,27 @@
     (:battery-tabs
      (let* ((reference-grid (or (getf reference :initial-grid) (getf reference :grid)))
             (candidate-grid (or (getf candidate :initial-grid) (getf candidate :grid)))
-            (reference-tabs (%route-fixture-battery-tabs reference-grid))
-            (candidate-tabs (%route-fixture-battery-tabs candidate-grid)))
-       (when (and reference-grid candidate-grid
+            (reference-frame (%route-observer-frame-with-title reference-grid "Battery"))
+            (candidate-frame (%route-observer-frame-with-title candidate-grid "Battery"))
+            (reference-tabs (%route-fixture-battery-tabs reference-grid reference-frame))
+            (candidate-tabs (%route-fixture-battery-tabs candidate-grid candidate-frame)))
+       (when (and reference-frame candidate-frame
                   (<= (length reference-tabs) 1)
                   (<= (length candidate-tabs) 1))
          (let ((evidence (%route-fixture-side-values
                           reference candidate :fixture-evidence :evidence)))
-           (dolist (side (list reference candidate))
-             (%route-fixture-append-evidence
-              (getf (getf side :fixture-state) :evidence-path)
-              (format nil "battery-tab-labels: ~s~%"
-                      (%route-fixture-battery-tabs
-                       (or (getf side :initial-grid) (getf side :grid))))))
+           (dolist (entry (list (list reference reference-frame reference-tabs)
+                                (list candidate candidate-frame candidate-tabs)))
+             (destructuring-bind (side frame tabs) entry
+               (%route-fixture-append-evidence
+                (getf (getf side :fixture-state) :evidence-path)
+                (format nil "battery-frame: ~s; battery-tab-labels: ~s~%"
+                        frame tabs))))
            (%route-fixture-na-result
             subcase mode
             "Neither side has more than one selectable battery tab."
-            (format nil "reference tabs ~s; candidate tabs ~s"
-                    reference-tabs candidate-tabs)
+            (format nil "reference frame ~s tabs ~s; candidate frame ~s tabs ~s"
+                    reference-frame reference-tabs candidate-frame candidate-tabs)
             evidence)))))
     (:linux-only
      (let* ((linux-p (or (member :linux *features*)
@@ -255,8 +436,7 @@
     (otherwise nil)))
 
 (defun %route-mouse-subcase-inputs (route subcase grid rows columns)
-  (let ((button (and (string= (route-id route) "mouse-79")
-                     (getf subcase :button))))
+  (let ((button (getf subcase :button)))
     (if button
         (let* ((compatible-subcase (copy-list subcase))
                (inputs
@@ -278,12 +458,18 @@
 
 (defun %route-fixture-after-action
     (state session raw rows columns rate timeout)
-  (let ((input (getf state :after-action-input)))
-    (when input
-      (pty-send-input session (%route-octets input) :timeout-seconds timeout)
-      (multiple-value-bind (output)
-          (%route-read-through-quiet-period
-           session *route-frame-quiet-seconds* timeout
-           (* *route-first-frame-factor* (/ rate 1000d0)))
-        (%append-octets raw output)))
-    (values raw (and input (%route-grid raw rows columns)))))
+  (let ((route (getf state :route))
+        (subcase (getf state :subcase)))
+    (when (and route subcase)
+      (%route-fixture-stage-progress route subcase :after-action-start))
+    (let ((input (getf state :after-action-input)))
+      (when input
+        (pty-send-input session (%route-octets input) :timeout-seconds timeout)
+        (multiple-value-bind (output)
+            (%route-read-through-quiet-period
+             session *route-frame-quiet-seconds* timeout
+             (* *route-first-frame-factor* (/ rate 1000d0)))
+          (%append-octets raw output)))
+      (when (and route subcase)
+        (%route-fixture-stage-progress route subcase :after-action-complete))
+      (values raw (and input (%route-grid raw rows columns))))))

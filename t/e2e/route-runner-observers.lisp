@@ -94,44 +94,48 @@
          (context (or (getf subcase :context) ""))
          (before (%route-grid-text initial))
          (after (%route-grid-text grid))
-         (existing (%route-modal-action-state-p route subcase initial grid)))
-    (or (eq existing t)
-        (cond
-          ((string= action "Open process kill dialog")
-           (and before
-                after
-                (notany
-                 (lambda (s)
-                   (search s before :test #'char-equal))
-                 '("Kill process" "Send signal" "Confirm kill"))
-                (some
-                 (lambda (s)
-                   (search s after :test #'char-equal))
-                 '("Kill process" "Send signal" "Confirm kill" "Cancel"))))
-          ((string= action "Accept current choice")
-           (and before
-                after
-                (cond
-                  ((string-equal context "process search")
-                   (and (search "Case(F1)" before :test #'char-equal)
-                        (not (search "Case(F1)" after :test #'char-equal))))
-                  ((string-equal context "process sort")
-                   (and (search "Sort By" before :test #'char-equal)
-                        (not (search "Sort By" after :test #'char-equal))))
-                  ((string-equal context "kill dialog")
-                   (notany
-                    (lambda (s)
-                      (search s after :test #'char-equal))
-                    '("Kill process" "Send signal" "Confirm kill" "Cancel"))))))
-          (t nil)))))
+         (existing
+           (and (not (getf subcase :modal-action))
+                (%route-modal-action-state-p route subcase initial grid))))
+    (if (getf subcase :modal-action)
+        (eq t (%route-observer-modal-action-state-p route subcase initial grid))
+      (or (eq existing t)
+          (cond
+            ((string= action "Open process kill dialog")
+             (and before
+                  after
+                  (notany (lambda (s)
+                            (search s before :test (function char-equal)))
+                          (list "Kill process" "Send signal" "Confirm kill"))
+                  (some (lambda (s)
+                          (search s after :test (function char-equal)))
+                        (list "Kill process" "Send signal" "Confirm kill" "Cancel"))))
+            ((string= action "Accept current choice")
+             (and before
+                  after
+                  (cond
+                    ((string-equal context "process search")
+                     (and (search "Case(F1)" before :test (function char-equal))
+                          (not (search "Case(F1)" after :test (function char-equal)))))
+                    ((string-equal context "process sort")
+                     (and (search "Sort By" before :test (function char-equal))
+                          (not (search "Sort By" after :test (function char-equal)))))
+                    ((string-equal context "kill dialog")
+                     (notany (lambda (s)
+                               (search s after :test (function char-equal)))
+                             (list "Kill process" "Send signal" "Confirm kill" "Cancel"))))))
+            (t nil))))))
 
 (defun %route-observer-state-p (route mode subcase side side-name)
   (let* ((probe (getf subcase :probe))
          (initial (getf side :initial-grid))
          (grid (getf side :grid))
          (context (or (getf subcase :context) "")))
-    (unless (keywordp probe)
-      (error "Route ~a has no keyword behavior probe: ~s." (route-id route) probe))
+    (progn
+      (%route-fixture-stage-progress route subcase :observer-dispatch)
+      (unless (keywordp probe)
+        (error "Route ~a has no keyword behavior probe: ~s."
+               (route-id route) probe)))
     (case probe
       (:transition
        (let ((result (%route-action-state-default-p route mode subcase side side-name)))
@@ -139,14 +143,16 @@
                                  result
                                  "transition was not observed")))
       (:selection
-       (let* ((key6 (string= (route-id route) "key-6"))
+       (let* ((expand-restore-p (eq (getf subcase :selection-mode) :expand-restore))
               (steps (getf side :action-grids))
               (expanded (first steps))
               (restored (second steps))
-              (before-frames (and key6 initial (criterion-projection-frames initial)))
-              (expanded-frames (and key6 expanded (criterion-projection-frames expanded)))
+              (before-frames (and expand-restore-p initial (criterion-projection-frames initial)))
+              (expanded-frames
+               (and expand-restore-p expanded
+                    (criterion-projection-frames expanded)))
               (key-result
-               (if key6
+               (if expand-restore-p
                    (and before-frames
                         expanded-frames
                         (> (length before-frames) 1)
@@ -174,7 +180,7 @@
                     (not (%route-mouse-target-unavailable-p subcase initial))))
               (passed (or (and key-result (not (eq key-result :manual))) fallback)))
          (%route-observer-answer passed
-                                 (if key6
+                                 (if expand-restore-p
                                      "expanded widget then restored"
                                    (route-action route))
                                  "selection was not observed")))
@@ -229,31 +235,132 @@
               (title (%route-observer-table-title route subcase))
               (unavailable (%route-mouse-target-unavailable-p subcase initial))
               (changed (%route-observer-grid-changed-p initial grid))
-              (passed
-               (cond
-                ((member action '("Ignore other buttons" "Ignore pointer motion") :test #'equal)
-                 (and initial grid (not changed)))
-                ((and (string-equal context "graphs")
-                      (member action '("Scroll up" "Scroll down") :test #'equal))
-                 (%route-graph-window-transition-p route initial grid))
-                (unavailable nil)
-                ((and title
-                      (member action
-                              '("Select process row" "Select process sort"
-                                                     "Select CPU series"
-                                                     "Select table row or column"
-                                                     "Select battery"
-                                                     "Choose kill action")
-                              :test
-                              #'equal)
-                      (%route-observer-table-rows grid title)) changed)
-                (t changed))))
-         (%route-observer-answer passed
-                                 (list :mouse action context)
-                                 (unless passed
-                                   (if unavailable
-                                       "mouse target unavailable"
-                                     "mouse state unchanged")))))
+              (gesture (getf subcase :gesture))
+              (frame-click-p
+                (and (string= gesture "left-button-down")
+                     (member context
+                             (quote ("all widgets" "basic-mode arrows"))
+                             :test (function string=))
+                     (member action
+                             (quote ("Focus widget" "Move basic-mode widget"))
+                             :test (function string=))))
+              (frame-target (and frame-click-p "Memory"))
+              (frame-transition
+                (when frame-click-p
+                  (labels ((frame-style (candidate frame)
+                             (let ((corner
+                                     (grid-cell-at candidate
+                                                   (first frame)
+                                                   (third frame))))
+                               (list
+                                (criterion-color-vector
+                                 (cell-foreground corner))
+                                (criterion-color-vector
+                                 (cell-background corner))
+                                (cell-bold-p corner))))
+                           (selected-frame (candidate)
+                             (let* ((frames
+                                      (criterion-projection-frames candidate))
+                                    (styles
+                                      (mapcar
+                                       (lambda (frame)
+                                         (frame-style candidate frame))
+                                       frames))
+                                    (most-common
+                                      (and styles
+                                           (apply
+                                            (function max)
+                                            (mapcar
+                                             (lambda (style)
+                                               (count style styles
+                                                      :test (function equalp)))
+                                             styles))))
+                                    (outliers
+                                      (and most-common
+                                           (loop for frame in frames
+                                                 for style in styles
+                                                 when
+                                                   (< (count style styles
+                                                             :test
+                                                             (function equalp))
+                                                      most-common)
+                                                   collect frame))))
+                               (and most-common
+                                    (> most-common 1)
+                                    (= (length outliers) 1)
+                                    (first outliers))))
+                           (target-frame (candidate label)
+                             (let ((position
+                                     (loop for row below (grid-height candidate)
+                                           for span =
+                                             (first
+                                              (criterion-label-spans
+                                               (criterion-row-text candidate row)
+                                               label))
+                                           when span
+                                             return (cons (car span) row))))
+                               (and position
+                                    (find-if
+                                     (lambda (frame)
+                                       (destructuring-bind (top bottom left right)
+                                           frame
+                                         (and (<= top (cdr position) bottom)
+                                              (<= left (car position) right))))
+                                     (criterion-projection-frames candidate))))))
+                      (let ((before (and initial (selected-frame initial)))
+                          (after (and grid (selected-frame grid)))
+                          (target (and initial
+                                       (target-frame initial frame-target))))
+                      (and before target
+                           (not (equal before target))
+                           (equal after target)))))) (sort-target
+                (and (string= action "Select table row or column")
+                     (cond
+                       ((string-equal context "temperature table") "Sensor(s)")
+                       ((string-equal context "disk table") "Disk(d)")))) (sort-before
+                (and sort-target
+                     (%route-observer-table-sort-state
+                      initial title sort-target))) (sort-after
+                (and sort-target
+                     (%route-observer-table-sort-state
+                      grid title sort-target))) (sort-transition
+                (and sort-target
+                     (%route-observer-table-sort-transition-p
+                      sort-target sort-before sort-after))) (passed
+                (cond
+                  ((member action
+                           (quote ("Ignore other buttons" "Ignore pointer motion"))
+                           :test (function equal))
+                   (and initial grid (not changed)))
+                  ((and (string-equal context "graphs")
+                        (member action (quote ("Scroll up" "Scroll down"))
+                                :test (function equal)))
+                   (%route-graph-window-transition-p route initial grid))
+                  ((member action
+                           (quote ("Focus widget" "Move basic-mode widget"))
+                           :test (function string=))
+                   (and frame-click-p frame-transition))
+                  ((string= action "Select table row or column")
+                   (and (string= gesture "left-button-down")
+                        sort-transition))
+                  (t (and (not unavailable) changed))))) (%route-observer-answer
+          passed
+          (list :mouse action context
+                :frame-transition frame-transition
+                :frame-target frame-target
+                :sort-target sort-target
+                :sort-before sort-before
+                :sort-after sort-after)
+          (unless passed
+            (cond
+              (unavailable "mouse target unavailable")
+              ((member action
+                       (quote ("Focus widget" "Move basic-mode widget"))
+                       :test (function string=))
+               "mouse click did not select its target frame")
+              ((string= action "Select table row or column")
+               "mouse click did not change its table header sort marker")
+              (t "mouse state unchanged"))))))
       (:column
        (multiple-value-bind (passed expected-p) (%route-column-visible-p route grid)
          (%route-observer-answer passed

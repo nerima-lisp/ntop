@@ -19,7 +19,7 @@
     (when marker
       (format stream "default = true~%"))))
 
-(defun btm-config-string (rate)
+(defun btm-config-string (rate &optional tree-mode-p)
   (unless (and (integerp rate) (plusp rate))
     (error "RATE must be a positive integer."))
   (let* ((row-count (length *btm-layout*))
@@ -32,7 +32,11 @@
               "[flags]~%basic = false~%dot_marker = false~%rate = ~d~%~%"
               rate)
       (format stream
-              "[processes]~%case_sensitive = false~%default_grouped = true~%~%")
+              "[processes]~%case_sensitive = false~%default_grouped = ~a~%"
+              (if tree-mode-p "false" "true"))
+      (when tree-mode-p
+        (format stream "default_tree = true~%"))
+      (terpri stream)
       (loop for row in *btm-layout*
             for row-ratio in row-ratios
             do (progn

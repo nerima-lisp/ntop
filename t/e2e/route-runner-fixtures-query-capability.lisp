@@ -161,59 +161,101 @@
           (getf sample :stdout)
           (getf sample :stderr)))
 
-(defun %route-fixture-battery-tabs (grid)
-  (when grid
-    (loop with labels = nil
-          for row below (grid-height grid)
-          for text = (criterion-row-text grid row)
-          do (loop with start = 0
-                   for position = (search "Battery " text :start2 start :test #'char-equal)
-                   while position
-                   for number-start = (+ position (length "Battery "))
-                   for number-end =
-                     (or (position-if-not #'digit-char-p text :start number-start)
-                         (length text))
-                   do (when (> number-end number-start)
-                        (pushnew (subseq text number-start number-end)
-                                 labels :test #'string=))
-                      (setf start (max number-end (1+ position))))
-          finally (return (nreverse labels)))))
+(defun %route-fixture-battery-tabs (grid frame)
+  (when (and grid frame)
+    (destructuring-bind (top bottom left right) frame
+      (loop with labels = nil
+            for row from top below bottom
+            for text = (subseq (criterion-row-text grid row)
+                               left
+                               (min (grid-width grid) (1+ right)))
+            do (loop with start = 0
+                     for position = (search "Battery " text :start2 start :test #'char-equal)
+                     while position
+                     for number-start = (+ position (length "Battery "))
+                     for number-end =
+                       (or (position-if-not #'digit-char-p text :start number-start)
+                           (length text))
+                     do (when (> number-end number-start)
+                          (pushnew (subseq text number-start number-end)
+                                   labels :test #'string=))
+                        (setf start (max number-end (1+ position))))
+            finally (return (nreverse labels))))))
 
-(defun %route-fixture-prepare-mouse-capability (state route subcase raw rows columns)
-  (let* ((grid (%route-grid raw rows columns))
-         (copy (copy-list subcase))
-         (inputs nil)
-         (other nil))
-    (setf (getf copy :gesture) "right/middle/other button"
-          inputs (%route-mouse-action-inputs route copy grid rows columns)
-          other
-          (handler-case
-              (%route-mouse-subcase-inputs
-               route (list* :button :other copy) grid rows columns)
-            (error (condition) (list :error (princ-to-string condition)))))
-    (let* ((right (and inputs (list (first inputs))))
-           (middle (and (cdr inputs) (list (second inputs))))
-           (error-text (and (eq (first other) :error) (second other)))
-           (capability
-             (cond
-               ((or (null right) (null middle)) :unknown)
-               (error-text
-                (if (search "cannot encode Other button-down" error-text
-                            :test #'char-equal)
-                    :unavailable
-                    :unknown))
-               ((null other) :unknown)
-               ((or (equal other right) (equal other middle)) :unavailable)
-               (t :available)))
-           (diagnostic
-             (or error-text
-                 (case capability
-                   (:available "Other input is distinct from Right and Middle.")
-                   (:unavailable "Other input duplicates another button.")
-                   (otherwise "Could not verify the mouse input encoding.")))))
-      (setf (getf state :mouse-other-capability) capability
-            (getf state :mouse-other-inputs)
-            (list :right right :middle middle :other other)
-            (getf state :mouse-other-diagnostic) diagnostic
-            (getf state :skip-actions) (eq capability :unavailable))))
-)
+(progn
+  (defun %route-fixture-prepare-mouse-capability
+      (state route subcase raw rows columns)
+    (let* ((grid (%route-grid raw rows columns))
+           (copy (copy-list subcase))
+           (inputs nil)
+           (other nil))
+      (setf (getf copy :gesture) "right/middle/other button"
+            inputs (%route-mouse-action-inputs route copy grid rows columns)
+            other
+            (handler-case
+                (%route-mouse-subcase-inputs
+                 route (list* :button :other copy) grid rows columns)
+              (error (condition) (list :error (princ-to-string condition)))))
+      (let* ((right (and inputs (list (first inputs))))
+             (middle (and (cdr inputs) (list (second inputs))))
+             (error-text (and (eq (first other) :error) (second other)))
+             (capability
+               (cond
+                 ((or (null right) (null middle)) :unknown)
+                 (error-text
+                  (if (search "cannot encode Other button-down" error-text
+                              :test #'char-equal)
+                      :unavailable
+                      :unknown))
+                 ((null other) :unknown)
+                 ((or (equal other right) (equal other middle)) :unavailable)
+                 (t :available)))
+             (diagnostic
+               (or error-text
+                   (case capability
+                     (:available "Other input is distinct from Right and Middle.")
+                     (:unavailable "Other input duplicates another button.")
+                     (otherwise "Could not verify the mouse input encoding.")))))
+        (setf (getf state :mouse-other-capability) capability
+              (getf state :mouse-other-inputs)
+              (list :right right :middle middle :other other)
+              (getf state :mouse-other-diagnostic) diagnostic
+              (getf state :skip-actions) (eq capability :unavailable)))))
+
+  (defun %route-fixture-query-extra-process-names (subcase)
+    (case (getf subcase :query-fixture)
+      (:sleep-variants (list "ntop-t-Sleep"))
+      ((:help-search :process-search) nil)
+      (otherwise
+       (when (getf subcase :query-fixture)
+         (error "Unknown route query fixture: ~s."
+                (getf subcase :query-fixture))))))
+
+  (defun %route-fixture-query-setup-inputs (subcase)
+    (let ((procedure (getf subcase :query-procedure))
+          (query (getf subcase :query-initial))
+          (cursor (getf subcase :query-cursor)))
+      (case procedure
+        ((nil :field-token) nil)
+        ((:toggle-case :toggle-whole-word :toggle-regex
+          :cursor-start :cursor-end :clear
+          :delete-previous-word :delete-previous-character
+          :delete-next-character)
+         (unless (stringp query)
+           (error "Query procedure ~s requires an initial string." procedure))
+         (let ((target (or cursor (length query))))
+           (unless (and (integerp target) (<= 0 target (length query)))
+             (error "Query cursor ~s is outside the initial string." target))
+           (append
+            (list (%route-key-input "Ctrl+U") query)
+            (loop repeat (- (length query) target)
+                  collect (%route-key-input "Left")))))
+        (otherwise
+         (error "Unknown route query procedure: ~s." procedure)))))
+
+  (defun %route-fixture-query-after-action-input (subcase)
+    (let ((sentinel (getf subcase :query-sentinel)))
+      (when sentinel
+        (unless (stringp sentinel)
+          (error "Query sentinel must be a string: ~s." sentinel))
+        sentinel))))
