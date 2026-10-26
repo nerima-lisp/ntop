@@ -32,8 +32,8 @@
                      "NO_COLOR")
                    :test #'string=))))
   (progn
-  ;; BTM's first macOS process sample took 26-47 seconds; allow one measured window.
-  (defparameter *route-process-readiness-timeout-seconds* 60d0)
+  ;; btm 0.14.9's first macOS `ps` collection took 26-47 seconds; allow 120 seconds.
+  (defparameter *route-process-readiness-timeout-seconds* 120d0)
   (defparameter *route-process-readiness-sample-seconds* 1d0)
   (defun %route-isolated-environment-directory ()
     (let* ((directory (%route-temporary-directory "/tmp"))
@@ -104,33 +104,37 @@
                                      name-value))))))))
   (defun %route-read-interval (session raw seconds)
     (multiple-value-bind (deadline deadline-seconds)
-        (%deadline-for-call session "process readiness" seconds)
-      (let ((buffer (make-array 4096 :element-type '(unsigned-byte 8)))
+        (%deadline-for-call session "process readiness" nil)
+      (let ((interval-deadline (+ (%now) (%seconds-to-ticks seconds)))
+            (buffer (make-array 4096 :element-type '(unsigned-byte 8)))
             (query-scan-index (max 0 (- (length raw) 3))))
         (loop for now = (%now)
-              for remaining = (%ticks-to-seconds (- deadline now))
+              for remaining =
+              (min (%ticks-to-seconds (- interval-deadline now))
+                   (%ticks-to-seconds (- deadline now)))
               while (plusp remaining)
-              do (when (with-e2e-operation-timeout
-                        ("process readiness wait" deadline deadline-seconds)
-                        (cl-tty-kit:fd-wait
-                         (e2e-session-fd session) :input remaining))
+              do (when
+                     (with-e2e-operation-timeout
+                      ("process readiness wait" deadline deadline-seconds)
+                      (cl-tty-kit:fd-wait
+                       (e2e-session-fd session) :input remaining))
                    (let ((count
-                           (with-e2e-operation-timeout
-                            ("process readiness read" deadline deadline-seconds)
-                            (cl-tty-kit:fd-read-octets
-                             (e2e-session-fd session) buffer))))
+                          (with-e2e-operation-timeout
+                           ("process readiness read" deadline deadline-seconds)
+                           (cl-tty-kit:fd-read-octets
+                            (e2e-session-fd session) buffer))))
                      (cond
-                       ((null count) nil)
-                       ((zerop count)
-                        (error "PTY closed during process readiness sampling."))
-                       (t
-                        (%append-octets raw (subseq buffer 0 count))
-                        (%e2e-session-record-output session
-                                                    (subseq buffer 0 count))
-                        (multiple-value-bind (next-index)
-                            (%pty-answer-cursor-query
-                             session raw query-scan-index deadline)
-                          (setf query-scan-index next-index)))))))
+                      ((null count) nil)
+                      ((zerop count)
+                       (error "PTY closed during process readiness sampling."))
+                      (t
+                       (%append-octets raw (subseq buffer 0 count))
+                       (%e2e-session-record-output session
+                                                   (subseq buffer 0 count))
+                       (multiple-value-bind (next-index)
+                           (%pty-answer-cursor-query
+                            session raw query-scan-index deadline)
+                         (setf query-scan-index next-index)))))))
         raw)))
   (defun %route-wait-process-data (session raw rows columns)
     (incf (e2e-session-deadline session)
@@ -159,7 +163,14 @@
       (or (eq (route-kind route) :column)
           (string= (route-id route) "sleep-child")
           (string-equal context "normal process table")
-          (equal (%route-widget-type context) "proc"))))
+          (equal (%route-widget-type context) "proc")
+          (member (route-action route)
+                  '("Select process row"
+                    "Delete selected process"
+                    "Open process kill dialog"
+                    "read_only"
+                    "disable_advanced_kill")
+                  :test (function string=)))))
   (defun %route-process-startup-timeout (route subcase timeout)
     (if (%route-process-data-required-p route subcase)
         (max timeout *route-process-readiness-timeout-seconds*)
