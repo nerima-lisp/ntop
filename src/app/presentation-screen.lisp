@@ -205,8 +205,7 @@
            (style
              (ntop.ui:presentation-theme-style
               theme
-              (if (and *screen-selection-active-p*
-                       (not *screen-background-only-p*)
+              (if (and (not *screen-background-only-p*)
                        selected-p)
                   :highlighted-border
                 :border))))
