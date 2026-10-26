@@ -44,41 +44,39 @@
                                              temperature-width
                                              width))))
                    (cl-weave:it-each
- ((12 3 3 6) (18 5 4 9) (24 6 6 12)
-  (30 8 7 15) (36 9 9 18) (42 11 10 21)
-  (48 12 12 24) (54 14 13 27) (60 15 15 30))
- "matches the FR-001 1:1:2 row spans at height ~A"
- (height top-row-height middle-row-height process-height)
- (let ((layout (ntop.ui:layout-widgets 80 height)))
-   (cl-weave:expect
-    (list
-     (list 0 0
-           (first (layout-test-width-fields layout))
-           top-row-height)
-     (layout-test-rectangle-fields
-      (layout-test-rectangle layout :network))
-     (layout-test-rectangle-fields
-      (layout-test-rectangle layout :process)))
-    :to-equal
-    (list
-     (list 0 0 53 top-row-height)
-     (list 0 top-row-height 32 middle-row-height)
-     (list 0 (+ top-row-height middle-row-height)
-           80 process-height)))))
-                   (cl-weave:it
- "matches the FR-001 1:1:2 outer split at 40x12"
- (let* ((layout (ntop.ui:layout-widgets 40 12))
-        (cpu (layout-test-rectangle layout :cpu))
-        (network (layout-test-rectangle layout :network))
-        (process (layout-test-rectangle layout :process)))
-   (cl-weave:expect
-    (list (1- (ntop.ui:rectangle-height cpu))
-          (ntop.ui:rectangle-y network)
-          (ntop.ui:rectangle-height network)
-          (ntop.ui:rectangle-y process)
-          (ntop.ui:rectangle-height process))
-    :to-equal
-    (quote (2 3 3 6 6)))))
+                    ((12 3 3 6) (18 5 4 9) (24 6 6 12)
+                     (30 8 7 15) (36 9 9 18) (42 11 10 21)
+                     (48 12 12 24) (54 14 13 27) (60 15 15 30))
+                    "matches the configured 1:1:2 row spans at height ~A"
+                    (height top-row-height middle-row-height process-height)
+                    (let ((layout (ntop.ui:layout-widgets 80 height)))
+                      (cl-weave:expect
+                       (list
+                        (list 0 0
+                              (first (layout-test-width-fields layout))
+                              top-row-height)
+                        (layout-test-rectangle-fields
+                         (layout-test-rectangle layout :network))
+                        (layout-test-rectangle-fields
+                         (layout-test-rectangle layout :process)))
+                       :to-equal
+                       (list
+                        (list 0 0 53 top-row-height)
+                        (list 0 top-row-height 32 middle-row-height)
+                        (list 0 (+ top-row-height middle-row-height)
+                              80 process-height)))))
+                   (cl-weave:it-each
+                    ((220 60 (220 147 73 88 88 44) (60 15 15 30))
+                     (80 24 (80 53 27 32 32 16) (24 6 6 12))
+                     (40 12 (40 27 13 16 16 8) (12 3 3 6))
+                     (120 36 (120 80 40 48 48 24) (36 9 9 18)))
+                    "matches all configured 1:1:2 rectangle dimensions at ~Ax~A"
+                    (width height width-reference height-reference)
+                    (cl-weave:expect
+                     (layout-test-grid-differences width-reference
+                                                   height-reference)
+                     :to-equal
+                     nil))
                    (cl-weave:it "matches the full 171-size btm rectangle grid"
                                 (let ((count 0)
                                       (differences nil))
