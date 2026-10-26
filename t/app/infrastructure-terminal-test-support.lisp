@@ -456,7 +456,7 @@ printf "
        (lambda (received-worker)
          (setf stopped received-worker)
          nil))
-      ((symbol-function 'cl-tty-kit:make-stream-input-poller)
+      ((symbol-function 'ntop.app.infrastructure::%make-terminal-input-poller)
        (lambda (stream)
          (declare (ignore stream))
          (lambda (state timeout)

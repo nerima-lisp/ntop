@@ -306,4 +306,25 @@
            :to-equal
            (list expected-signals t)))
       (cl-tty-kit:close-pty pty))))
+  (cl-weave:it "emits a standalone Escape after the input ambiguity timeout"
+  (let* ((current-time 0d0)
+         (poll-input
+           (ntop.app.infrastructure::%make-terminal-input-poller
+            (make-string-input-stream (string #\Escape))
+            :escape-timeout-seconds 0.05d0
+            :now (lambda () current-time))))
+    (cl-weave:expect (funcall poll-input nil 0d0) :to-equal nil)
+    (setf current-time 0.049d0)
+    (cl-weave:expect (funcall poll-input nil 0d0) :to-equal nil)
+    (setf current-time 0.05d0)
+    (let ((events (funcall poll-input nil 0d0)))
+      (cl-weave:expect (length events) :to-be 1)
+      (cl-weave:expect
+       (cl-tty-kit:key-event-type (first events))
+       :to-be
+       :special)
+      (cl-weave:expect
+       (cl-tty-kit:key-event-code (first events))
+       :to-be
+       :escape))))
 )

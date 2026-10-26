@@ -432,7 +432,7 @@
                  (:process-search t (:close :process-search) nil t t)
                  (:process-sort nil (:close :process-sort) nil t t)
                  (:help nil (:close :help) nil t t)
-                 (:help-search t (:close :help-search) nil t t)
+                 (:help-search t (:close :help-search) :help t t)
                  (nil t nil nil t nil))))
     (dolist (case cases)
       (destructuring-bind

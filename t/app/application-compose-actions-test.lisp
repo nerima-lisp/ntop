@@ -189,6 +189,22 @@
         (cl-weave:expect history :to-equal '(:pause t))
         (cl-weave:expect (ntop.app.domain:app-state-paused-p state)
                          :to-be nil))))
+  (cl-weave:it
+   "returns to Help when Help search closes"
+   (let ((state
+           (ntop.app.domain:make-app-state :active-dialog :help-search))
+         (action
+           (ntop.app.domain:make-app-action
+            :kind :dialog
+            :value (quote (:close :help-search)))))
+     (multiple-value-bind (closed forwarded history)
+         (ntop.app.application::transition-application-state state action)
+       (cl-weave:expect
+        (ntop.app.domain:app-state-active-dialog closed)
+        :to-be
+        :help)
+       (cl-weave:expect forwarded :to-be nil)
+       (cl-weave:expect history :to-be nil))))
   (cl-weave:describe "application composition state branches"
                    (cl-weave:it
                     "navigates by visible layout and rejects inapplicable actions"

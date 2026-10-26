@@ -369,7 +369,7 @@
               (cl-weave:expect
                (ntop.app.domain:app-state-active-dialog state)
                :to-be
-               nil)
+               :help)
               (cl-weave:expect
                (ntop.app.presentation:help-state-search-active-p
                 (gethash

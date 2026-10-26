@@ -131,11 +131,67 @@
           (%restore-default-signal-handlers signals))
       (%release-terminal-settings original-termios))))
 
-(defun %application-terminal-size (fd)
-  (multiple-value-bind (columns rows) (cl-tty-kit:terminal-size fd)
-    (if (and columns rows (plusp columns) (plusp rows))
-        (values columns rows)
-        (values 80 24))))
+(progn
+  (defun %application-terminal-size (fd)
+    (multiple-value-bind (columns rows) (cl-tty-kit:terminal-size fd)
+      (if (and columns rows (plusp columns) (plusp rows))
+          (values columns rows)
+          (values 80 24))))
+  (defun %make-terminal-input-poller
+    (stream &key
+            (now
+              (lambda ()
+                (multiple-value-bind (seconds nanoseconds)
+                    (sb-unix:clock-gettime sb-unix:clock-monotonic)
+                  (+ seconds (/ nanoseconds 1000000000d0)))))
+            (escape-timeout-seconds 0.05d0))
+  (unless (input-stream-p stream)
+    (error "INPUT poll stream must be an input stream, got ~S." stream))
+  (unless (functionp now)
+    (error "INPUT poll clock must be a function, got ~S." now))
+  (unless (and (realp escape-timeout-seconds)
+               (not (minusp escape-timeout-seconds)))
+    (error "Escape timeout must be a non-negative real, got ~S."
+           escape-timeout-seconds))
+  (let ((decoder (cl-tty-kit:make-input-decoder))
+        (pending-escape-since nil)
+        (chunk
+          (make-array 4096
+                      :element-type 'character
+                      :adjustable t
+                      :fill-pointer 0)))
+    (lambda (state timeout)
+      (declare (ignore state timeout))
+      (setf (fill-pointer chunk) 0)
+      (loop repeat (array-total-size chunk)
+            for character = (read-char-no-hang stream nil nil)
+            while character
+            do (vector-push character chunk))
+      (let* ((current-time (funcall now))
+             (text (subseq chunk 0))
+             (events nil))
+        ;; A final ESC byte is ambiguous until the terminal sends more input.
+        (when pending-escape-since
+          (if (>= (- current-time pending-escape-since)
+                  escape-timeout-seconds)
+              (setf events (cl-tty-kit:decode-input (string #\Escape))
+                    pending-escape-since nil)
+              (when (plusp (length text))
+                (setf text (concatenate 'string (string #\Escape) text)
+                      pending-escape-since nil))))
+        (when (plusp (length text))
+          (if (char= (char text (1- (length text))) #\Escape)
+              (progn
+                (setf text (subseq text 0 (1- (length text))))
+                (when (plusp (length text))
+                  (setf events
+                        (nconc events
+                               (cl-tty-kit:decode-input-chunk decoder text))))
+                (setf pending-escape-since current-time))
+              (setf events
+                    (nconc events
+                           (cl-tty-kit:decode-input-chunk decoder text)))))
+        events)))))
 
 (defun %render-with-unix-time (render clock)
   (lambda (state config snapshot columns rows reasons)
@@ -189,7 +245,7 @@
                                       clock
                                       (ntop.shared.application:application-config-rate-ms
                                        config)))
-            (poll-input (cl-tty-kit:make-stream-input-poller input-stream))
+            (poll-input (%make-terminal-input-poller input-stream))
             (poll-size
              (lambda (loop-state timeout)
                (declare (ignore loop-state timeout))
