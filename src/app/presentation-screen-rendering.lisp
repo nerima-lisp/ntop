@@ -104,7 +104,8 @@
                                    series-by-widget
                                    snapshot
                                    unavailability-reasons
-                                   &optional cpu-frame-rectangles current-time-unix-seconds selection-id)
+                                   &optional cpu-frame-rectangles
+                                   current-time-unix-seconds selection-id)
   (let* ((basic-p (ntop.shared.application:application-config-basic-p config))
          (widget-selection-id
            (or selection-id
