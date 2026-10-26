@@ -1,0 +1,36 @@
+# Source: https://gist.github.com/maurycy/d20d3a37431b95c0725353b71bc9d95a
+# Relevant rows from its five-sample transcript; long residency histograms are shortened.
+Machine model: Mac16,12
+*** Sampled system activity (Fri May 8 23:03:59 2026 +0200) (1004.21ms elapsed) ***
+E-Cluster Online: 100%
+E-Cluster HW active frequency: 1214 MHz
+E-Cluster HW active residency: 60.48% (900 MHz: 1.6% 1080 MHz: 85% ...)
+CPU 0 frequency: 1285 MHz
+P-Cluster HW active frequency: 0 MHz
+P-Cluster HW active residency: 0.00% (912 MHz: 33% 1260 MHz: 0% ...)
+CPU 6 frequency: 3776 MHz
+*** Sampled system activity (Fri May 8 23:04:00 2026 +0200) (1010.56ms elapsed) ***
+E-Cluster HW active frequency: 1161 MHz
+E-Cluster HW active residency: 75.27% (900 MHz: .72% 1080 MHz: 92% ...)
+CPU 0 frequency: 1186 MHz
+P-Cluster HW active frequency: 0 MHz
+P-Cluster HW active residency: 0.00% (912 MHz: 31% 1260 MHz: 0% ...)
+CPU 6 frequency: 4069 MHz
+*** Sampled system activity (Fri May 8 23:04:01 2026 +0200) (1010.53ms elapsed) ***
+E-Cluster HW active frequency: 1259 MHz
+E-Cluster HW active residency: 72.22% (900 MHz: .85% 1080 MHz: 83% ...)
+CPU 0 frequency: 1259 MHz
+P-Cluster HW active frequency: 0 MHz
+P-Cluster HW active residency: 0.00% (912 MHz: 50% 1260 MHz: 0% ...)
+CPU 6 frequency: 3599 MHz
+*** Sampled system activity (Fri May 8 23:04:02 2026 +0200) (1010.79ms elapsed) ***
+E-Cluster HW active frequency: 1178 MHz
+E-Cluster HW active residency: 82.56% (900 MHz: .65% 1080 MHz: 90% ...)
+CPU 0 frequency: 1195 MHz
+P-Cluster HW active frequency: 0 MHz
+P-Cluster HW active residency: 0.00% (912 MHz: 22% 1260 MHz: 0% ...)
+CPU 6 frequency: 4065 MHz
+*** Sampled system activity (Fri May 8 23:04:03 2026 +0200) (1010.35ms elapsed) ***
+E-Cluster HW active frequency: 1171 MHz
+E-Cluster HW active residency: 89.17% (900 MHz: .27% 1080 MHz: 92% ...)
+CPU 0 frequency: 1164 MHz
