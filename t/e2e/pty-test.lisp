@@ -1,4 +1,36 @@
 (in-package #:ntop.e2e.test)
+(cl-weave:describe
+ "PTY session resize signaling"
+ (cl-weave:it
+  "reports resized PTY dimensions to the child"
+  (let* ((script
+           (format nil
+                   (concatenate 'string
+                                "import os, signal, time~%"
+                                "def resized(signum, frame):~%"
+                                "    size = os.get_terminal_size(0)~%"
+                                "    os.write(1, f'RESIZE={size.columns}x{size.lines}'.encode())~%"
+                                "signal.signal(signal.SIGWINCH, resized)~%"
+                                "os.write(1, b'RESIZE_READY')~%"
+                                "while True: time.sleep(1)~%")))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 24 80 :timeout-seconds 5d0)))
+    (unwind-protect
+         (progn
+           (ntop.e2e::pty-read-until-idle
+            session :quiet-seconds 0.05d0 :timeout-seconds 2d0)
+           (ntop.e2e::pty-resize-session
+            session 36 120 :timeout-seconds 2d0)
+           (multiple-value-bind (output)
+               (ntop.e2e::%route-read-through-quiet-period
+                session 0.3d0 2d0 0.75d0)
+             (cl-weave:expect
+              (not (null (search "RESIZE=120x36"
+                                 (ntop.e2e::%octets-to-text output))))
+              :to-be
+              t)))
+      (ntop.e2e::close-e2e-session session)))))
 (defmacro define-frame-cases (&body cases)
   `(cl-weave:it-each ,cases
                      "frame readiness for ~A"

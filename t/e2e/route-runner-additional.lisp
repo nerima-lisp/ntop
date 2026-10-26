@@ -1,10 +1,8 @@
 (in-package #:ntop.e2e)
-
 (defun %route-wait-for-exit (session timeout-seconds)
   (let ((process (e2e-session-process session)))
     (%e2e-drain-session-until-exit session timeout-seconds "child exit")
     (sb-ext:process-exit-code process)))
-
 (defun %route-parse-output (program arguments timeout-seconds)
   (let* ((result (host-kit:run-program program arguments
                                        :timeout timeout-seconds
@@ -39,9 +37,9 @@
                (or (null escape-position)
                    (> csi-position escape-position))
                (eq (csi-state (1+ csi-position)) :incomplete))))))
-(defun %route-read-through-quiet-period
-    (session quiet-seconds timeout-seconds
-             &optional (initial-quiet-seconds quiet-seconds))
+(defun %route-read-through-quiet-period (session quiet-seconds timeout-seconds
+                                         &optional (initial-quiet-seconds quiet-seconds)
+                                           completion-predicate)
   (%validate-seconds quiet-seconds "QUIET-SECONDS")
   (%validate-seconds initial-quiet-seconds "INITIAL-QUIET-SECONDS")
   (multiple-value-bind (deadline deadline-seconds)
@@ -56,7 +54,9 @@
                  (%signal-timeout "read" deadline-seconds))
                (when (>= now quiet-deadline)
                  (if (or (%route-incomplete-escape-suffix-p output)
-                       (%route-incomplete-utf8-suffix-p output))
+                         (%route-incomplete-utf8-suffix-p output)
+                         (and completion-predicate
+                              (not (funcall completion-predicate output))))
                      (setf quiet-deadline deadline)
                      (return (values output (%elapsed-seconds session now)))))
                (let ((wait-until (min deadline quiet-deadline)))
@@ -361,17 +361,20 @@
                  session
                  *route-frame-quiet-seconds*
                  timeout
-                 (* *route-first-frame-factor* (/ rate 1000d0)))
+                 (* *route-first-frame-factor* (/ rate 1000d0))
+                 (lambda (octets)
+                   (let ((grid (%route-grid octets 36 120)))
+                     (and (char= (cell-character (grid-cell-at grid 0 119)) (code-char #x2510))
+                          (char= (cell-character (grid-cell-at grid 35 119)) (code-char #x2518))))))
               (%append-octets raw resized))
             (let ((grid (%route-grid raw 36 120)))
               (%route-write-ansi path raw)
               (list :grid grid :projection (project-criterion-grid grid)
                     :initial-projection nil :initial-grid initial-grid
                     :action-grids (list grid) :evidence (namestring path)
-                    :actual (format nil "terminal frame is ~d by ~d"
+                    :actual (format nil "captured a ~d by ~d frame"
                                     (grid-width grid) (grid-height grid))))))
       (%route-close-session-with-evidence session evidence-prefix))))
-
 (progn
   (defun %route-pid-line-p (text pid)
     (let ((token (format nil "~d" pid)))

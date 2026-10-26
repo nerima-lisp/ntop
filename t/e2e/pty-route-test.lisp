@@ -144,6 +144,51 @@ while True:
             t))
       (ntop.e2e::close-e2e-session session))))
  (cl-weave:it
+  "waits for a complete resize frame after the initial quiet window"
+  (let* ((script
+           (format nil
+                   (concatenate 'string
+                                "import os,time~%"
+                                "os.write(1,b'INITIAL_FRAME')~%"
+                                "time.sleep(0.35)~%"
+                                "os.write(1,b'RESIZE_FRAME_COMPLETE')~%"
+                                "while True: time.sleep(1)~%")))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 24 80 :timeout-seconds 3d0))
+         (started (ntop.e2e::%now))
+         (output nil))
+    (unwind-protect
+         (progn
+           (cl-weave:expect
+            (cl-tty-kit:fd-wait
+             (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be
+            t)
+           (setf output
+                 (ntop.e2e::%route-read-through-quiet-period
+                  session 0.05d0 2d0 0.08d0
+                  (lambda (octets)
+                    (search
+                     "RESIZE_FRAME_COMPLETE"
+                     (ntop.e2e::%octets-to-text octets)))))
+           (let ((text (ntop.e2e::%octets-to-text output)))
+             (cl-weave:expect
+              (not (null (search "INITIAL_FRAME" text)))
+              :to-be
+              t)
+             (cl-weave:expect
+              (not (null (search "RESIZE_FRAME_COMPLETE" text)))
+              :to-be
+              t)
+             (cl-weave:expect
+              (>= (ntop.e2e::%ticks-to-seconds
+                   (- (ntop.e2e::%now) started))
+                  0.25d0)
+              :to-be
+              t)))
+      (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
   "keeps reading a CSI sequence split across the quiet period"
   (let* ((script
            (format nil

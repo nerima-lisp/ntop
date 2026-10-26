@@ -1,4 +1,6 @@
 (in-package #:ntop.e2e)
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (require :sb-posix))
 
 (defmacro with-e2e-operation-timeout ((operation deadline timeout-seconds) &body
                                       body)
@@ -481,5 +483,12 @@
                                       (e2e-session-pty session)
                                       cols
                                       rows))
+                                    ;; The Darwin PTY resize probe received no SIGWINCH.
+                                    #+darwin
+                                    (when (sb-ext:process-alive-p
+                                           (e2e-session-process session))
+                                      (sb-ext:process-kill
+                                       (e2e-session-process session)
+                                       sb-posix:sigwinch :pid))
                                     (%elapsed-seconds session resized-at))))))
 

@@ -447,18 +447,6 @@
                        "syntax error, record the resulting rows, and close the"
                        "prompt with Escape. Record whether BTM exits and restores"
                        "the terminal.")))
-          ((string= id "resize")
-           (list :reason
-                 (text "The BTM-self resize case timed out reading after 44.245"
-                       "seconds while waiting for post-resize output. No frame"
-                       "was verified, so this does not distinguish application"
-                       "drawing delay from a PTY read failure.")
-                 :procedure
-                 (text "Start BTM in an 80 by 24 terminal and wait for its initial"
-                       "frame. Resize the terminal to 120 by 36. Record the time"
-                       "until output resumes and verify the final frame uses all"
-                       "120 columns and 36 rows. Save the terminal capture and"
-                       "note whether exit restores terminal settings.")))
           ((and
             (member id (list "key-51" "key-52" "key-53"
                              "mouse-69" "mouse-70")
