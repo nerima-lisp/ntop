@@ -90,27 +90,24 @@
         (initial-projection nil))
     (multiple-value-bind (initial)
         (pty-read-until-idle
-                             session
-                             :quiet-seconds *route-frame-quiet-seconds*
-                             :first-frame-not-before
-                             (* *route-first-frame-factor* (/ rate 1000d0))
-                             :timeout-seconds
-                             (%route-process-startup-timeout route subcase timeout))
+         session
+         :quiet-seconds *route-frame-quiet-seconds*
+         :first-frame-not-before
+         (* *route-first-frame-factor* (/ rate 1000d0))
+         :timeout-seconds
+         (%route-process-startup-timeout route subcase timeout))
       (%append-octets raw initial)
-      (progn
-      (setf initial-projection
-            (project-criterion-grid (%route-grid raw rows columns)))
       (when (%route-process-data-required-p route subcase)
         (unless (eq :ready (%route-wait-process-data session raw rows columns))
           (let* ((grid (%route-grid raw rows columns))
                  (projection (project-criterion-grid grid))
                  (ansi-path
-                   (merge-pathnames (format nil "~a.ansi" evidence-prefix))))
+                  (merge-pathnames (format nil "~a.ansi" evidence-prefix))))
             (return-from %route-read-initial-and-action
               (values grid projection (%route-write-ansi ansi-path raw)
                       projection projection grid nil :manual))))
         (setf initial-projection
-              (project-criterion-grid (%route-grid raw rows columns))))))
+              (project-criterion-grid (%route-grid raw rows columns)))))
     (when (plusp (length context-text))
       (pty-send-input session (%route-octets context-text)
                       :timeout-seconds timeout)

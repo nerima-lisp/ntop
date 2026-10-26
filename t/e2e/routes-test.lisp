@@ -340,12 +340,12 @@
                 :key (function ntop.e2e::route-id)
                 :test (function string=)))
         (subcase (first (ntop.e2e::%route-subcases-expanded route)))
-        (empty-side (list :projection nil :initial-projection nil
-                          :grid nil :initial-grid nil))
-        (visible-grid (let ((grid (ntop.e2e:make-terminal-grid :rows 12 :cols 100)))
-                (criterion-test-write grid 1 0 "0"
-                                      "RAM RX: TX: Total RX: Total TX: Disks Temperature")
-                grid))
+        (empty-side (list :projection nil :initial-projection nil :grid nil :initial-grid nil))
+        (visible-grid
+         (let ((grid (ntop.e2e:make-terminal-grid :rows 12 :cols 100)))
+           (criterion-test-write grid 1 0 "0"
+                                 "RAM RX: TX: Total RX: Total TX: Disks Temperature")
+           grid))
         (visible-side
           (list :projection nil :initial-projection nil
                 :grid visible-grid :initial-grid visible-grid))
