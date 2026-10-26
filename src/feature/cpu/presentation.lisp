@@ -227,8 +227,8 @@
                         title-height
                         (if header-p 1 0))))
                (row-styles
-                (when sample (mapcar (lambda (row) (%cpu-row-style row theme)) rows))))
-          (ntop.ui:table-visible-window state (if sample (length rows) 0) body-height)
+                (mapcar (lambda (row) (%cpu-row-style row theme)) rows)))
+          (ntop.ui:table-visible-window state (length rows) body-height)
           (let ((areas
                   (ntop.ui:draw-table
                    (%make-cpu-legend-target
@@ -245,7 +245,7 @@
                                               :focused-p t
                                               :show-current-entry-when-unfocused-p t
                                               :empty-message (unless sample "No data"))
-                   (if sample rows nil)
+                   rows
                    :table-gap-p nil)))
             (if (plusp body-row-offset)
                 (mapcar
