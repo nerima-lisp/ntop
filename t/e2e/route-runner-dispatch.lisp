@@ -49,15 +49,7 @@
            (string= (ntop.app.domain:parity-flag-snake-case (route-entry route))
                     "hide_k_threads")
            (not (member :linux *features*)))
-      (list :status :manual
-            :passed nil
-            :input description
-            :expected (route-expected route)
-            :actual (format nil "skipped on ~a; valid flag requires Linux"
-                            (software-type))
-            :cause "this host cannot verify the Linux-only flag effect"
-            :first-difference nil
-            :evidence nil))
+      (%route-fixture-applicability-result route subcase mode nil nil reference-prefix))
      ((and (eq (route-kind route) :flag)
            (string= (ntop.app.domain:parity-flag-value-type (route-entry route))
                     "control"))

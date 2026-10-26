@@ -66,27 +66,116 @@
   (cl-weave:describe
    "typed route catalog"
    (cl-weave:it
-    "counts each typed record and the nine additions once"
-    (let* ((parity (ntop.e2e::route-parity-catalog))
-           (additional (ntop.e2e::route-additional-catalog))
-           (all (ntop.e2e::route-catalog))
-           (kinds (list :key :mouse :flag :column :search-field :extension)))
-      (cl-weave:expect (ntop.e2e::route-count parity) :to-equal 173)
-      (cl-weave:expect
-       (mapcar
-        (function
-         (lambda (kind)
-           (cons kind (ntop.e2e::route-kind-count kind parity))))
-        kinds)
-       :to-equal
-       (list (cons :key 68)
-             (cons :mouse 12)
-             (cons :flag 52)
-             (cons :column 20)
-             (cons :search-field 17)
-             (cons :extension 4)))
-      (cl-weave:expect (ntop.e2e::route-count additional) :to-equal 9)
-      (cl-weave:expect (ntop.e2e::route-count all) :to-equal 182)))
+ "counts typed routes and checks expanded subcase metadata"
+ (let* ((parity (ntop.e2e::route-parity-catalog))
+        (additional (ntop.e2e::route-additional-catalog))
+        (all (ntop.e2e::route-catalog))
+        (cases
+          (loop for route in all
+                append
+                (loop for subcase in
+                       (ntop.e2e::%route-subcases-expanded route)
+                      for index from 1
+                      collect
+                      (cons
+                       (format nil "~a-~3,'0d"
+                               (ntop.e2e::route-id route) index)
+                       subcase))))
+        (metadata
+          (remove-if-not
+           (lambda (entry)
+             (some (lambda (key) (getf (cdr entry) key))
+                   '(:fixture :probe :applicability)))
+           cases))
+        (applicable
+          (remove-if-not
+           (lambda (entry) (getf (cdr entry) :applicability))
+           metadata))
+        (b-ids
+          '("key-16-003" "key-17-003" "key-20-008" "key-21-007"
+            "key-21-008" "key-34-001" "key-36-004" "key-48-001"
+            "key-48-002" "mouse-69-004" "mouse-78-001" "flag-98-002"
+            "flag-99-001" "sleep-child-001" "key-15-002" "flag-113-001"
+            "search-field-155-001" "mouse-69-001" "mouse-70-001"))
+        (mouse
+          (remove-if-not
+           (lambda (entry) (search "mouse-79-" (car entry)))
+           cases)))
+   (cl-weave:expect
+    (list (length parity) (length additional) (length all))
+    :to-equal (list 173 9 182))
+   (cl-weave:expect
+    (loop for kind in
+          (list :key :mouse :flag :column :search-field :extension)
+          collect (cons kind (ntop.e2e::route-kind-count kind parity)))
+    :to-equal
+    (list (cons :key 68) (cons :mouse 12) (cons :flag 52)
+          (cons :column 20) (cons :search-field 17) (cons :extension 4)))
+   (cl-weave:expect
+    (list (length cases)
+          (length metadata)
+          (count nil metadata
+                 :key (lambda (entry)
+                        (getf (cdr entry) :applicability)))
+          (length applicable)
+          (loop for app in
+                (list :battery-tabs :linux-only :mouse-other :powermetrics)
+                collect
+                (count app applicable
+                       :key (lambda (entry)
+                              (getf (cdr entry) :applicability)))))
+    :to-equal (list 422 132 123 9 (list 5 2 1 1)))
+   (cl-weave:expect
+    (every
+     (lambda (entry)
+       (and
+        (member (getf (cdr entry) :fixture)
+                (list :dashboard :processes :process-tree :graph :search
+                      :help :table :battery :capability))
+        (member (getf (cdr entry) :probe)
+                (list :transition :selection :tree :search-cursor
+                      :search-results :query-edit :navigation :modal :sort
+                      :table :mouse :column :graph :extension :resize :restore
+                      :cpu-frequency))
+        (or
+         (null (getf (cdr entry) :applicability))
+         (member (getf (cdr entry) :applicability)
+                 (list :battery-tabs :linux-only :mouse-other :powermetrics)))))
+     metadata)
+    :to-be t)
+   (cl-weave:expect
+    (every
+     (lambda (id)
+       (let ((entry (assoc id cases :test #'string=)))
+         (and entry
+              (not
+               (some (lambda (key) (getf (cdr entry) key))
+                     (list :fixture :probe :applicability))))))
+     b-ids)
+    :to-be t)
+   (cl-weave:expect
+    (mapcar #'car mouse)
+    :to-equal (list "mouse-79-001" "mouse-79-002" "mouse-79-003"))
+   (cl-weave:expect
+    (mapcar
+     (lambda (entry)
+       (list (getf (cdr entry) :button)
+             (getf (cdr entry) :probe)
+             (getf (cdr entry) :applicability)))
+     mouse)
+    :to-equal
+    (list (list :right :transition nil)
+          (list :middle :transition nil)
+          (list :other :mouse :mouse-other)))
+   (cl-weave:expect
+    (mapcar
+     (lambda (id)
+       (let ((route
+               (find id all :key #'ntop.e2e::route-id :test #'string=)))
+         (list (ntop.e2e::route-classification route)
+               (ntop.e2e::route-manual-reason route))))
+     (list "mouse-79" "cpu-frequency"))
+    :to-equal (list (list :automated nil) (list :automated nil)))))
    (cl-weave:it
  "selects routes and subcases from the 182-route catalog"
  (let* ((routes (ntop.e2e::route-catalog))
@@ -143,39 +232,40 @@
     :to-be
     t)))
    (cl-weave:it
- "writes a one-subcase report with the full route report format"
+ "writes a one-subcase N/A report with reason and evidence"
  (let* ((status nil)
         (output
           (with-output-to-string (*standard-output*)
             (setf status
                   (ntop.e2e::run-route-harness
                    :mode "btm-self"
-                   :route-ids (list "key-15")
-                   :subcase-id "key-15-002"
+                   :route-ids (list "extension-170")
+                   :subcase-id "extension-170-001"
                    :evidence-directory
-                   (namestring (uiop:temporary-directory))))))
+                   (namestring (ntop.e2e::%make-e2e-temporary-directory))))))
         (prefix "Route report: ")
         (prefix-start (search prefix output))
-        (path-start (and prefix-start
-                         (+ prefix-start (length prefix))))
+        (path-start (and prefix-start (+ prefix-start (length prefix))))
         (path-end (and path-start
-                       (position #\Newline output :start path-start)))
+                       (position (code-char 10) output :start path-start)))
         (report (and path-end
                      (uiop:read-file-string
                       (subseq output path-start path-end)))))
    (cl-weave:expect status :to-be 0)
-   (cl-weave:expect (search "1/1 key-15 MANUAL" output)
-                    :to-equal
-                    0)
+   (cl-weave:expect (search "1/1 extension-170 N/A" output)
+                    :to-be 0)
    (cl-weave:expect
-    (search "| ID | Status | Input sequence | Expected | Actual | "
-            report)
-    :to-satisfy (function identity))
-   (cl-weave:expect (search "  - key-15-002 (" report)
-                    :to-satisfy (function identity))
+    (search "| ID | Status | Input sequence | Expected | Actual | " report)
+    :to-satisfy (function plusp))
+   (cl-weave:expect (search "extension-170-001" report)
+                    :to-satisfy (function plusp))
+   (cl-weave:expect (search "BTM has no" report) :to-satisfy (function plusp))
+   (cl-weave:expect (search "no-btm.md" report) :to-satisfy (function plusp))
+   (cl-weave:expect (search "MANUAL" output) :to-be nil)
+   (cl-weave:expect (search "Procedure:" report) :to-be nil)
    (cl-weave:expect
-    (search "Subcase counts: 1 total, 0 PASS, 0 FAIL, 1 MANUAL." report)
-    :to-satisfy (function identity))))
+    (search "Subcase counts: 1 total, 0 PASS, 0 FAIL, 1 N/A." report)
+    :to-satisfy (function plusp))))
    (cl-weave:it
     "records every flag spelling and the help and version controls"
     (let* ((parity (ntop.e2e::route-parity-catalog))
@@ -258,123 +348,7 @@
                          :to-be nil)))))
 
   (cl-weave:describe
- "BTM self subcase manual classifications"
- (cl-weave:it
-  "classifies exactly nine expanded BTM self subcases"
-  (let* ((routes (ntop.e2e::route-catalog))
-         (target-ids
-           (list "key-15-002" "key-51-001" "key-52-001" "key-53-001"
-                 "mouse-69-001" "flag-113-001"
-                 "search-field-153-001" "search-field-154-001"
-                 "search-field-155-001")))
-    (labels ((manual-targets (mode)
-               (loop for route in routes
-                     append
-                     (loop for subcase in
-                             (ntop.e2e::%route-subcases-expanded route)
-                           for index from 1
-                           for spec =
-                             (ntop.e2e::%route-btm-self-manual-spec
-                              mode route subcase)
-                           when spec
-                             collect
-                             (format nil "~a-~3,'0d"
-                                     (ntop.e2e::route-id route) index))))
-             (target-route-subcase-counts ()
-               (loop for id in '("key-15" "key-51" "key-52" "key-53" "mouse-69"
-                                 "mouse-70" "flag-113" "search-field-153"
-                                 "search-field-154" "search-field-155")
-                     for route =
-                       (find id routes :key #'ntop.e2e::route-id
-                             :test #'string=)
-                     collect
-                     (cons id
-                           (length
-                            (ntop.e2e::%route-subcases-expanded route)))))
-             (manual-specs-have-procedure-p ()
-               (every
-                (lambda (route)
-                  (loop for subcase in
-                          (ntop.e2e::%route-subcases-expanded route)
-                        for spec =
-                          (ntop.e2e::%route-btm-self-manual-spec
-                           "btm-self" route subcase)
-                        always
-                        (or (null spec)
-                            (and (stringp (getf spec :reason))
-                                 (plusp (length (getf spec :reason)))
-                                 (stringp (getf spec :procedure))
-                                 (plusp (length (getf spec :procedure)))))))
-                routes)))
-      (cl-weave:expect (manual-targets "btm-self") :to-equal target-ids)
-      (cl-weave:expect (manual-targets "ntop") :to-equal nil)
-      (cl-weave:expect
-       (target-route-subcase-counts)
-       :to-equal
-       (list (cons "key-15" 4) (cons "key-51" 1) (cons "key-52" 1)
-             (cons "key-53" 1) (cons "mouse-69" 4) (cons "mouse-70" 4)
-             (cons "flag-113" 4) (cons "search-field-153" 1)
-             (cons "search-field-154" 2) (cons "search-field-155" 1)))
-      (cl-weave:expect (manual-specs-have-procedure-p) :to-be t))))
- (cl-weave:it
-  "keeps a failed sibling visible when another subcase is manual"
-  (let ((route (ntop.e2e::make-route-case :id "test")))
-    (cl-weave:expect
-     (ntop.e2e::%route-result-status
-      route
-      (list (list :passed t)
-            (list :status :manual :passed nil)
-            (list :passed t)))
-     :to-be :manual)
-    (cl-weave:expect
-     (ntop.e2e::%route-result-status
-      route
-      (list (list :passed t)
-            (list :status :manual :passed nil)
-            (list :passed nil)))
-     :to-be :fail)))
- (cl-weave:it
- "classifies invisible and asymmetric route state observations"
- (let* ((route
-          (find "basic-mode" (ntop.e2e::route-catalog)
-                :key (function ntop.e2e::route-id)
-                :test (function string=)))
-        (subcase (first (ntop.e2e::%route-subcases-expanded route)))
-        (empty-side (list :projection nil :initial-projection nil :grid nil :initial-grid nil))
-        (visible-grid
-         (let ((grid (ntop.e2e:make-terminal-grid :rows 12 :cols 100)))
-           (criterion-test-write grid 1 0 "0"
-                                 "RAM RX: TX: Total RX: Total TX: Disks Temperature")
-           grid))
-        (visible-side
-          (list :projection nil :initial-projection nil
-                :grid visible-grid :initial-grid visible-grid))
-        (unobserved
-          (loop for mode in '("ntop" "btm-self")
-                collect
-                (multiple-value-list
-                 (ntop.e2e::%route-all-expected-actual
-                  route mode subcase empty-side empty-side))))
-        (asymmetric
-          (multiple-value-list
-           (ntop.e2e::%route-all-expected-actual
-            route "ntop" subcase visible-side empty-side))))
-   (cl-weave:expect (mapcar #'fourth unobserved) :to-equal '(:manual :manual))
-   (cl-weave:expect
-    (search "Both condition-A projections matched" (third (first unobserved)))
-    :to-satisfy (function plusp))
-   (cl-weave:expect (fourth asymmetric) :to-be nil)
-   (cl-weave:expect
-    (search "reference, but not the candidate" (third asymmetric))
-    :to-satisfy (function plusp))))
- (cl-weave:it
-  "uses one status classification for subcase rows and totals"
-  (cl-weave:expect
-   (mapcar #'ntop.e2e::%route-subresult-status
-           (list (list :passed t)
-                 (list :status :manual :passed nil)
-                 (list :passed nil)))
-   :to-equal '(:pass :manual :fail)))
+ "BTM self applicability N/A results"
  (cl-weave:it
   "recognizes an empty process table as an unavailable mouse target"
   (let ((subcase (list :context "tables"))
@@ -476,25 +450,28 @@
                      ntop-args :test (function equal))))
          :to-be t)))))
  (cl-weave:it
- "classifies unverified Help Escape as manual with a human check"
- (let* ((route
-         (find "key-36" (ntop.e2e::route-catalog)
-               :key #'ntop.e2e::route-id
-               :test #'string=))
-        (subcase
-         (find "help" (ntop.e2e::%route-subcases-expanded route)
-               :key (lambda (entry) (getf entry :context))
-               :test #'string-equal))
-        (reason
-         (ntop.e2e::%route-manual-reason route subcase nil nil))
-        (procedure
-         (ntop.e2e::%route-manual-procedure route subcase "Esc" "help")))
-   (cl-weave:expect
- (let ((grid (ntop.e2e:make-terminal-grid :rows 1 :cols 1)))
-   (ntop.e2e::%route-modal-action-state-p route subcase grid grid))
- :to-equal
- :manual)
-   (cl-weave:expect (not (null (search "Both paired BTM captures" reason))) :to-be t)
-   (cl-weave:expect (not (null (search "press Escape once" procedure))) :to-be t)
-   (cl-weave:expect (not (null (search "dashboard returns" procedure))) :to-be t)))
+  "records mode N/A evidence without a manual procedure"
+  (let* ((route
+          (find "extension-170" (ntop.e2e::route-catalog)
+                :key (function ntop.e2e::route-id)
+                :test (function string=)))
+         (subcase (first (ntop.e2e::%route-subcases-expanded route)))
+         (directory (ntop.e2e::%make-e2e-temporary-directory))
+         (result
+          (ntop.e2e::%route-btm-self-na-result route subcase 1 directory))
+         (evidence (first (getf result :evidence)))
+         (report (uiop:read-file-string evidence)))
+    (unwind-protect
+         (progn
+           (cl-weave:expect (getf result :status) :to-be :na)
+           (cl-weave:expect (getf result :applicability) :to-be :mode)
+           (cl-weave:expect (getf result :mode) :to-equal "btm-self")
+           (cl-weave:expect (stringp (getf result :reason)) :to-be t)
+           (cl-weave:expect (stringp (getf result :actual)) :to-be t)
+            (cl-weave:expect (not (null (probe-file evidence))) :to-be t)
+           (cl-weave:expect (ntop.e2e::%route-subresult-status result)
+                            :to-be :na)
+           (cl-weave:expect (search "Reason:" report) :to-satisfy (function plusp))
+           (cl-weave:expect (search "Procedure:" report) :to-be nil))
+      (uiop:delete-directory-tree directory :validate t))))
 ))
