@@ -380,7 +380,15 @@
     (let ((routes (ntop.e2e::route-catalog))
           (unmarked (selection-grid nil)))
       (dolist (case
-                (list (list "key-9" 2 "Shift+Right"
+                (list (list "key-8" 1 "Ctrl+Left"
+                            "Move widget selection left" 1 0 2)
+                      (list "key-8" 2 "Shift+Left"
+                            "Move widget selection left" 1 0 2)
+                      (list "key-8" 3 "H"
+                            "Move widget selection left" 1 0 2)
+                      (list "key-8" 4 "A"
+                            "Move widget selection left" 1 0 2)
+                      (list "key-9" 2 "Shift+Right"
                             "Move widget selection right" 0 1 2)
                       (list "key-10" 2 "Shift+Up"
                             "Move widget selection up" 4 2 5)
@@ -422,7 +430,7 @@
             (cl-weave:expect
              (ntop.e2e::%route-key-context-state
               route subcase unmarked unmarked nil)
-             :to-be :manual))))
+             :to-be nil))))
       (let* ((route
                (find "key-9" routes :key (function ntop.e2e::route-id)
                      :test (function string=)))
@@ -450,5 +458,32 @@
                    :projection candidate-projection))
           (cl-weave:expect passed :to-be nil)
           (cl-weave:expect (not (null difference)) :to-be t)
-          (cl-weave:expect (not (null (search "selected-widget focus" cause))) :to-be t)
-          (cl-weave:expect status :to-equal :manual)))))))
+          (cl-weave:expect
+           (search "condition-A reference and candidate differ" cause)
+           :to-be 0)
+          (cl-weave:expect status :to-equal nil))))))
+  (cl-weave:it
+ "requires semantic transitions for tree, navigation, sort, table, and search"
+ (cl-weave:expect
+  (list
+   (ntop.e2e::%route-observer-tree-transition-p
+    "Toggle process tree" (list 3 0 0) (list 3 0 0))
+   (ntop.e2e::%route-observer-tree-transition-p
+    "Toggle process tree" (list 3 0 0) (list 3 2 0))
+   (ntop.e2e::%route-observer-navigation-index-p "Move to next row" 2 3 8 8)
+   (ntop.e2e::%route-observer-navigation-index-p "Move to next row" 2 5 8 8)
+   (ntop.e2e::%route-observer-sort-transition-p
+    "Sort process by CPU"
+    (list "Name(n)" (char "▲" 0))
+    (list "CPU%(c)" (char "▼" 0)))
+   (ntop.e2e::%route-observer-table-header-transition-p "Disk" "Disk")
+   (ntop.e2e::%route-observer-table-header-transition-p "Disk" "Temp")
+   (ntop.e2e::%route-observer-table-sort-transition-p
+    "Disk(d)" (list "Mount(m)" (char "▲" 0))
+    (list "Disk(d)" (char "▼" 0)))
+   (ntop.e2e::%route-observer-search-result-rows-match-p
+    "process" (list "1 - Process Table"))
+   (ntop.e2e::%route-observer-search-result-rows-match-p
+    "process" (list "1 - Network Table")))
+  :to-equal
+  (list nil t t nil t nil t t t nil))))

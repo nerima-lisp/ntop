@@ -54,7 +54,7 @@
     (namestring ansi-path)))
 (defun %route-read-initial-and-action (session rows columns rate timeout
                                                action-text context-text evidence-prefix
-                                               route subcase arguments)
+                                               route subcase arguments fixture-state)
   (let ((raw (make-array 0 :element-type '(unsigned-byte 8)
                          :adjustable t :fill-pointer 0))
         (initial-projection nil)
@@ -125,6 +125,11 @@
                 (%append-octets raw preparation-output)))))))
     (let* ((before-grid
             (progn
+              (when fixture-state
+                (multiple-value-setq (raw fixture-state)
+                  (%route-fixture-prepare
+                   fixture-state route subcase session raw rows columns rate timeout
+                   evidence-prefix)))
               (when (and (eq (route-kind route) :key)
                          (member (route-action route)
                                  (list "Zoom graph out" "Reset graph zoom")
@@ -244,6 +249,12 @@
                  :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0)))))))
           (%append-octets raw action-output))
         (push (%route-grid raw rows columns) action-grids))
+      (multiple-value-bind (updated-raw after-grid)
+          (%route-fixture-after-action
+           fixture-state session raw rows columns rate timeout)
+        (setf raw updated-raw)
+        (when after-grid
+          (push after-grid action-grids)))
       (let* ((ansi-path (merge-pathnames
                          (format nil "~a.ansi" evidence-prefix)))
              (grid (%route-grid raw rows columns)))
@@ -257,32 +268,46 @@
   (let* ((context (or (getf subcase :context) ""))
          (context-text (%route-context-input context route subcase))
          (action-text (%route-action-text route subcase rows columns))
-         (args (%route-base-arguments program config-path route subcase evidence-directory))
+         (args (%route-base-arguments program config-path route subcase
+                                      evidence-directory))
          (session
           (launch-e2e-process
            program args rows columns
            :environment (%route-environment)
            :timeout-seconds
-           (%route-process-startup-timeout route subcase timeout))))
+           (%route-process-startup-timeout route subcase timeout)))
+         (fixture-state nil))
     (unwind-protect
-        (multiple-value-bind (grid projection evidence before initial
-                                   initial-grid action-grids readiness-status
-                                   readiness-result readiness-diagnostic)
-            (%route-read-initial-and-action session rows columns rate timeout
-                                            action-text context-text
-                                            evidence-prefix route subcase args)
-          (list :grid grid :projection projection
-                :initial-projection (or before initial)
-                :initial-grid initial-grid :action-grids action-grids
-                :evidence evidence :readiness-status readiness-status
-                :readiness-result readiness-result
-                :readiness-diagnostic readiness-diagnostic
-                :actual (if readiness-result
-                            (format nil "readiness ~a: ~a"
-                                    readiness-result readiness-diagnostic)
-                          (format nil "captured a ~d by ~d terminal frame" columns rows))
-                :cause readiness-diagnostic))
-      (%route-close-session-with-evidence session evidence-prefix))))
+         (progn
+           (setf fixture-state
+                 (and (or (getf subcase :fixture)
+                          (getf subcase :probe)
+                          (getf subcase :applicability))
+                      (%route-fixture-start route subcase)))
+           (multiple-value-bind (grid projection evidence before initial
+                                 initial-grid action-grids readiness-status
+                                 readiness-result readiness-diagnostic)
+               (%route-read-initial-and-action
+                session rows columns rate timeout action-text context-text
+                evidence-prefix route subcase args fixture-state)
+             (list :grid grid :projection projection
+                   :initial-projection (or before initial)
+                   :initial-grid initial-grid :action-grids action-grids
+                   :evidence evidence :readiness-status readiness-status
+                   :readiness-result readiness-result
+                   :readiness-diagnostic readiness-diagnostic
+                   :fixture-state fixture-state
+                   :fixture-evidence
+                   (and fixture-state (getf fixture-state :evidence-path))
+                   :actual
+                   (if readiness-result
+                       (format nil "readiness ~a: ~a"
+                               readiness-result readiness-diagnostic)
+                     (format nil "captured a ~d by ~d terminal frame"
+                             columns rows))
+                   :cause readiness-diagnostic)))
+      (%route-close-session-with-evidence session evidence-prefix)
+      (%route-fixture-cleanup fixture-state))))
 (defun %route-run-exit-side (program route subcase evidence-prefix rows columns
                                      rate timeout config-path evidence-directory)
   (let* ((args (%route-base-arguments program config-path route subcase

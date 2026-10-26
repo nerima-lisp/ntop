@@ -41,7 +41,7 @@
             (criterion-projections-equal-p
              (project-criterion-grid initial) (car (last projections)))))
       (t t))))
-(defun %route-action-state-p (route mode subcase side side-name)
+(defun %route-action-state-default-p (route mode subcase side side-name)
   (let* ((action (route-action route))
          (before (getf side :initial-projection)) (after (getf side :projection))
          (grid (getf side :grid)) (initial (getf side :initial-grid))
@@ -169,6 +169,13 @@
      ((eq (route-kind route) :flag)
       (and grid (getf side :projection) (getf side :evidence)))
      (t nil))))
+
+(defun %route-action-state-p (route mode subcase side side-name)
+  (let ((state
+          (if (getf subcase :probe)
+              (%route-observer-state-p route mode subcase side side-name)
+            (%route-action-state-default-p route mode subcase side side-name))))
+    (if (eq state :manual) nil state)))
 
 (defun %route-basic-mode-visible-p (grid)
   (let ((text (and grid (%route-grid-text grid))))
