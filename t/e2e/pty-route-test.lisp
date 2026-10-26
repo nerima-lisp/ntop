@@ -325,3 +325,54 @@ while True:
    (ntop.e2e::%route-help-search-open-state-p "Help shortcut: Search: /")
    :to-be
    nil)))
+
+(cl-weave:describe
+ "route help section headings"
+ (cl-weave:it
+  "ignores the section-selection instruction"
+  (let ((before (ntop.e2e:make-terminal-grid :rows 24 :cols 80))
+        (after (ntop.e2e:make-terminal-grid :rows 24 :cols 80))
+        (subcase (list :input "9")))
+    (criterion-test-write
+     before 8 0 "0" "│1, 2, 3, 4, 5, 6, 7, 8, 9 - Select help section")
+    (criterion-test-write after 16 0 "0" "│6 - Temperature widget")
+    (criterion-test-write after 18 0 "0" "│9 - Basic memory widget")
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-number before 9)
+     :to-be
+     nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-number after 9)
+     :to-equal
+     9)
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-transition-p subcase before after)
+     :to-be
+     t)))
+ (cl-weave:it
+  "uses the first visible heading when the target is also in view"
+  (let ((before (ntop.e2e:make-terminal-grid :rows 24 :cols 80))
+        (after (ntop.e2e:make-terminal-grid :rows 24 :cols 80))
+        (subcase (list :input "9")))
+    (criterion-test-write before 4 0 "0" "│1 - General")
+    (criterion-test-write
+     before 5 0 "0" "│1, 2, 3, 4, 5, 6, 7, 8, 9 - Select help section")
+    (criterion-test-write before 9 0 "0" "│9 - Basic memory widget")
+    (criterion-test-write after 16 0 "0" "│6 - Temperature widget")
+    (criterion-test-write after 18 0 "0" "│9 - Basic memory widget")
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-number before)
+     :to-equal
+     1)
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-number before 9)
+     :to-equal
+     9)
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-number after 9)
+     :to-equal
+     9)
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-transition-p subcase before after)
+     :to-be
+     t))))
