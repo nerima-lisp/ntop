@@ -247,6 +247,33 @@
       (ntop.app.application::application-composition-selection-active-p
        composition)
       :to-be t)))
+  (cl-weave:it
+   "keeps selection highlighting active through graph navigation"
+   (let* ((composition (%make-composition-test-instance))
+          (state (ntop.app.domain:make-app-state :selected-widget :cpu))
+          (on-action
+            (ntop.app.application:application-composition-on-action
+             composition)))
+     (cl-weave:expect
+      (ntop.app.application::application-composition-selection-active-p
+       composition)
+      :to-be nil)
+     (funcall
+      on-action
+      state
+      (ntop.app.domain:make-app-action :kind :zoom :value :in))
+     (cl-weave:expect
+      (ntop.app.application::application-composition-selection-active-p
+       composition)
+      :to-be t)
+     (funcall
+      on-action
+      state
+      (ntop.app.domain:make-app-action :kind :dialog :value :clear-expanded))
+     (cl-weave:expect
+      (ntop.app.application::application-composition-selection-active-p
+       composition)
+      :to-be nil)))
 
   (cl-weave:it "clears owned history in place and forwards reset collection"
     (let* ((forwarded nil)

@@ -399,8 +399,15 @@
     (let ((help-handled-p (%update-help-state composition state action))
           (kind (ntop.app.domain:app-action-kind action))
           (value (ntop.app.domain:app-action-value action)))
-      (when (and (eq kind :select) (null forwarded-action))
-        (setf (application-composition-selection-active-p composition) t))
+      (cond
+        ((and (null forwarded-action)
+              (or (eq kind :select)
+                  (member kind
+                          (quote (:zoom :history-scroll :return-to-now))
+                          :test (function eq))))
+         (setf (application-composition-selection-active-p composition) t))
+        ((and (eq kind :dialog) (eq value :clear-expanded))
+         (setf (application-composition-selection-active-p composition) nil)))
       (let ((process-handled-p
              (%update-process-dialog-state composition state action)))
         (let ((selected-widget-before
