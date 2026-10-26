@@ -32,6 +32,14 @@
          (candidate-args (%route-base-arguments ntop config-path route subcase
                                                 evidence-directory)))
     (cond
+     ((and (string= mode "ntop")
+           (eq (route-kind route) :flag)
+           (string= (ntop.app.domain:parity-flag-snake-case (route-entry route))
+                    "config_location")
+           (not (getf subcase :invalid-value)))
+      (%route-run-config-location-pair
+       route subcase description btm ntop reference-prefix candidate-prefix
+       candidate-args rows columns rate timeout config-path evidence-directory))
      ((and (eq (route-kind route) :flag)
            (getf subcase :invalid-value))
       (%route-run-invalid-flag-pair
@@ -57,7 +65,7 @@
                                btm ntop reference-prefix candidate-prefix timeout))
      ((member route-id
               '("restore-normal" "restore-sigint" "restore-sigterm"
-                                 "restore-sighup")
+                "restore-sighup")
               :test #'string=)
       (%route-run-terminal-pair
        route subcase description btm ntop reference-prefix candidate-prefix rows
@@ -76,12 +84,12 @@
           (and (eq (route-kind route) :key)
                (string-equal context "process table")
                (member (route-action route)
-                       (quote ("Delete selected process" "Open process kill dialog"))
-                       :test (function string=)))
+                       '("Delete selected process" "Open process kill dialog")
+                       :test #'string=))
           (and (eq (route-kind route) :flag)
                (member (route-action route)
-                       (quote ("read_only" "disable_advanced_kill"))
-                       :test (function string=)))
+                       '("read_only" "disable_advanced_kill")
+                       :test #'string=))
           (and (eq (route-kind route) :mouse)
                (string= (route-action route) "Select process row")))
       (%route-run-sleep-child-pair

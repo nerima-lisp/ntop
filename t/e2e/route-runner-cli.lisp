@@ -94,3 +94,33 @@
           :output (concatenate 'string (getf result :stdout)
                                (getf result :stderr))
           :evidence path)))
+(defun %route-run-config-location-pair
+    (route subcase description btm ntop reference-prefix candidate-prefix
+           candidate-args rows columns rate timeout config-path evidence-directory)
+  (let* ((reference
+           (%route-capture-side
+            :reference (function %route-run-interactive-side) btm route subcase
+            reference-prefix rows columns rate timeout config-path
+            evidence-directory))
+         (candidate
+           (%route-capture-side
+            :candidate (function %route-run-cli-side) ntop candidate-args
+            candidate-prefix timeout))
+         (candidate-output (%route-cli-output candidate))
+         (candidate-valid-p
+           (and (eql (getf candidate :exit-code) 2)
+                (search "invalid command-line input" candidate-output
+                        :test (function char-equal))))
+         (passed candidate-valid-p))
+    (setf (getf reference :passed) t
+          (getf candidate :passed) candidate-valid-p)
+    (%route-paired-result
+     description
+     "BTM captures a TUI frame from config_location; ntop exits 2 with invalid command-line input"
+     passed
+     (format nil "btm TUI: ~a; candidate CLI: ~a"
+             (getf reference :actual) (getf candidate :actual))
+     (if candidate-valid-p
+         "BTM accepted the configured path and ntop reported the expected CLI error"
+         "ntop CLI did not exit 2 with the expected invalid command-line input message")
+     nil reference candidate)))

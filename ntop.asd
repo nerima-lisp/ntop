@@ -419,6 +419,7 @@
    (:file "t/e2e/route-runner-layout-test")
    (:file "t/e2e/route-runner-readiness-test")
    (:file "t/e2e/route-runner-classification-test")
+   (:file "t/e2e/route-runner-config-location-test")
    (:file "t/e2e/domain-parity-export-test")
    (:file "t/e2e/routes-test")
    (:file "t/e2e/golden-compare-test")
