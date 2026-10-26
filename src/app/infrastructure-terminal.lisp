@@ -131,19 +131,18 @@
           (%restore-default-signal-handlers signals))
       (%release-terminal-settings original-termios))))
 
-(progn
-  (defun %application-terminal-size (fd)
-    (multiple-value-bind (columns rows) (cl-tty-kit:terminal-size fd)
-      (if (and columns rows (plusp columns) (plusp rows))
-          (values columns rows)
-          (values 80 24))))
-  (defun %make-terminal-input-poller
+(defun %application-terminal-size (fd)
+  (multiple-value-bind (columns rows) (cl-tty-kit:terminal-size fd)
+    (if (and columns rows (plusp columns) (plusp rows))
+        (values columns rows)
+      (values 80 24))))
+(defun %make-terminal-input-poller
     (stream &key
             (now
-              (lambda ()
-                (multiple-value-bind (seconds nanoseconds)
-                    (sb-unix:clock-gettime sb-unix:clock-monotonic)
-                  (+ seconds (/ nanoseconds 1000000000d0)))))
+             (lambda ()
+               (multiple-value-bind (seconds nanoseconds)
+                   (sb-unix:clock-gettime sb-unix:clock-monotonic)
+                 (+ seconds (/ nanoseconds 1000000000d0)))))
             (escape-timeout-seconds 0.05d0))
   (unless (input-stream-p stream)
     (error "INPUT poll stream must be an input stream, got ~S." stream))
@@ -156,10 +155,10 @@
   (let ((decoder (cl-tty-kit:make-input-decoder))
         (pending-escape-since nil)
         (chunk
-          (make-array 4096
-                      :element-type 'character
-                      :adjustable t
-                      :fill-pointer 0)))
+         (make-array 4096
+                     :element-type 'character
+                     :adjustable t
+                     :fill-pointer 0)))
     (lambda (state timeout)
       (declare (ignore state timeout))
       (setf (fill-pointer chunk) 0)
@@ -176,9 +175,9 @@
                   escape-timeout-seconds)
               (setf events (cl-tty-kit:decode-input (string #\Escape))
                     pending-escape-since nil)
-              (when (plusp (length text))
-                (setf text (concatenate 'string (string #\Escape) text)
-                      pending-escape-since nil))))
+            (when (plusp (length text))
+              (setf text (concatenate 'string (string #\Escape) text)
+                    pending-escape-since nil))))
         (when (plusp (length text))
           (if (char= (char text (1- (length text))) #\Escape)
               (progn
@@ -188,10 +187,10 @@
                         (nconc events
                                (cl-tty-kit:decode-input-chunk decoder text))))
                 (setf pending-escape-since current-time))
-              (setf events
-                    (nconc events
-                           (cl-tty-kit:decode-input-chunk decoder text)))))
-        events)))))
+            (setf events
+                  (nconc events
+                         (cl-tty-kit:decode-input-chunk decoder text)))))
+        events))))
 
 (defun %render-with-unix-time (render clock)
   (lambda (state config snapshot columns rows reasons)
