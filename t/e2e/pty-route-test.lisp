@@ -144,6 +144,42 @@ while True:
             t))
       (ntop.e2e::close-e2e-session session))))
  (cl-weave:it
+  "keeps reading a CSI sequence split across the quiet period"
+  (let* ((script
+           (format nil
+                   "import os, termios, time, tty
+fd=0
+saved=termios.tcgetattr(fd)
+tty.setraw(fd)
+os.write(1,bytes([27])+b'[31')
+time.sleep(0.15)
+os.write(1,b'mX')
+while True:
+    time.sleep(1)
+"))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 24 80 :timeout-seconds 3d0))
+         (output nil))
+    (unwind-protect
+         (progn
+           (setf output
+                 (ntop.e2e::%route-read-through-quiet-period
+                  session 0.05d0 2d0))
+           (let* ((text (ntop.e2e::%octets-to-text output))
+                  (result
+                    (ntop.e2e:parse-ansi
+                     text
+                     (ntop.e2e:make-terminal-grid :rows 24 :cols 80)
+                     (lambda (grid) (declare (ignore grid)) :accepted)
+                     (lambda (condition)
+                       (declare (ignore condition))
+                       :rejected))))
+             (cl-weave:expect
+              text :to-equal (format nil "~c[31mX" (code-char 27)))
+             (cl-weave:expect result :to-be :accepted)))
+      (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
   "closes the PTY after the child-reap fallback"
   (let* ((session
            (ntop.e2e::launch-e2e-process

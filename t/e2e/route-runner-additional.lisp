@@ -18,6 +18,27 @@
           :stdout stdout
           :stderr stderr)))
 
+(defun %route-incomplete-escape-suffix-p (octets)
+  (let* ((end (length octets))
+         (escape-position (position #x1b octets :from-end t))
+         (csi-position (position #x9b octets :from-end t)))
+    (labels ((csi-state (start)
+               (loop for index from start below end
+                     for byte = (aref octets index)
+                     do (cond
+                          ((<= #x40 byte #x7e) (return :complete))
+                          ((<= #x20 byte #x3f))
+                          (t (return :invalid)))
+                     finally (return :incomplete))))
+      (or (and escape-position (= (1+ escape-position) end))
+          (and escape-position
+               (< (1+ escape-position) end)
+               (= (aref octets (1+ escape-position)) #x5b)
+               (eq (csi-state (+ escape-position 2)) :incomplete))
+          (and csi-position
+               (or (null escape-position)
+                   (> csi-position escape-position))
+               (eq (csi-state (1+ csi-position)) :incomplete))))))
 (defun %route-read-through-quiet-period
     (session quiet-seconds timeout-seconds
              &optional (initial-quiet-seconds quiet-seconds))
@@ -35,7 +56,9 @@
             do (when (>= now deadline)
                  (%signal-timeout "read" deadline-seconds))
             (when (>= now quiet-deadline)
-              (return (values output (%elapsed-seconds session now))))
+              (if (%route-incomplete-escape-suffix-p output)
+                  (setf quiet-deadline deadline)
+                  (return (values output (%elapsed-seconds session now)))))
             (let ((wait-until (min deadline quiet-deadline)))
               (when (cl-tty-kit:fd-wait
                      (e2e-session-fd session) :input
