@@ -208,6 +208,45 @@
            (ntop.app.application::application-composition-selection-active-p
             composition)
            :to-be t))))))
+  (cl-weave:it
+   "routes process-row pointer misses to the widget under the pointer"
+   (let* ((memory-area
+            (ntop.ui:make-clickable-area
+             :rectangle (ntop.ui:make-rectangle :x 2 :y 1 :width 1 :height 1)
+             :action :screen-widget
+             :value :memory))
+          (config (ntop.shared.application:make-application-config))
+          (composition
+            (ntop.app.application:make-application-composition
+             config
+             :draw-screen
+             (lambda (target state config snapshot columns rows reasons series)
+               (declare
+                (ignore target state config snapshot columns rows reasons series))
+               (list memory-area))))
+          (state (ntop.app.domain:make-app-state :selected-widget :process))
+          (on-action
+            (ntop.app.application:application-composition-on-action composition)))
+     (with-output-to-string (stream)
+       (let ((*standard-output* stream))
+         (funcall
+          (ntop.app.application:application-composition-render composition)
+          state config nil 160 48 nil)))
+     (funcall
+      on-action
+      state
+      (ntop.app.domain:make-app-action
+       :kind :select :value (list :pointer :process-row 2 1)))
+     (cl-weave:expect
+      (ntop.app.domain:app-state-selected-widget state) :to-be :memory)
+     (cl-weave:expect
+      (gethash :screen-selection-id
+               (ntop.app.domain:app-state-widget-v-states state))
+      :to-be :memory)
+     (cl-weave:expect
+      (ntop.app.application::application-composition-selection-active-p
+       composition)
+      :to-be t)))
 
   (cl-weave:it "clears owned history in place and forwards reset collection"
     (let* ((forwarded nil)

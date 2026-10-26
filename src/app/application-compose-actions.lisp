@@ -43,12 +43,19 @@
           (%selectable-widget-p (second value)))
      (second value))))
 (defun %selection-pointer-coordinates (value marker)
-  (when (and (listp value)
-             (= (length value) 3)
-             (eq (first value) marker)
-             (integerp (second value))
-             (integerp (third value)))
-    (values (second value) (third value) t)))
+  (when (listp value)
+    (cond
+      ((and (= (length value) 3)
+            (eq (first value) marker)
+            (integerp (second value))
+            (integerp (third value)))
+       (values (second value) (third value) t))
+      ((and (= (length value) 4)
+            (eq (first value) :pointer)
+            (eq (second value) marker)
+            (integerp (third value))
+            (integerp (fourth value)))
+       (values (third value) (fourth value) t)))))
 
 (defun %composition-clickable-area-at (composition action x y)
   (find-if
@@ -68,6 +75,19 @@
     (return-from %screen-selection-pointer-action action))
   (let* ((value (ntop.app.domain:app-action-value action))
          (states (ntop.app.domain:app-state-widget-v-states state)))
+    (multiple-value-bind (x y pointer-p)
+        (%selection-pointer-coordinates value :process-row)
+      (when pointer-p
+        (let ((area (%composition-clickable-area-at
+                     composition :screen-widget x y)))
+          (when (and area
+                     (not (eq (ntop.ui:clickable-area-value area) :process)))
+            (return-from %screen-selection-pointer-action
+              (%screen-selection-pointer-action
+               composition
+               state
+               (ntop.app.domain:make-app-action
+                :kind :select :value (list :widget x y))))))))
     (multiple-value-bind (x y pointer-p)
         (%selection-pointer-coordinates value :widget)
       (when pointer-p
