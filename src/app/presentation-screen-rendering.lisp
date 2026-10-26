@@ -1,4 +1,15 @@
 (in-package #:ntop.app.presentation)
+(defun %screen-chart-config (config series-by-widget widget)
+  (let* ((widths (cdr (assoc :graph-window-widths series-by-widget)))
+         (width (cdr (assoc widget widths))))
+    (if width
+        (let ((copy
+                (ntop.shared.application::copy-application-config config)))
+          (setf
+           (ntop.shared.application:application-config-time-window-seconds copy)
+           width)
+          copy)
+        config)))
 
 (defun %screen-widget-inputs (widget series-by-widget
                                      snapshot
@@ -199,7 +210,7 @@
                                series-by-widget
                                snapshot
                                state
-                               config
+                               (%screen-chart-config config series-by-widget widget)
                                unavailability-reasons
                                current-time-unix-seconds
                                widget-selected-p)

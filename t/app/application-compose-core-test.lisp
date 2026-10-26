@@ -186,4 +186,98 @@
       (cl-weave:expect
        (ntop.app.application::application-composition-selection-active-p
         selection-composition)
-       :to-be t))))
+       :to-be t)))
+  (cl-weave:it "keeps graph zoom widths independent when selection changes"
+    (let* ((rendered-series nil)
+           (snapshot
+             (%composition-test-snapshot 10d0 :cpu-usage 40d0 :memory-used 10))
+           (composition
+             (%make-composition-test-instance
+              :on-render (lambda (series)
+                           (setf rendered-series series))))
+           (state (ntop.app.domain:make-app-state :selected-widget :cpu))
+           (on-action
+             (ntop.app.application:application-composition-on-action composition))
+           (on-snapshot
+             (ntop.app.application:application-composition-on-snapshot composition)))
+      (funcall on-snapshot snapshot)
+      (funcall on-action state
+               (ntop.app.domain:make-app-action :kind :zoom :value :in))
+      (cl-weave:expect
+       (ntop.shared.domain:history-store-window-width-seconds
+        (%composition-test-history-store
+         composition (quote (:cpu :usage :average))))
+       :to-be 45d0)
+      (cl-weave:expect
+       (ntop.shared.domain:history-store-window-width-seconds
+        (%composition-test-history-store composition (quote (:memory :ram))))
+       :to-be 60d0)
+      (setf (ntop.app.domain:app-state-selected-widget state) :memory)
+      (funcall on-action state
+               (ntop.app.domain:make-app-action :kind :zoom :value :out))
+      (cl-weave:expect
+       (ntop.shared.domain:history-store-window-width-seconds
+        (%composition-test-history-store
+         composition (quote (:cpu :usage :average))))
+       :to-be 45d0)
+      (cl-weave:expect
+       (ntop.shared.domain:history-store-window-width-seconds
+        (%composition-test-history-store composition (quote (:memory :ram))))
+       :to-be 75d0)
+      (%render-composition-test-instance composition state snapshot nil)
+      (let* ((widths (cdr (assoc :graph-window-widths rendered-series)))
+             (config (ntop.shared.application:make-application-config)))
+        (cl-weave:expect (cdr (assoc :cpu widths)) :to-be 45d0)
+        (cl-weave:expect (cdr (assoc :memory widths)) :to-be 75d0)
+        (cl-weave:expect
+         (ntop.shared.application:application-config-time-window-seconds
+          (ntop.app.presentation::%screen-chart-config config rendered-series :cpu))
+         :to-be 45d0)
+        (cl-weave:expect
+         (ntop.shared.application:application-config-time-window-seconds
+          (ntop.app.presentation::%screen-chart-config config rendered-series :memory))
+         :to-be 75d0))))
+  (cl-weave:it "remembers selected graph zoom before stores exist"
+    (let* ((rendered-series nil)
+           (composition
+             (%make-composition-test-instance
+              :on-render (lambda (series)
+                           (setf rendered-series series))))
+           (state (ntop.app.domain:make-app-state :selected-widget :cpu))
+           (on-action
+             (ntop.app.application:application-composition-on-action composition))
+           (on-snapshot
+             (ntop.app.application:application-composition-on-snapshot composition))
+           (config (ntop.shared.application:make-application-config)))
+      (funcall on-action state
+               (ntop.app.domain:make-app-action :kind :zoom :value :in))
+      (cl-weave:expect
+       (length
+        (ntop.app.application:application-composition-history-stores composition))
+       :to-be 0)
+      (cl-weave:expect
+       (ntop.app.domain:app-state-zoom-seconds state)
+       :to-be 45d0)
+      (%render-composition-test-instance composition state nil nil)
+      (let ((widths (cdr (assoc :graph-window-widths rendered-series))))
+        (cl-weave:expect (cdr (assoc :cpu widths)) :to-be 45d0)
+        (cl-weave:expect (cdr (assoc :memory widths)) :to-be 60d0)
+        (cl-weave:expect
+         (ntop.shared.application:application-config-time-window-seconds
+          (ntop.app.presentation::%screen-chart-config config rendered-series :cpu))
+         :to-be 45d0)
+        (cl-weave:expect
+         (ntop.shared.application:application-config-time-window-seconds
+          (ntop.app.presentation::%screen-chart-config config rendered-series :memory))
+         :to-be 60d0))
+      (funcall on-snapshot
+               (%composition-test-snapshot 10d0 :cpu-usage 40d0 :memory-used 10))
+      (cl-weave:expect
+       (ntop.shared.domain:history-store-window-width-seconds
+        (%composition-test-history-store
+         composition (quote (:cpu :usage :average))))
+       :to-be 45d0)
+      (cl-weave:expect
+       (ntop.shared.domain:history-store-window-width-seconds
+        (%composition-test-history-store composition (quote (:memory :ram))))
+       :to-be 60d0))))

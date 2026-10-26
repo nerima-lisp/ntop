@@ -1,71 +1,87 @@
 (in-package #:ntop.app.application)
 
-(defun %composition-series-by-widget (composition snapshot reasons)
-    (let* ((cpu-sample
-            (and snapshot (ntop.app.domain:collection-snapshot-cpu-sample snapshot)))
-           (memory-sample
-            (and snapshot (ntop.app.domain:collection-snapshot-memory-sample snapshot)))
-           (battery-sample
-            (and snapshot (ntop.app.domain:collection-snapshot-battery-sample snapshot)))
-           (gpu-memory-data (%gpu-memory-series-data composition))
-           (temperature-series (%history-series-for composition :temperature :sensor))
-           (memory-series
-            (append
-             (list :ram-samples
-                   (%history-samples-for composition (quote (:memory :ram)))
-                   :ram-used-bytes
-                   (and memory-sample
-                        (ntop.memory.domain:memory-sample-ram-used-bytes memory-sample))
-                   :ram-total-bytes
-                   (and memory-sample
-                        (ntop.memory.domain:memory-sample-ram-total-bytes memory-sample))
-                   :swap-samples
-                   (%history-samples-for composition (quote (:memory :swap)))
-                   :swap-used-bytes
-                   (and memory-sample
-                        (ntop.memory.domain:memory-sample-swap-used-bytes memory-sample))
-                   :swap-total-bytes
-                   (and memory-sample
-                        (ntop.memory.domain:memory-sample-swap-total-bytes
-                         memory-sample))
-                   :cache-samples
-                   (%history-samples-for composition (quote (:memory :cache)))
-                   :cache-used-bytes
-                   (and memory-sample
-                        (ntop.memory.domain:memory-sample-cache-used-bytes
-                         memory-sample))
-                   :cache-total-bytes
-                   (and memory-sample
-                        (ntop.memory.domain:memory-sample-cache-total-bytes
-                         memory-sample)))
-             gpu-memory-data)))
-      (list
-       (cons :process
-             (list :previous-sample
-                   (application-composition-previous-process-sample composition)))
-       (cons :cpu
-             (list :sample
-                   cpu-sample
-                   :usage
-                   (%history-series-for composition :cpu :usage)))
-       (cons :memory memory-series)
-       (cons :gpu
-             (list :usage
-                   (%history-series-for composition :gpu :usage)
-                   :memory
-                   (%history-series-for composition :gpu :memory)
-                   :unavailability-reason
-                   (ntop.app.application:application-unavailability-reason reasons :gpu)))
-       (cons :network (%network-visible-samples composition))
-       (cons :disks (application-composition-disk-rows composition))
-       (cons :disk-io-graph
-             (list :read
-                   (%history-series-for composition :disk-io :read)
-                   :write
-                   (%history-series-for composition :disk-io :write)))
-       (cons :temperature temperature-series)
-       (cons :temperature-graph temperature-series)
-       (cons :battery battery-sample))))
+(defun %composition-series-by-widget (composition snapshot reasons state)
+  (let* ((cpu-sample
+           (and snapshot (ntop.app.domain:collection-snapshot-cpu-sample snapshot)))
+         (memory-sample
+           (and snapshot (ntop.app.domain:collection-snapshot-memory-sample snapshot)))
+         (battery-sample
+           (and snapshot (ntop.app.domain:collection-snapshot-battery-sample snapshot)))
+         (gpu-memory-data (%gpu-memory-series-data composition))
+         (gpu-view-p
+           (eq (gethash :memory
+                        (ntop.app.domain:app-state-widget-v-states state))
+               :gpu))
+         (memory-window-group (if gpu-view-p :gpu :memory))
+         (temperature-series (%history-series-for composition :temperature :sensor))
+         (memory-series
+           (append
+            (list :ram-samples
+                  (%history-samples-for composition (quote (:memory :ram)))
+                  :ram-used-bytes
+                  (and memory-sample
+                       (ntop.memory.domain:memory-sample-ram-used-bytes memory-sample))
+                  :ram-total-bytes
+                  (and memory-sample
+                       (ntop.memory.domain:memory-sample-ram-total-bytes memory-sample))
+                  :swap-samples
+                  (%history-samples-for composition (quote (:memory :swap)))
+                  :swap-used-bytes
+                  (and memory-sample
+                       (ntop.memory.domain:memory-sample-swap-used-bytes memory-sample))
+                  :swap-total-bytes
+                  (and memory-sample
+                       (ntop.memory.domain:memory-sample-swap-total-bytes memory-sample))
+                  :cache-samples
+                  (%history-samples-for composition (quote (:memory :cache)))
+                  :cache-used-bytes
+                  (and memory-sample
+                       (ntop.memory.domain:memory-sample-cache-used-bytes memory-sample))
+                  :cache-total-bytes
+                  (and memory-sample
+                       (ntop.memory.domain:memory-sample-cache-total-bytes memory-sample)))
+            gpu-memory-data)))
+    (list
+     (cons :process
+           (list :previous-sample
+                 (application-composition-previous-process-sample composition)))
+     (cons :cpu
+           (list :sample
+                 cpu-sample
+                 :usage
+                 (%history-series-for composition :cpu :usage)))
+     (cons :memory memory-series)
+     (cons :gpu
+           (list :usage
+                 (%history-series-for composition :gpu :usage)
+                 :memory
+                 (%history-series-for composition :gpu :memory)
+                 :unavailability-reason
+                 (ntop.app.application:application-unavailability-reason reasons :gpu)))
+     (cons :network (%network-visible-samples composition))
+     (cons :disks (application-composition-disk-rows composition))
+     (cons :disk-io-graph
+           (list :read
+                 (%history-series-for composition :disk-io :read)
+                 :write
+                 (%history-series-for composition :disk-io :write)))
+     (cons :temperature temperature-series)
+     (cons :temperature-graph temperature-series)
+     (cons :battery battery-sample)
+     (cons :graph-window-widths
+           (list (cons :cpu
+                       (%composition-history-window-width composition :cpu))
+                 (cons :memory
+                       (%composition-history-window-width composition memory-window-group))
+                 (cons :gpu
+                       (%composition-history-window-width composition :gpu))
+                 (cons :network
+                       (%composition-history-window-width composition :network))
+                 (cons :disk-io-graph
+                       (%composition-history-window-width composition :disk-io))
+                 (cons :temperature-graph
+                       (%composition-history-window-width composition
+                                                          :temperature)))))))
   (defun %network-visible-samples (composition)
     (let* ((store
             (gethash '(:network :window)
@@ -82,92 +98,6 @@
                         collect sample)
                 (coerce samples 'list)))
           (coerce samples 'list))))
-  (defun %history-groups-for-state (state)
-    (let* ((selected (ntop.app.domain:app-state-selected-widget state))
-           (view (gethash selected (ntop.app.domain:app-state-widget-v-states state))))
-      (case selected
-        (:cpu (quote (:cpu)))
-        (:memory
-         (if (eq view :gpu)
-             (quote (:gpu :gpu-memory))
-             (quote (:memory))))
-        (:gpu (quote (:gpu)))
-        (:network (quote (:network)))
-        (:disks (and (eq view :disk-io-graph) (quote (:disk-io))))
-        (:disk-io-graph (quote (:disk-io)))
-        (:temperature (and (eq view :temperature-graph) (quote (:temperature))))
-        (:temperature-graph (quote (:temperature))))))
-  (defun %history-stores-for-group (composition group)
-    (loop for key across (application-composition-history-keys composition)
-          when (eq (first key) group)
-            collect (gethash key (application-composition-history-index composition))))
-  (defun %apply-history-operation (store kind value)
-    (case kind
-      (:zoom
-       (case value
-         (:in (ntop.shared.domain:history-zoom-in store))
-         (:out (ntop.shared.domain:history-zoom-out store))
-         (:reset (ntop.shared.domain:history-reset-zoom store))
-         (otherwise
-          (when (realp value)
-            (ntop.shared.domain:history-set-window-width store value)))))
-      (:history-scroll
-       (case value
-         (:backward (ntop.shared.domain:history-scroll-older store))
-         (:forward (ntop.shared.domain:history-scroll-newer store))))
-      (:return-to-now (ntop.shared.domain:history-go-current store))))
-  (defun %apply-history-intent (composition state intent)
-    (when intent
-      (case (first intent)
-        (:pause
-         (let ((paused-p (second intent)))
-           (setf (application-composition-paused-p composition) paused-p
-                 (application-composition-frozen-snapshot composition)
-                 (if paused-p
-                     (application-composition-latest-snapshot composition)
-                     nil))
-           (map nil
-                (lambda (store)
-                  (if paused-p
-                      (ntop.shared.domain:history-pause store)
-                      (ntop.shared.domain:history-resume store)))
-                (application-composition-history-stores composition))))
-        (:history
-         (let* ((kind (second intent))
-                (value (third intent))
-                (groups (%history-groups-for-state state))
-                (stores
-                  (loop for group in groups
-                        append (%history-stores-for-group composition group))))
-           (map nil
-                (lambda (store)
-                  (%apply-history-operation store kind value))
-                stores)
-           (when (and (eq kind :zoom) stores)
-             (setf (ntop.app.domain:app-state-zoom-seconds state)
-                   (ntop.shared.domain:history-store-window-width-seconds
-                    (first stores)))))))))
-  (defun %reset-composition-history (composition state)
-  (setf (fill-pointer (application-composition-history-stores composition)) 0
-        (fill-pointer (application-composition-history-keys composition)) 0
-        (application-composition-network-samples composition)
-        (make-array 0 :adjustable t :fill-pointer 0)
-        (application-composition-latest-snapshot composition) nil
-        (application-composition-frozen-snapshot composition) nil
-        (application-composition-previous-disk-sample composition) nil
-        (application-composition-previous-process-sample composition) nil
-        (application-composition-latest-process-sample composition) nil
-        (application-composition-disk-rows composition) nil
-        (application-composition-clickable-areas composition) nil
-        (application-composition-previous-screen composition) nil
-        (ntop.app.domain:app-state-zoom-seconds state)
-        (ntop.shared.application:application-config-time-window-seconds
-         (application-composition-config composition))
-        (ntop.app.domain:app-state-scroll-offset state) 0)
-  (clrhash (application-composition-history-index composition))
-  (clrhash (application-composition-history-names composition))
-  (clrhash (application-composition-gpu-memory-device-totals composition))
-  composition)
   (defun %copy-transition-state-into (target source)
     (let ((target-views (ntop.app.domain:app-state-widget-v-states target))
           (source-views (ntop.app.domain:app-state-widget-v-states source)))
@@ -338,46 +268,53 @@
   (check-type config ntop.shared.application:application-config)
   (check-type columns (integer 1 *))
   (check-type rows (integer 1 *))
+  (let* ((selected-groups (%history-groups-for-state state))
+         (selected-width
+           (and selected-groups
+                (%composition-history-window-width composition
+                                                   (first selected-groups)))))
+    (setf (ntop.app.domain:app-state-zoom-seconds state)
+          (or selected-width
+              (application-composition-initial-zoom-seconds composition))))
   (let* ((snapshot
-          (if (application-composition-paused-p composition)
-              (%composition-current-snapshot composition)
-            snapshot))
+           (if (application-composition-paused-p composition)
+               (%composition-current-snapshot composition)
+               snapshot))
          (screen (%new-composition-screen composition columns rows))
          (help-active-p (%help-dialog-p state))
          (ntop.app.presentation::*screen-selection-active-p*
           (application-composition-selection-active-p composition))
          (widget-areas
-          (when (or (not help-active-p)
-                    (eq (application-composition-draw-screen composition)
-                        (function ntop.app.presentation:draw-application-screen)))
-            (let ((ntop.app.presentation::*screen-background-only-p* help-active-p))
-              (apply (application-composition-draw-screen composition)
-                     (append
-                      (list screen
-                            state
-                            config
-                            snapshot
-                            columns
-                            rows
-                            unavailability-reasons
-                            (%composition-series-by-widget
-                             composition snapshot unavailability-reasons))
-                      (when
-                          (and current-time-unix-seconds
-                               (eq (application-composition-draw-screen
-                                    composition)
-                                   (function
-                                    ntop.app.presentation:draw-application-screen)))
-                        (list current-time-unix-seconds)))))))
+           (when (or (not help-active-p)
+                     (eq (application-composition-draw-screen composition)
+                         (function ntop.app.presentation:draw-application-screen)))
+             (let ((ntop.app.presentation::*screen-background-only-p* help-active-p))
+               (apply (application-composition-draw-screen composition)
+                      (append
+                       (list screen
+                             state
+                             config
+                             snapshot
+                             columns
+                             rows
+                             unavailability-reasons
+                             (%composition-series-by-widget
+                              composition snapshot unavailability-reasons state))
+                       (when
+                           (and current-time-unix-seconds
+                                (eq (application-composition-draw-screen composition)
+                                    (function
+                                     ntop.app.presentation:draw-application-screen)))
+                         (list current-time-unix-seconds)))))))
          (areas
-          (append (unless help-active-p widget-areas)
-                  (%draw-help-overlay screen state config columns rows))))
+           (append (unless help-active-p widget-areas)
+                   (%draw-help-overlay screen state config columns rows))))
     (setf (application-composition-clickable-areas composition) areas)
     (let ((diff
-           (with-output-to-string (output)
-             (cl-tty-kit:render-diff
-              screen (application-composition-previous-screen composition)
-              output))))
+            (with-output-to-string (output)
+              (cl-tty-kit:render-diff
+               screen (application-composition-previous-screen composition)
+               output))))
       (loop for index from 0 below (length diff)
             for character = (char diff index)
             do (when (and (char= character #\Newline)
@@ -453,11 +390,17 @@
     (error "DRAW-SCREEN must be a function."))
   (unless (functionp process-signal-sender)
     (error "PROCESS-SIGNAL-SENDER must be a function."))
-  (let ((composition
-          (%make-application-composition :config config
-                                         :draw-screen draw-screen
-                                         :external-on-action on-action
-                                         :process-signal-sender process-signal-sender)))
+  (let* ((initial-zoom-seconds
+           (ntop.shared.domain:history-store-window-width-seconds
+            (%make-composition-history-store config)))
+         (composition
+           (%make-application-composition
+            :config config
+            :zoom-seconds initial-zoom-seconds
+            :initial-zoom-seconds initial-zoom-seconds
+            :draw-screen draw-screen
+            :external-on-action on-action
+            :process-signal-sender process-signal-sender)))
     (setf (application-composition-render composition)
           (lambda (state current-config snapshot columns rows reasons
                    &optional current-time-unix-seconds)

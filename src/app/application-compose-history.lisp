@@ -2,6 +2,9 @@
 
 (defstruct (application-composition (:constructor %make-application-composition))
   config
+  (zoom-seconds 60d0)
+  (initial-zoom-seconds 60d0)
+  (history-window-widths (make-hash-table :test (function eq)))
   draw-screen
   external-on-action
   process-signal-sender
@@ -27,7 +30,156 @@
   render
   on-snapshot
   on-action)
-  (defparameter *memory-history-metrics*
+(defun %make-composition-history-store (config)
+  (let ((interval
+          (/ (ntop.shared.application:application-config-rate-ms config)
+             1000d0)))
+    (ntop.shared.domain:make-history-store
+     1
+     :retention-seconds
+     (ntop.shared.application:application-config-retention-seconds config)
+     :sample-interval-seconds interval
+     :initial-window-seconds
+     (ntop.shared.application:application-config-time-window-seconds config)
+     :zoom-step-seconds
+     (ntop.shared.application:application-config-zoom-window-seconds config))))
+(defun %composition-history-window-width (composition group)
+  (let ((store
+          (loop for key across
+                (application-composition-history-keys composition)
+                when (eq (first key) group)
+                  return
+                    (gethash key
+                             (application-composition-history-index composition)))))
+    (or (and store
+             (ntop.shared.domain:history-store-window-width-seconds store))
+        (gethash group
+                 (application-composition-history-window-widths composition))
+        (application-composition-initial-zoom-seconds composition))))
+(defun %history-groups-for-state (state)
+  (let* ((selected (ntop.app.domain:app-state-selected-widget state))
+         (view (gethash selected (ntop.app.domain:app-state-widget-v-states state))))
+    (case selected
+      (:cpu (quote (:cpu)))
+      (:memory
+       (if (eq view :gpu)
+           (quote (:gpu :gpu-memory))
+           (quote (:memory))))
+      (:gpu (quote (:gpu)))
+      (:network (quote (:network)))
+      (:disks (and (eq view :disk-io-graph) (quote (:disk-io))))
+      (:disk-io-graph (quote (:disk-io)))
+      (:temperature (and (eq view :temperature-graph) (quote (:temperature))))
+      (:temperature-graph (quote (:temperature))))))
+(defun %history-stores-for-group (composition group)
+  (loop for key across (application-composition-history-keys composition)
+        when (eq (first key) group)
+          collect
+            (gethash key (application-composition-history-index composition))))
+(defun %apply-history-operation (store kind value)
+  (case kind
+    (:zoom
+     (case value
+       (:in (ntop.shared.domain:history-zoom-in store))
+       (:out (ntop.shared.domain:history-zoom-out store))
+       (:reset (ntop.shared.domain:history-reset-zoom store))
+       (otherwise
+        (when (realp value)
+          (ntop.shared.domain:history-set-window-width store value)))))
+    (:history-scroll
+     (case value
+       (:backward (ntop.shared.domain:history-scroll-older store))
+       (:forward (ntop.shared.domain:history-scroll-newer store))))
+    (:return-to-now (ntop.shared.domain:history-go-current store))))
+(defun %apply-history-intent (composition state intent)
+  (when intent
+    (case (first intent)
+      (:pause
+       (let ((paused-p (second intent)))
+         (setf (application-composition-paused-p composition) paused-p
+               (application-composition-frozen-snapshot composition)
+               (if paused-p
+                   (application-composition-latest-snapshot composition)
+                   nil))
+         (map nil
+              (lambda (store)
+                (if paused-p
+                    (ntop.shared.domain:history-pause store)
+                    (ntop.shared.domain:history-resume store)))
+              (application-composition-history-stores composition))))
+      (:history
+       (let* ((kind (second intent))
+              (value (third intent))
+              (groups (%history-groups-for-state state))
+              (stores
+                (loop for group in groups
+                      append (%history-stores-for-group composition group))))
+         (if (eq kind :zoom)
+             (when groups
+               (let* ((primary-group (first groups))
+                      (primary-stores
+                        (%history-stores-for-group composition primary-group))
+                      (widths
+                        (application-composition-history-window-widths composition))
+                      (zoom-store
+                        (or (first primary-stores)
+                            (%make-composition-history-store
+                             (application-composition-config composition))))
+                      (current-width
+                        (if primary-stores
+                            (ntop.shared.domain:history-store-window-width-seconds
+                             zoom-store)
+                            (gethash primary-group widths
+                                     (application-composition-initial-zoom-seconds
+                                      composition))))
+                      (window-width nil))
+                 (unless primary-stores
+                   (ntop.shared.domain:history-set-window-width
+                    zoom-store current-width))
+                 (%apply-history-operation zoom-store kind value)
+                 (setf window-width
+                       (ntop.shared.domain:history-store-window-width-seconds
+                        zoom-store))
+                 (dolist (group groups)
+                   (setf (gethash group widths) window-width)
+                   (map nil
+                        (lambda (store)
+                          (ntop.shared.domain:history-set-window-width
+                           store window-width))
+                        (%history-stores-for-group composition group)))
+                 (setf (application-composition-zoom-seconds composition)
+                       window-width
+                       (ntop.app.domain:app-state-zoom-seconds state)
+                       window-width)))
+             (map nil
+                  (lambda (store)
+                    (%apply-history-operation store kind value))
+                  stores)))))))
+(defun %reset-composition-history (composition state)
+  (let ((zoom-seconds (application-composition-initial-zoom-seconds composition)))
+    (setf (fill-pointer (application-composition-history-stores composition)) 0
+          (fill-pointer (application-composition-history-keys composition)) 0
+          (application-composition-network-samples composition)
+          (make-array 0 :adjustable t :fill-pointer 0)
+          (application-composition-latest-snapshot composition) nil
+          (application-composition-frozen-snapshot composition) nil
+          (application-composition-previous-disk-sample composition) nil
+          (application-composition-previous-process-sample composition) nil
+          (application-composition-latest-process-sample composition) nil
+          (application-composition-disk-rows composition) nil
+          (application-composition-clickable-areas composition) nil
+          (application-composition-previous-screen composition) nil
+          (application-composition-zoom-seconds composition) zoom-seconds
+          (ntop.app.domain:app-state-zoom-seconds state)
+          (ntop.shared.application:application-config-time-window-seconds
+           (application-composition-config composition))
+          (ntop.app.domain:app-state-scroll-offset state) 0)
+    (clrhash (application-composition-history-index composition))
+    (clrhash (application-composition-history-names composition))
+    (clrhash (application-composition-history-window-widths composition))
+    (clrhash (application-composition-gpu-memory-device-totals composition))
+    composition))
+(defparameter *memory-history-metrics*
     '((:ram ntop.memory.domain:memory-sample-ram-used-bytes
             ntop.memory.domain:memory-sample-ram-total-bytes)
       (:swap ntop.memory.domain:memory-sample-swap-used-bytes
@@ -35,35 +187,29 @@
       (:cache ntop.memory.domain:memory-sample-cache-used-bytes
               ntop.memory.domain:memory-sample-cache-total-bytes)))
   (defun %ensure-composition-history (composition key name)
-    (multiple-value-bind (store found-p)
-        (gethash key (application-composition-history-index composition))
-      (if found-p
-          store
-          (let* ((config (application-composition-config composition))
-                 (interval
-                   (/ (ntop.shared.application:application-config-rate-ms config)
-                      1000d0))
-                 (new-store
-                   (ntop.shared.domain:make-history-store
-                    1
-                    :retention-seconds
-                    (ntop.shared.application:application-config-retention-seconds
-                     config)
-                    :sample-interval-seconds interval
-                    :initial-window-seconds
-                    (ntop.shared.application:application-config-time-window-seconds
-                     config)
-                    :zoom-step-seconds
-                    (ntop.shared.application:application-config-zoom-window-seconds
-                     config))))
-            (setf (gethash key (application-composition-history-index composition))
-                  new-store
-                  (gethash key (application-composition-history-names composition))
-                  name)
-            (vector-push-extend key (application-composition-history-keys composition))
-            (vector-push-extend new-store
-                                (application-composition-history-stores composition))
-            new-store))))
+  (multiple-value-bind (store found-p)
+      (gethash key (application-composition-history-index composition))
+    (if found-p
+        store
+        (let* ((group (first key))
+               (config (application-composition-config composition))
+               (new-store (%make-composition-history-store config))
+               (widths
+                 (application-composition-history-window-widths composition)))
+          (ntop.shared.domain:history-set-window-width
+           new-store
+           (gethash group widths
+                    (application-composition-initial-zoom-seconds composition)))
+          (setf (gethash group widths)
+                (ntop.shared.domain:history-store-window-width-seconds new-store)
+                (gethash key (application-composition-history-index composition))
+                new-store
+                (gethash key (application-composition-history-names composition))
+                name)
+          (vector-push-extend key (application-composition-history-keys composition))
+          (vector-push-extend new-store
+                              (application-composition-history-stores composition))
+          new-store))))
   (defun %append-composition-history (composition key name record value)
     (multiple-value-bind (store found-p)
         (gethash key (application-composition-history-index composition))
