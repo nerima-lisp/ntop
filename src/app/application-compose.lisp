@@ -347,28 +347,30 @@
          (ntop.app.presentation::*screen-selection-active-p*
           (application-composition-selection-active-p composition))
          (widget-areas
-          (if help-active-p
-              nil
-            (apply (application-composition-draw-screen composition)
-                   (append
-                    (list screen
-                          state
-                          config
-                          snapshot
-                          columns
-                          rows
-                          unavailability-reasons
-                          (%composition-series-by-widget
-                           composition snapshot unavailability-reasons))
-                    (when
-                        (and current-time-unix-seconds
-                             (eq (application-composition-draw-screen
-                                  composition)
-                                 (function
-                                  ntop.app.presentation:draw-application-screen)))
-                      (list current-time-unix-seconds))))))
+          (when (or (not help-active-p)
+                    (eq (application-composition-draw-screen composition)
+                        (function ntop.app.presentation:draw-application-screen)))
+            (let ((ntop.app.presentation::*screen-background-only-p* help-active-p))
+              (apply (application-composition-draw-screen composition)
+                     (append
+                      (list screen
+                            state
+                            config
+                            snapshot
+                            columns
+                            rows
+                            unavailability-reasons
+                            (%composition-series-by-widget
+                             composition snapshot unavailability-reasons))
+                      (when
+                          (and current-time-unix-seconds
+                               (eq (application-composition-draw-screen
+                                    composition)
+                                   (function
+                                    ntop.app.presentation:draw-application-screen)))
+                        (list current-time-unix-seconds)))))))
          (areas
-          (append widget-areas
+          (append (unless help-active-p widget-areas)
                   (%draw-help-overlay screen state config columns rows))))
     (setf (application-composition-clickable-areas composition) areas)
     (let ((diff

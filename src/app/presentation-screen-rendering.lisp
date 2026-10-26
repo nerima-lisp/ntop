@@ -210,23 +210,24 @@
                                    frame-selected-p
                                    nil
                                    (and basic-p basic-table-frame-p)))
-      (when (and (plusp (ntop.ui:rectangle-width widget-rectangle))
-                 (plusp (ntop.ui:rectangle-height widget-rectangle)))
-        (setf clickable-areas
-              (if (and (eq widget :cpu) cpu-frame-rectangles)
-                  (let ((ntop.cpu.presentation::*cpu-legend-external-frame-p* t))
+      (unless *screen-background-only-p*
+        (when (and (plusp (ntop.ui:rectangle-width widget-rectangle))
+                   (plusp (ntop.ui:rectangle-height widget-rectangle)))
+          (setf clickable-areas
+                (if (and (eq widget :cpu) cpu-frame-rectangles)
+                    (let ((ntop.cpu.presentation::*cpu-legend-external-frame-p* t))
+                      (ntop.ui:draw-widget widget
+                                           target
+                                           widget-rectangle
+                                           widget-state
+                                           widget-config
+                                           widget-series))
                     (ntop.ui:draw-widget widget
                                          target
                                          widget-rectangle
                                          widget-state
                                          widget-config
-                                         widget-series))
-                  (ntop.ui:draw-widget widget
-                                       target
-                                       widget-rectangle
-                                       widget-state
-                                       widget-config
-                                       widget-series))))
+                                         widget-series)))))
       (when (and (not basic-p) cpu-frame-rectangles)
         (%screen-draw-frame target (first cpu-frame-rectangles) config
                             (eq widget-selection-id :cpu)
@@ -276,6 +277,10 @@
                                       "Frozen, press 'f' to unfreeze"
                                       :selected))))
     (let* ((mode (%screen-layout-mode state config))
+           (*screen-selection-active-p*
+            (or *screen-selection-active-p*
+                (eq (ntop.app.domain:app-state-active-dialog state)
+                    :process-sort)))
            (render-config (%screen-config config mode))
            (*screen-table-theme*
              (ntop.shared.application:application-config-theme render-config))

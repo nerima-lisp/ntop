@@ -192,7 +192,9 @@
                               (ntop.ui:rectangle-height rectangle)
                               (max 0 (1- (ntop.ui:rectangle-height rectangle))))))
 
-(defvar *screen-selection-active-p* nil)
+(progn
+  (defvar *screen-selection-active-p* nil)
+  (defvar *screen-background-only-p* nil))
 
 (defun %screen-draw-frame (target rectangle config selected-p
                                   &optional right-edge-only-p side-borders-only-p
@@ -203,7 +205,11 @@
            (style
              (ntop.ui:presentation-theme-style
               theme
-              (if selected-p :highlighted-border :border))))
+              (if (and *screen-selection-active-p*
+                       (not *screen-background-only-p*)
+                       selected-p)
+                  :highlighted-border
+                :border))))
       (cond
         (side-borders-only-p
          (let ((left (ntop.ui:rectangle-x rectangle))

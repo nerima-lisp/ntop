@@ -167,4 +167,33 @@
                 thereis
                 (search "2 - CPU widget"
                         (cl-tty-kit:screen-row-string screen row)))))
-        :to-be t)))))
+        :to-be t))))
+  (cl-weave:it
+   "draws neutral dashboard frames behind the help overlay"
+   (let* ((config (ntop.shared.application:make-application-config))
+          (composition
+            (ntop.app.application:make-application-composition config))
+          (render
+            (ntop.app.application:application-composition-render composition))
+          (state (ntop.app.domain:make-app-state :selected-widget :cpu)))
+     (setf (ntop.app.application::application-composition-selection-active-p
+            composition)
+           t
+           (ntop.app.domain:app-state-active-dialog state) :help)
+     (with-output-to-string (stream)
+       (let ((*standard-output* stream))
+         (funcall render state config nil 160 48 nil)))
+     (let* ((screen
+              (ntop.app.application::application-composition-screen composition))
+            (top-row (cl-tty-kit:screen-row-string screen 0)))
+       (cl-weave:expect
+        (char top-row 0) :to-equal #\┌)
+       (cl-weave:expect
+        (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
+        :to-equal
+        (ntop.ui:presentation-theme-style :default :border))
+       (cl-weave:expect (char top-row 1) :to-equal #\─)
+       (cl-weave:expect (search "CPU" top-row) :to-be nil)
+       (cl-weave:expect
+        (char (cl-tty-kit:screen-row-string screen 1) 1)
+        :to-equal #\Space)))))

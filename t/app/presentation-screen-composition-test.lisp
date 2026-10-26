@@ -223,7 +223,7 @@
                          :to-equal
                          '(5.0d0 2000.0d0 500.0d0)))))
                    (cl-weave:it
-                    "highlights the selected frame at startup and focuses only the selected table"
+                    "keeps selected table focus without a default frame highlight"
                     (dolist (selected-widget '(:process :disks :temperature))
                       (let* ((state (ntop.app.domain:make-app-state))
                              (*wp12b-screen-widget-calls* nil)
@@ -264,9 +264,10 @@
                                :to-equal
                                (ntop.ui:presentation-theme-style
                                 :default
-                                :highlighted-border))))))))
+                                :border))))))))
                    (cl-weave:it "highlights CPU graph and legend frames by their separate IDs"
-  (let* ((state (ntop.app.domain:make-app-state :selected-widget :cpu))
+  (let* ((ntop.app.presentation::*screen-selection-active-p* t)
+         (state (ntop.app.domain:make-app-state :selected-widget :cpu))
          (normal-style
            (ntop.ui:presentation-theme-style :default :border))
          (selected-style
