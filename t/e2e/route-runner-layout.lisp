@@ -19,7 +19,7 @@
                                    (criterion-projection-frames grid)))))
                  (when frame
                    (cons (floor (+ (third frame) (fourth frame)) 2)
-                         (floor (+ (first frame) (second frame)) 2)))))
+                         (floor (+ (first frame) (second frame)) 2))))))
       (let* ((target
                (cond
                  ((and (or (string= gesture "wheel-up")
@@ -57,7 +57,7 @@
               ((string= gesture "move/drag/release")
                (list (sgr 35 #\M) (sgr 2 #\M) (sgr 34 #\M) (sgr 2 #\m)
                      (sgr 1 #\M) (sgr 33 #\M) (sgr 1 #\m)))
-              (t (error "Unknown route mouse gesture: ~s" gesture))))))))))
+              (t (error "Unknown route mouse gesture: ~s" gesture)))))))))
 
 (defun %route-widget-type (context)
   (cond
