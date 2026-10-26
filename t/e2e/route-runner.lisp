@@ -244,6 +244,14 @@
         when (or (null subcase-id)
                  (string= subcase-id (%route-subcase-id route index)))
           collect (cons index subcase)))
+(defun %route-btm-self-mode-na-p (mode indexed-subcases)
+  (and (string= mode "btm-self")
+       indexed-subcases
+       (every (lambda (indexed-subcase)
+                (member (getf (cdr indexed-subcase) :probe)
+                        (quote (:extension :restore))
+                        :test (function eq)))
+              indexed-subcases)))
 
 (defun run-route-harness (&key (mode "ntop") (btm "btm") (ntop "./ntop")
                                (evidence-directory "/tmp")
@@ -268,11 +276,7 @@
                     (subresults nil)
                     (route-inputs nil))
                (cond
-                ((and (string= mode "btm-self")
-                      (member (route-id route)
-                              (list "extension-170" "extension-171" "extension-172"
-                                    "extension-173" "restore-exception")
-                              :test #'string=))
+                ((%route-btm-self-mode-na-p mode subcases)
                  (loop for indexed-subcase in subcases
                        for subcase-index = (car indexed-subcase)
                        for subcase = (cdr indexed-subcase)
@@ -284,8 +288,15 @@
                  (loop for indexed-subcase in subcases
                        for subcase-index = (car indexed-subcase)
                        for subcase = (cdr indexed-subcase)
-                       do (push (%route-input-description route subcase)
-                                route-inputs)
+                       do (progn
+                            (format *error-output*
+                                    "~&[route] route=~a subcase=~a stage=~s~%"
+                                    (route-id route)
+                                    (%route-subcase-id route subcase-index)
+                                    :capture-start)
+                            (force-output *error-output*)
+                            (push (%route-input-description route subcase)
+                                  route-inputs))
                        (push
                         (%route-capture-subcase
                          route subcase subcase-index directory
@@ -344,8 +355,8 @@
                          results directory)
     (format t "Route report: ~a~%" (namestring report-path))
     (format t "Evidence directory: ~a~%" (namestring directory))
-    (%route-results-exit-code results)))
-(defun %route-results-exit-code (results)
+    (%route-report-exit-code results)))
+(defun %route-report-exit-code (results)
   (if (and results
            (every
             (lambda (result)
