@@ -7,6 +7,8 @@
   (define-btm-layout ((cpu 2) (mem 1))
                      ((net 2) (disk 2) (temp 1))
                      ((proc 2 :default))))
+;; Match the 1:1:2 row sizing from the §3.4 reference layout.
+(defparameter *btm-row-ratios* (quote (1 1 2)))
 
 (defun %write-btm-widget (stream widget)
   (destructuring-bind (type &optional ratio marker) widget
@@ -22,8 +24,8 @@
     (error "RATE must be a positive integer."))
   (let* ((row-count (length *btm-layout*))
          (row-ratios
-           (if (= row-count 3)
-               (list 3 4 3)
+           (if (= row-count (length *btm-row-ratios*))
+               *btm-row-ratios*
                (make-list row-count :initial-element 1))))
     (with-output-to-string (stream)
       (format stream

@@ -21,6 +21,7 @@
       ((proc 2 :default))))))
  (cl-weave:it
   "writes the exact configured TOML"
+  ;; The expected 1:1:2 row sizing comes from the spec §3.4 reference layout.
   (cl-weave:expect
    (string=
     (ntop.e2e:btm-config-string 700)
@@ -34,7 +35,7 @@ case_sensitive = false
 default_grouped = true
 
 [[row]]
-ratio = 3
+ratio = 1
 [[row.child]]
 ratio = 2
 type = \"cpu\"
@@ -43,7 +44,7 @@ ratio = 1
 type = \"mem\"
 
 [[row]]
-ratio = 4
+ratio = 1
 [[row.child]]
 ratio = 2
 type = \"net\"
@@ -55,7 +56,7 @@ ratio = 1
 type = \"temp\"
 
 [[row]]
-ratio = 3
+ratio = 2
 [[row.child]]
 ratio = 2
 type = \"proc\"
@@ -72,4 +73,18 @@ default = true
    (btm-config-test-contains-p
     (ntop.e2e:btm-config-string rate)
     (format nil "rate = ~d" rate))
-   :to-be t)))
+   :to-be t))
+ (cl-weave:it
+  "preserves custom layouts with nondefault row counts"
+  (let* ((ntop.e2e::*btm-layout*
+           '(((cpu)) ((mem)) ((net)) ((proc))))
+         (config (ntop.e2e:btm-config-string 700)))
+    (cl-weave:expect
+     (not (null
+           (search
+            "[[row]]
+ratio = 1
+[[row.child]]
+type = \"proc\""
+            config)))
+     :to-be t))))
