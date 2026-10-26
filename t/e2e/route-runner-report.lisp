@@ -32,6 +32,7 @@
   (let* ((status (or (getf subresult :status)
                      (if (getf subresult :passed) :pass :fail)))
          (applicability (getf subresult :applicability))
+         (probe (getf subresult :probe))
          (evidence (getf subresult :evidence)))
     (cond
       ((eq status :pass) :pass)
@@ -51,31 +52,16 @@
                         (list :battery-tabs :linux-only :mouse-other :powermetrics))
                 (and (eq applicability :mode)
                      (string= (or (getf subresult :mode) "") "btm-self")
-                     (member (getf subresult :route-id)
-                             (list "extension-170" "extension-171"
-                                   "extension-172" "extension-173"
-                                   "restore-exception")
-                             :test #'string=))))
+                     (member probe (list :extension :restore) :test (function eq)))))
        :na)
       (t :fail))))
 (defun %route-btm-self-na-result
     (route subcase subcase-index directory)
   (let* ((id (route-id route))
-         (context (or (getf subcase :context) "widget"))
-         (reason
-           (cond
-             ((string= id "extension-170")
-              (format nil "BTM has no ~a widget-view cycle for this route."
-                      context))
-             ((string= id "extension-171")
-              "BTM has no backward graph-history route.")
-             ((string= id "extension-172")
-              "BTM has no forward graph-history route.")
-             ((string= id "extension-173")
-              "BTM has no return-to-current graph route.")
-             ((string= id "restore-exception")
-              "BTM has no terminal-session exception-boundary route.")
-             (t (error "Route ~a is not allowed to be N/A in btm-self." id))))
+         (probe (getf subcase :probe))
+         (reason (or (getf subcase :btm-self-na-reason)
+                     (error "Route ~a has no btm-self N/A reason for probe ~s."
+                            id probe)))
          (actual "Skipped because btm-self has no BTM equivalent.")
          (path
            (merge-pathnames
@@ -88,6 +74,7 @@
     (list :status :na
           :passed nil
           :route-id id
+          :probe probe
           :mode "btm-self"
           :applicability :mode
           :input (%route-input-description route subcase)

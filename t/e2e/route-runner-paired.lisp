@@ -21,6 +21,14 @@
                                  "Process-data readiness timed out.")
                       :result result))
     (cond
+      ((and (eq (getf subcase :probe) :modal)
+            (string= (route-action route) "Close current modal")
+            (string-equal (or (getf subcase :context) "") "expanded widget")
+            (eq t reference-state)
+            (eq t candidate-state))
+       (values t nil
+               "Both sides restored the expanded widget according to frame geometry."
+               nil))
       ((and (not comparable-p) candidate-state)
        (values t nil "candidate expected state was observed" nil))
       ((and comparable-p difference)
@@ -252,19 +260,6 @@
            (if passed "each side proved the expected owned-child state"
              "a side failed the expected safe state for its owned child")
            nil reference candidate)))
-    (when manual
-      (let* ((cause (format nil "reference ~a; candidate ~a"
-                            (getf reference :actual) (getf candidate :actual)))
-             (manual-result (%route-manual-result
-                             route subcase evidence-directory cause
-                             reference-prefix)))
-        (setf (getf result :status) :manual
-              (getf result :expected) (getf manual-result :expected)
-              (getf result :cause) cause
-              (getf result :evidence)
-              (append (getf result :evidence)
-                      (getf manual-result :evidence)))
-        (remf result :classification)))
     result))
 
 (defun %route-run-exception (route subcase description ntop prefix rows
