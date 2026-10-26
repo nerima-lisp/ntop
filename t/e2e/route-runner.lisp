@@ -31,15 +31,139 @@
                      "FORCE_COLOR"
                      "NO_COLOR")
                    :test #'string=))))
+  (progn
+  ;; BTM's first macOS process sample took 26-47 seconds; allow one measured window.
+  (defparameter *route-process-readiness-timeout-seconds* 60d0)
+  (defparameter *route-process-readiness-sample-seconds* 1d0)
+  (defun %route-isolated-environment-directory ()
+    (let* ((directory (%route-temporary-directory "/tmp"))
+           (claim (merge-pathnames ".claim" directory)))
+      (when (probe-file claim)
+        (delete-file claim))
+      directory))
   (defun %route-environment
-      (&optional (inherited-environment (sb-ext:posix-environ)))
-    (cons "TERM=xterm-256color"
-          (remove-if
-           (lambda (entry)
-             (or (%route-color-environment-variable-p entry)
-                 (and (>= (length entry) 5)
-                      (string= entry "TERM=" :end1 5))))
-           inherited-environment))))
+      (&optional (inherited-environment (sb-ext:posix-environ))
+       (home-directory (%route-isolated-environment-directory))
+       (config-directory (%route-isolated-environment-directory)))
+    (append
+     (list (format nil "HOME=~a"
+                   (namestring (uiop:ensure-directory-pathname
+                                (pathname home-directory))))
+           (format nil "XDG_CONFIG_HOME=~a"
+                   (namestring (uiop:ensure-directory-pathname
+                                (pathname config-directory))))
+           "TERM=xterm-256color")
+     (remove-if
+      (lambda (entry)
+        (or (%route-color-environment-variable-p entry)
+            (let ((separator (position #\= entry)))
+              (and separator
+                   (member (subseq entry 0 separator)
+                           '("TERM" "HOME" "XDG_CONFIG_HOME")
+                           :test #'string=)))))
+      inherited-environment)))
+  (defun %route-process-widget-ready-p (grid)
+  (let* ((frames (and grid (criterion-projection-frames grid)))
+         (frame
+           (find-if (lambda (bounds)
+                      (search "Processes"
+                              (criterion-row-text grid (first bounds))
+                              :test (function char-equal)))
+                    frames))
+         (header-row
+           (and frame
+                (loop for row from (1+ (first frame)) below (second frame)
+                      when (criterion-process-header-row-p grid row (list frame))
+                        return row)))
+         (header-text (and header-row (criterion-row-text grid header-row)))
+         (pid-span
+           (and header-text
+                (or (first (criterion-label-spans header-text "PID"))
+                    (first (criterion-label-spans header-text "Count")))))
+         (name-span
+           (and header-text
+                (first (criterion-label-spans header-text "Name(n)"))))
+         (raw-name-end
+           (and name-span
+                (loop for label in (criterion-rule-values :process-header-labels)
+                      for span = (first (criterion-label-spans header-text label))
+                      when (and span (> (car span) (car name-span)))
+                        minimize (car span))))
+         (name-limit (or raw-name-end (and frame (fourth frame)))))
+    (and frame header-row pid-span name-span name-limit
+         (not (%route-widget-no-data-p grid "Processes"))
+         (loop for row from (1+ header-row) below (second frame)
+               for text = (criterion-row-text grid row)
+               for pid-value = (subseq text (car pid-span) (car name-span))
+               for name-value = (subseq text (car name-span) name-limit)
+               thereis (and (find-if (function digit-char-p) pid-value)
+                            (plusp (length
+                                    (string-trim
+                                     (list (code-char 32) (code-char 9)
+                                           (code-char 9474))
+                                     name-value))))))))
+  (defun %route-read-interval (session raw seconds)
+    (multiple-value-bind (deadline deadline-seconds)
+        (%deadline-for-call session "process readiness" seconds)
+      (let ((buffer (make-array 4096 :element-type '(unsigned-byte 8)))
+            (query-scan-index (max 0 (- (length raw) 3))))
+        (loop for now = (%now)
+              for remaining = (%ticks-to-seconds (- deadline now))
+              while (plusp remaining)
+              do (when (with-e2e-operation-timeout
+                        ("process readiness wait" deadline deadline-seconds)
+                        (cl-tty-kit:fd-wait
+                         (e2e-session-fd session) :input remaining))
+                   (let ((count
+                           (with-e2e-operation-timeout
+                            ("process readiness read" deadline deadline-seconds)
+                            (cl-tty-kit:fd-read-octets
+                             (e2e-session-fd session) buffer))))
+                     (cond
+                       ((null count) nil)
+                       ((zerop count)
+                        (error "PTY closed during process readiness sampling."))
+                       (t
+                        (%append-octets raw (subseq buffer 0 count))
+                        (%e2e-session-record-output session
+                                                    (subseq buffer 0 count))
+                        (multiple-value-bind (next-index)
+                            (%pty-answer-cursor-query
+                             session raw query-scan-index deadline)
+                          (setf query-scan-index next-index)))))))
+        raw)))
+  (defun %route-wait-process-data (session raw rows columns)
+    (incf (e2e-session-deadline session)
+          (%seconds-to-ticks *route-process-readiness-timeout-seconds*))
+    (incf (e2e-session-timeout-seconds session)
+          *route-process-readiness-timeout-seconds*)
+    (let ((deadline (+ (%now)
+                       (%seconds-to-ticks
+                        *route-process-readiness-timeout-seconds*)))
+          (ready-samples 0))
+      (loop for remaining =
+              (%ticks-to-seconds (- deadline (%now)))
+            while (plusp remaining)
+            do (%route-read-interval
+                session raw
+                (min *route-process-readiness-sample-seconds* remaining))
+               (if (%route-process-widget-ready-p
+                    (%route-grid raw rows columns))
+                   (when (= 2 (incf ready-samples))
+                     (return-from %route-wait-process-data :ready))
+                 (setf ready-samples 0))
+            finally (return :timeout))))
+  (progn
+  (defun %route-process-data-required-p (route subcase)
+    (let ((context (or (getf subcase :context) "")))
+      (or (eq (route-kind route) :column)
+          (string= (route-id route) "sleep-child")
+          (string-equal context "normal process table")
+          (equal (%route-widget-type context) "proc"))))
+  (defun %route-process-startup-timeout (route subcase timeout)
+    (if (%route-process-data-required-p route subcase)
+        (max timeout *route-process-readiness-timeout-seconds*)
+        timeout)))))
 
 (defun %route-octets (text)
   (sb-ext:string-to-octets text :external-format :utf-8))
@@ -191,7 +315,15 @@
                                                frame-paths
                                                (list (namestring error-path))))
                                         subresults)))))))))
-               (setf subresults (nreverse subresults))
+               (progn
+                 (setf subresults (nreverse subresults))
+                 (setf subresults
+                       (loop for indexed-subcase in subcases
+                             for subresult in subresults
+                             collect (list* :subcase-id
+                                            (%route-subcase-id
+                                             route (car indexed-subcase))
+                                            subresult))))
                (let* ((first-difference
                         (find-if (lambda (subresult)
                                    (getf subresult :first-difference))

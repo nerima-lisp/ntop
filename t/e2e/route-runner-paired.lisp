@@ -7,6 +7,16 @@
          (reference-state (%route-action-state-p route mode subcase reference :reference))
          (candidate-state (%route-action-state-p route mode subcase candidate :candidate)))
     (cond
+     ((or (eq :manual (getf reference :readiness-status))
+          (eq :manual (getf candidate :readiness-status)))
+      (values nil difference
+              (format nil
+                      (concatenate
+                       'string
+                       "The Processes widget did not show rows within ~,0f seconds; "
+                       "no route input was sent. Follow the documented manual procedure.")
+                      *route-process-readiness-timeout-seconds*)
+              :manual))
      ((and comparable-p difference)
       (if (and (member (route-id route)
                        (list "key-9" "key-10" "key-11")
@@ -60,7 +70,12 @@
                         "Both BTM Processes panes showed No data and no sort headers."
                         "The c CPU-sort order could not be observed."))
                (t
-                (%route-manual-reason route subcase reference candidate)))
+                (let ((reason (%route-manual-reason route subcase reference candidate)))
+                  (if (null difference)
+                      (format nil "~a ~a"
+                              "State observation: Both condition-A projections matched."
+                              reason)
+                      reason))))
               :manual))
      ((or (eq reference-state :manual) (eq candidate-state :manual))
       (values nil difference "the expected route state is not measurable on at least one side"
@@ -70,16 +85,14 @@
       (values t difference
               (if comparable-p "condition-A projections match"
                 "approved §D extension deviation")))
-     ((and (string= mode "ntop") (null reference-state) (null candidate-state))
-      (values nil difference
-              (if difference
-                  (concatenate 'string
-                               "The condition-A projection did not establish the expected "
-                               "state. Verify the route manually.")
-                (concatenate 'string
-                             "Both condition-A projections matched, but neither saved frame "
-                             "showed the expected transition. Verify the documented "
-                             "before/action/after procedure manually."))
+     ((and (member mode '("ntop" "btm-self") :test #'string=)
+           (null reference-state) (null candidate-state) (null difference))
+      (values nil nil
+              (concatenate
+               'string
+               "Observed state: Both condition-A projections matched; neither saved frame showed "
+               "the expected transition. Verify the documented before/action/after "
+               "procedure manually.")
               :manual))
      (t (values nil difference
                 (if reference-state
@@ -240,8 +253,13 @@
          (candidate (%route-run-sleep-child-side
                      ntop route subcase candidate-prefix rows columns rate timeout
                      config-path evidence-directory))
-         (manual (or (eq :manual (getf reference :status))
-                     (eq :manual (getf candidate :status))))
+         (manual
+          (and (or (eq :manual (getf reference :status))
+                   (eq :manual (getf candidate :status)))
+               (or (eq :manual (getf reference :status))
+                   (getf reference :passed))
+               (or (eq :manual (getf candidate :status))
+                   (getf candidate :passed))))
          (passed (and (getf reference :passed) (getf candidate :passed)))
          (result (%route-paired-result
                   description (route-expected route) (and passed (not manual))

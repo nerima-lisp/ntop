@@ -170,12 +170,12 @@
    (cl-weave:expect
     (search "| ID | Status | Input sequence | Expected | Actual | "
             report)
-    :to-satisfy (function plusp))
-   (cl-weave:expect (search "| key-15 | MANUAL |" report)
-                    :to-satisfy (function plusp))
+    :to-satisfy (function identity))
+   (cl-weave:expect (search "  - key-15-002 (" report)
+                    :to-satisfy (function identity))
    (cl-weave:expect
     (search "Subcase counts: 1 total, 0 PASS, 0 FAIL, 1 MANUAL." report)
-    :to-satisfy (function plusp))))
+    :to-satisfy (function identity))))
    (cl-weave:it
     "records every flag spelling and the help and version controls"
     (let* ((parity (ntop.e2e::route-parity-catalog))
@@ -205,14 +205,11 @@
                 (ntop.e2e::%route-subcases-expanded route))))
       (let* ((environment
                (ntop.e2e::%route-environment
-                '("TERM=screen"
-                  "NO_COLOR=1"
-                  "CLICOLOR=1"
-                  "CLICOLOR_FORCE=1"
-                  "FORCE_COLOR=1"
-                  "COLORTERM=truecolor"
-                  "ANSI_COLORS_DISABLED=1"
-                  "PATH=/bin")))
+                '("TERM=screen" "HOME=/inherited" "XDG_CONFIG_HOME=/inherited"
+                  "NO_COLOR=1" "CLICOLOR=1" "CLICOLOR_FORCE=1"
+                  "FORCE_COLOR=1" "COLORTERM=truecolor"
+                  "ANSI_COLORS_DISABLED=1" "PATH=/bin")
+                "/tmp/route-home/" "/tmp/route-xdg/"))
              (routes (ntop.e2e::route-catalog))
              (battery-route (route-for-context routes "battery tabs"))
              (battery-subcase (subcase-for-context battery-route "battery tabs"))
@@ -231,7 +228,8 @@
                (ntop.e2e::%route-base-arguments
                 "btm" #p"/tmp/route.toml" cpu-route cpu-subcase "/tmp")))
         (cl-weave:expect environment :to-equal
-                         '("TERM=xterm-256color" "PATH=/bin"))
+                         '("HOME=/tmp/route-home/" "XDG_CONFIG_HOME=/tmp/route-xdg/"
+                           "TERM=xterm-256color" "PATH=/bin"))
         (cl-weave:expect
  (not (null (member "--battery" battery-ntop-args :test #'string=)))
  :to-be
@@ -344,24 +342,26 @@
         (subcase (first (ntop.e2e::%route-subcases-expanded route)))
         (empty-side (list :projection nil :initial-projection nil
                           :grid nil :initial-grid nil))
-        (visible-grid
-          (criterion-test-grid
-           12 100
-           "RAM RX: TX: Total RX: Total TX: Disks Temperature"))
+        (visible-grid (let ((grid (ntop.e2e:make-terminal-grid :rows 12 :cols 100)))
+                (criterion-test-write grid 1 0 "0"
+                                      "RAM RX: TX: Total RX: Total TX: Disks Temperature")
+                grid))
         (visible-side
           (list :projection nil :initial-projection nil
                 :grid visible-grid :initial-grid visible-grid))
         (unobserved
-          (multiple-value-list
-           (ntop.e2e::%route-all-expected-actual
-            route "ntop" subcase empty-side empty-side)))
+          (loop for mode in '("ntop" "btm-self")
+                collect
+                (multiple-value-list
+                 (ntop.e2e::%route-all-expected-actual
+                  route mode subcase empty-side empty-side))))
         (asymmetric
           (multiple-value-list
            (ntop.e2e::%route-all-expected-actual
             route "ntop" subcase visible-side empty-side))))
-   (cl-weave:expect (fourth unobserved) :to-be :manual)
+   (cl-weave:expect (mapcar #'fourth unobserved) :to-equal '(:manual :manual))
    (cl-weave:expect
-    (search "Both condition-A projections matched" (third unobserved))
+    (search "Both condition-A projections matched" (third (first unobserved)))
     :to-satisfy (function plusp))
    (cl-weave:expect (fourth asymmetric) :to-be nil)
    (cl-weave:expect

@@ -105,19 +105,28 @@
                (%route-report-cell (getf result :cause))
                (%route-report-cell
                 (format nil "~{~a~^, ~}" (getf result :evidence))))
-       (dolist (subresult (getf result :subresults))
-         (format stream
-                 (concatenate 'string
-                              "  - ~a: ~a; expected ~a; actual ~a; "
-                              "first difference ~a; cause ~a; evidence ~{~a~^, ~}~%")
-                 (%route-report-cell (getf subresult :input))
-                 (string-upcase
-                  (symbol-name (%route-subresult-status subresult)))
-                 (%route-report-cell (getf subresult :expected))
-                 (%route-report-cell (getf subresult :actual))
-                 (%route-report-cell (getf subresult :first-difference))
-                 (%route-report-cell (getf subresult :cause))
-                 (getf subresult :evidence))))
+       (loop for subresult in (getf result :subresults)
+             for subcase-index from 1
+             do (format stream
+                        (concatenate 'string
+                                     "  - ~a (~a): ~a; expected ~a; actual ~a; "
+                                     "first difference ~a; cause ~a; evidence ~{~a~^, ~}~%")
+                        (%route-report-cell
+                         (or (getf subresult :subcase-id)
+                             (format nil "~a-~a~d"
+                                     (getf result :id)
+                                     (if (< subcase-index 10) "00"
+                                         (if (< subcase-index 100) "0" ""))
+                                     subcase-index)))
+                        (%route-report-cell (getf subresult :input))
+                        (string-upcase
+                         (symbol-name (%route-subresult-status subresult)))
+                        (%route-report-cell (getf subresult :expected))
+                        (%route-report-cell (getf subresult :actual))
+                        (%route-report-cell
+                         (getf subresult :first-difference))
+                        (%route-report-cell (getf subresult :cause))
+                        (getf subresult :evidence))))
      (let ((subresults
              (loop for result in results
                    append (copy-list (getf result :subresults)))))

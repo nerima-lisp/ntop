@@ -65,9 +65,9 @@
       ((and (eq (route-kind route) :key)
             (member (route-id route) (quote ("key-9" "key-11"))
                     :test (function string=)))
-       (quote (((cpu nil :default))
-               ((mem 4) (:column 3 ((temp nil) (disk nil))))
-               ((net nil) (proc nil)))))
+       (quote (((cpu 2 :default) (mem 1))
+               ((net 2) (disk 2) (temp 1))
+               ((proc 2)))))
       (t *btm-layout*))))
 
 (defun %route-widget-no-data-p (grid title)

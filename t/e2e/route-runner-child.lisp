@@ -22,9 +22,7 @@
                (string= action-name "Select process row")))
          (child (sb-ext:run-program
                  "/bin/bash"
-                 (if select-route
-                     '("-c" "exec -a ntop-owned sleep 5")
-                   '("-c" "exec -a ntop-owned sleep 300"))
+                 '("-c" "exec -a ntop-owned sleep 300")
                  :wait nil))
          (pid (sb-ext:process-pid child))
          (process-route (and (not dialog-context)
@@ -57,41 +55,46 @@
               (setf session (launch-e2e-process
                              program args screen-rows columns
                              :environment (%route-environment)
-                             :timeout-seconds timeout))
+                             :timeout-seconds
+                             (%route-process-startup-timeout route subcase timeout)))
               (multiple-value-bind (initial)
                   (pty-read-until-idle
                    session :quiet-seconds *route-frame-quiet-seconds*
                    :first-frame-not-before
                    (* *route-first-frame-factor* (/ rate 1000d0))
-                   :timeout-seconds timeout)
+                   :timeout-seconds (%route-process-startup-timeout route subcase timeout))
                 (progn
                   (%append-octets raw initial)
                   (when (and (eq (route-kind route) :column)
                              (not (sb-ext:process-alive-p child)))
                     (error "Harness-owned column fixture PID ~d exited before the frame." pid))
-                  (when (%route-widget-no-data-p
-                         (%route-grid raw screen-rows columns) "Processes")
-                    (return-from %route-run-sleep-child-side
-                                 (list :status :manual
-                                       :passed nil
-                                       :actual
-                                       (format nil
-                                               (concatenate
-                                                'string
-                                                "~a process widget shows No data; "
-                                                "owned child PID ~d alive ~a; PID and "
-                                                "ntop-owned marker cannot be verified.")
-                                               (pathname-name (pathname program)) pid
-                                               (if (sb-ext:process-alive-p child) "yes" "no"))
-                                       :cause
-                                       (format nil
-                                               (concatenate
-                                                'string
-                                                "The process widget had no rows while "
-                                                "harness-owned PID ~d remained alive: ~a.")
-                                               pid
-                                               (if (sb-ext:process-alive-p child) "yes" "no"))
-                                       :evidence path)))
+                  (when (and (%route-process-data-required-p route subcase)
+                             (not (eq :ready
+                                      (%route-wait-process-data
+                                       session raw screen-rows columns))))
+                    (let ((alive (sb-ext:process-alive-p child)))
+                      (return-from %route-run-sleep-child-side
+                        (list :status :manual
+                              :passed nil
+                              :actual
+                              (format nil
+                                      (concatenate
+                                       'string
+                                       "~a Processes still showed No data after ~,0f "
+                                       "seconds; owned PID ~d alive ~a, so the route "
+                                       "input was skipped.")
+                                      (pathname-name (pathname program))
+                                      *route-process-readiness-timeout-seconds*
+                                      pid (if alive "yes" "no"))
+                              :cause
+                              (format nil
+                                      (concatenate
+                                       'string
+                                       "No process rows appeared within ~,0f seconds "
+                                       "while harness-owned PID ~d remained alive: ~a.")
+                                      *route-process-readiness-timeout-seconds* pid
+                                      (if alive "yes" "no"))
+                              :evidence path))))
                   (when (eq (route-kind route) :column)
                     (let ((grid (%route-grid raw screen-rows columns)))
                       (unless (%route-owned-row-p grid pid)
@@ -297,10 +300,6 @@
       (when session
         (close-e2e-session session))
       (when (and child (sb-ext:process-alive-p child))
-        (if select-route
-            (sb-ext:process-wait child)
-          (progn
-            (sb-ext:process-kill child 9 :pid)
-            (sb-ext:process-wait child))))
+        (progn (sb-ext:process-kill child 9 :pid) (sb-ext:process-wait child)))
       (%route-write-ansi path raw)) (list :passed (and passed sent (null error-value))
                                           :actual actual :evidence path)))

@@ -141,9 +141,7 @@
     "sleep-child" "Stop harness-owned sleep child"
     "search exact child PID; select its row; confirm stop"
     "Only the child started by this route exits after confirmation."
-    :manual
-    "BTM 0.14.9 showed No data for the harness-owned PID on this macOS host."
-    nil)
+    :automated nil t)
    (%additional-route
     "restore-normal" "Terminal restore after normal exit" "q"
     "stty -g before and after are equal after normal exit."
