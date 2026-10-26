@@ -8,19 +8,18 @@
          (candidate-state (%route-action-state-p route mode subcase candidate :candidate)))
     (cond
      ((or (eq :manual (getf reference :readiness-status))
-     (eq :manual (getf candidate :readiness-status)))
-  (values
-   nil difference
-   (format nil
-           (concatenate
-            'string
-            "The Processes widget did not show rows within ~,0f seconds; "
-            "readiness diagnostics: reference ~a; candidate ~a. "
-            "No route input was sent. Follow the documented manual procedure.")
-           *route-process-readiness-timeout-seconds*
-           (or (getf reference :readiness-diagnostic) "not captured")
-           (or (getf candidate :readiness-diagnostic) "not captured"))
-   :manual))
+          (eq :manual (getf candidate :readiness-status)))
+      (let* ((reference-failed-p
+               (eq :manual (getf reference :readiness-status)))
+             (side (if reference-failed-p :reference :candidate))
+             (result (if reference-failed-p reference candidate)))
+        (error 'route-side-capture-error
+               :side side
+               :cause (or (getf result :readiness-diagnostic)
+                          (getf result :cause)
+                          (getf result :actual)
+                          "Process-data readiness timed out.")
+               :result result)))
      ((and comparable-p difference)
       (if (and (member (route-id route)
                        (list "key-9" "key-10" "key-11")
@@ -122,12 +121,20 @@
                                     reference-prefix candidate-prefix rows
                                     columns rate timeout config-path
                                     evidence-directory)
-  (let* ((reference (%route-run-interactive-side
-                     btm route subcase reference-prefix rows columns rate timeout
-                     config-path evidence-directory))
-         (candidate (%route-run-interactive-side
-                     ntop route subcase candidate-prefix rows columns rate timeout
-                     config-path evidence-directory))
+  (let* ((reference
+          (%route-capture-side
+           :reference #'%route-run-interactive-side btm route subcase
+           reference-prefix rows columns rate timeout config-path
+           evidence-directory))
+         (candidate
+          (%route-capture-side
+           :candidate #'%route-run-interactive-side ntop route subcase
+           candidate-prefix rows columns rate timeout config-path
+           evidence-directory))
+         (reference-state
+           (%route-action-state-p route mode subcase reference :reference))
+         (candidate-state
+           (%route-action-state-p route mode subcase candidate :candidate))
          (passed nil)
          (difference nil)
          (cause nil)
@@ -141,8 +148,12 @@
             (%route-content-check route subcase candidate)
           (unless (and reference-ok candidate-ok)
             (setf passed nil
+                  reference-state (and reference-state reference-ok)
+                  candidate-state (and candidate-state candidate-ok)
                   cause (format nil "reference ~a; candidate ~a"
                                 reference-actual candidate-actual))))))
+    (setf (getf reference :passed) reference-state
+          (getf candidate :passed) candidate-state)
     (let ((result
             (%route-paired-result
              description (route-expected route) passed
@@ -155,15 +166,19 @@
                 (getf result :expected) (getf manual :expected)
                 (getf result :cause) (getf manual :cause)
                 (getf result :evidence)
-                (append (getf result :evidence) (getf manual :evidence)))))
+                (append (getf result :evidence) (getf manual :evidence)))
+          (remf result :classification)))
       result)))
 
 (defun %route-run-control-pair
     (route description base-args candidate-args mode btm ntop reference-prefix
-     candidate-prefix timeout)
-  (let* ((reference (%route-run-cli-side btm base-args reference-prefix timeout))
-         (candidate (%route-run-cli-side ntop candidate-args candidate-prefix
-                                         timeout))
+           candidate-prefix timeout)
+  (let* ((reference (%route-capture-side
+                     :reference (function %route-run-cli-side) btm base-args
+                     reference-prefix timeout))
+         (candidate (%route-capture-side
+                     :candidate (function %route-run-cli-side) ntop candidate-args
+                     candidate-prefix timeout))
          (reference-output (%route-cli-output reference))
          (candidate-output (%route-cli-output candidate))
          (reference-valid (%route-control-output-valid-p route btm reference))
@@ -172,7 +187,11 @@
                             (getf candidate :exit-code))
                        (string= reference-output candidate-output)))
          (passed (and reference-valid candidate-valid
-                      (or (not (string= mode "btm-self")) equal-p))))
+                      (or (not (string= mode "btm-self")) equal-p)))
+         (difference (when (and (string= mode "btm-self") (not equal-p))
+                       "btm-self CLI output differs")))
+    (setf (getf reference :passed) reference-valid
+          (getf candidate :passed) candidate-valid)
     (%route-paired-result
      description (route-expected route) passed
      (format nil "btm: ~a; candidate: ~a"
@@ -181,61 +200,69 @@
             "btm control lacked the expected help or version structure")
            ((not candidate-valid)
             "candidate lacked the expected help or version structure")
-           ((and (string= mode "btm-self") (not equal-p))
-            "btm-self CLI output differs")
+           (difference difference)
            (t "both CLI controls have the expected structure"))
-     nil reference candidate)))
+     difference reference candidate)))
 
 (defun %route-run-terminal-pair (route subcase description btm ntop
-                                 reference-prefix candidate-prefix rows columns
-                                 timeout config-path evidence-directory)
-  (let* ((reference (%route-run-terminal-side
-                     btm route subcase reference-prefix rows columns timeout
-                     config-path evidence-directory))
-         (candidate (%route-run-terminal-side
-                     ntop route subcase candidate-prefix rows columns timeout
-                     config-path evidence-directory))
+                                       reference-prefix candidate-prefix rows columns
+                                       timeout config-path evidence-directory)
+  (let* ((reference
+          (%route-capture-side
+           :reference #'%route-run-terminal-side btm route subcase
+           reference-prefix rows columns timeout config-path evidence-directory))
+         (candidate
+          (%route-capture-side
+           :candidate #'%route-run-terminal-side ntop route subcase
+           candidate-prefix rows columns timeout config-path evidence-directory))
          (passed (and (getf reference :passed) (getf candidate :passed))))
     (%route-paired-result
      description (route-expected route) passed
      (format nil "reference ~a; candidate ~a"
              (getf reference :actual) (getf candidate :actual))
      (if passed "terminal settings match the PTY baseline"
-         "terminal settings were not restored or a child did not exit")
+       "terminal settings were not restored or a child did not exit")
      nil reference candidate)))
 
 (defun %route-run-exit-pair (route subcase description mode btm ntop
-                             reference-prefix candidate-prefix rows columns rate
-                             timeout config-path evidence-directory)
-  (let* ((reference (%route-run-exit-side
-                     btm route subcase reference-prefix rows columns rate timeout
-                     config-path evidence-directory))
-         (candidate (%route-run-exit-side
-                     ntop route subcase candidate-prefix rows columns rate timeout
-                     config-path evidence-directory))
+                                   reference-prefix candidate-prefix rows columns rate
+                                   timeout config-path evidence-directory)
+  (let* ((reference
+          (%route-capture-side
+           :reference #'%route-run-exit-side btm route subcase reference-prefix
+           rows columns rate timeout config-path evidence-directory))
+         (candidate
+          (%route-capture-side
+           :candidate #'%route-run-exit-side ntop route subcase candidate-prefix
+           rows columns rate timeout config-path evidence-directory))
          (reference-code (getf reference :exit-code))
          (candidate-code (getf candidate :exit-code))
          (passed (and (getf reference :passed) (getf candidate :passed)
                       (or (not (string= mode "btm-self"))
-                          (eql reference-code candidate-code)))))
+                          (eql reference-code candidate-code))))
+         (difference (when (and (string= mode "btm-self")
+                                (not (eql reference-code candidate-code)))
+                       "btm-self child exit statuses differ")))
     (%route-paired-result
      description "the documented quit input exits the child with status 0"
      passed
      (format nil "reference ~a; candidate ~a"
              (getf reference :actual) (getf candidate :actual))
      (if passed "both children exited successfully"
-         "a quit input did not produce the expected exit")
-     nil reference candidate)))
+       "a quit input did not produce the expected exit")
+     difference reference candidate)))
 
 (defun %route-run-resize-pair (route subcase description btm ntop
-                               reference-prefix candidate-prefix rate timeout
-                               config-path evidence-directory)
-  (let* ((reference (%route-run-resize-side
-                     btm route subcase reference-prefix rate timeout config-path
-                     evidence-directory))
-         (candidate (%route-run-resize-side
-                     ntop route subcase candidate-prefix rate timeout config-path
-                     evidence-directory))
+                                     reference-prefix candidate-prefix rate timeout
+                                     config-path evidence-directory)
+  (let* ((reference
+          (%route-capture-side
+           :reference (function %route-run-resize-side) btm route subcase reference-prefix
+           rate timeout config-path evidence-directory))
+         (candidate
+          (%route-capture-side
+           :candidate (function %route-run-resize-side) ntop route subcase candidate-prefix
+           rate timeout config-path evidence-directory))
          (reference-grid (getf reference :grid))
          (candidate-grid (getf candidate :grid))
          (reference-initial (getf reference :initial-grid))
@@ -243,16 +270,20 @@
          (difference (%route-projection-first-difference
                       (getf reference :projection)
                       (getf candidate :projection)))
-         (sizes-p
-           (and (= (grid-width reference-initial) 80)
-                (= (grid-height reference-initial) 24)
-                (= (grid-width candidate-initial) 80)
-                (= (grid-height candidate-initial) 24)
-                (= (grid-width reference-grid) 120)
-                (= (grid-height reference-grid) 36)
-                (= (grid-width candidate-grid) 120)
-                (= (grid-height candidate-grid) 36)))
+         (reference-size-p
+          (and (= (grid-width reference-initial) 80)
+               (= (grid-height reference-initial) 24)
+               (= (grid-width reference-grid) 120)
+               (= (grid-height reference-grid) 36)))
+         (candidate-size-p
+          (and (= (grid-width candidate-initial) 80)
+               (= (grid-height candidate-initial) 24)
+               (= (grid-width candidate-grid) 120)
+               (= (grid-height candidate-grid) 36)))
+         (sizes-p (and reference-size-p candidate-size-p))
          (passed (and sizes-p (null difference))))
+    (setf (getf reference :passed) reference-size-p
+          (getf candidate :passed) candidate-size-p)
     (%route-paired-result
      description (route-expected route) passed
      (format nil "reference ~a; candidate ~a"
@@ -263,16 +294,20 @@
      difference reference candidate)))
 
 (defun %route-run-sleep-child-pair (route subcase description mode btm ntop
-                                    reference-prefix candidate-prefix rows
-                                    columns rate timeout config-path
-                                    evidence-directory)
+                                          reference-prefix candidate-prefix rows
+                                          columns rate timeout config-path
+                                          evidence-directory)
   (declare (ignore mode))
-  (let* ((reference (%route-run-sleep-child-side
-                     btm route subcase reference-prefix rows columns rate timeout
-                     config-path evidence-directory))
-         (candidate (%route-run-sleep-child-side
-                     ntop route subcase candidate-prefix rows columns rate timeout
-                     config-path evidence-directory))
+  (let* ((reference
+          (%route-capture-side
+           :reference #'%route-run-sleep-child-side btm route subcase
+           reference-prefix rows columns rate timeout config-path
+           evidence-directory))
+         (candidate
+          (%route-capture-side
+           :candidate #'%route-run-sleep-child-side ntop route subcase
+           candidate-prefix rows columns rate timeout config-path
+           evidence-directory))
          (manual
           (and (or (eq :manual (getf reference :status))
                    (eq :manual (getf candidate :status)))
@@ -281,13 +316,14 @@
                (or (eq :manual (getf candidate :status))
                    (getf candidate :passed))))
          (passed (and (getf reference :passed) (getf candidate :passed)))
-         (result (%route-paired-result
-                  description (route-expected route) (and passed (not manual))
-                  (format nil "reference ~a; candidate ~a"
-                          (getf reference :actual) (getf candidate :actual))
-                  (if passed "each side proved the expected owned-child state"
-                      "a side failed the expected safe state for its owned child")
-                  nil reference candidate)))
+         (result
+          (%route-paired-result
+           description (route-expected route) (and passed (not manual))
+           (format nil "reference ~a; candidate ~a"
+                   (getf reference :actual) (getf candidate :actual))
+           (if passed "each side proved the expected owned-child state"
+             "a side failed the expected safe state for its owned child")
+           nil reference candidate)))
     (when manual
       (let* ((cause (format nil "reference ~a; candidate ~a"
                             (getf reference :actual) (getf candidate :actual)))
@@ -299,15 +335,19 @@
               (getf result :cause) cause
               (getf result :evidence)
               (append (getf result :evidence)
-                      (getf manual-result :evidence)))))
+                      (getf manual-result :evidence)))
+        (remf result :classification)))
     result))
 
 (defun %route-run-exception (route subcase description ntop prefix rows
-                             columns timeout)
+                                   columns timeout)
   (declare (ignore description))
-  (let* ((result (%route-run-exception-side prefix rows columns timeout))
+  (let* ((result (%route-capture-side
+                  :candidate #'%route-run-exception-side prefix rows columns
+                  timeout))
          (passed (getf result :passed)))
     (list :passed passed
+          :classification (unless passed :candidate-failure)
           :input
           (format nil
                   "Scope: exported ntop.app.infrastructure:call-with-terminal-session; ~a"
@@ -316,6 +356,6 @@
           :actual (getf result :actual)
           :cause (if passed
                      "call-with-terminal-session restored termios as the error escaped"
-                     (format nil "infrastructure child ~a failed" ntop))
+                   (format nil "infrastructure child ~a failed" ntop))
           :first-difference nil
           :evidence (%route-pair-evidence result nil))))

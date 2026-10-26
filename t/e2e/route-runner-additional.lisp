@@ -306,7 +306,7 @@
                  :cause readiness-diagnostic))
       (%route-close-session-with-evidence session evidence-prefix))))
 (defun %route-run-exit-side (program route subcase evidence-prefix rows columns
-                             rate timeout config-path evidence-directory)
+                                     rate timeout config-path evidence-directory)
   (let* ((args (%route-base-arguments program config-path route subcase
                                       evidence-directory))
          (session (launch-e2e-process program args rows columns
@@ -314,29 +314,31 @@
                                       :timeout-seconds timeout))
          (path (merge-pathnames (format nil "~a.ansi" evidence-prefix)))
          (exit-code nil)
-         (error-value nil))
+         (error-value nil)
+         (sent-p nil))
     (unwind-protect
-         (handler-case
-             (progn
-               (multiple-value-bind (initial)
-                   (pty-read-until-idle
-                    session :quiet-seconds *route-frame-quiet-seconds*
-                    :first-frame-not-before
-                    (* *route-first-frame-factor* (/ rate 1000d0))
-                    :timeout-seconds timeout)
-                 (%route-write-ansi path initial))
-               (pty-send-input session
-                               (%route-octets
-                                (%route-action-text route subcase rows columns))
-                               :timeout-seconds timeout)
-               (setf exit-code (%route-wait-for-exit session timeout)))
-           (error (condition) (setf error-value condition)))
+        (handler-case
+            (progn
+              (multiple-value-bind (initial)
+                  (pty-read-until-idle
+                   session :quiet-seconds *route-frame-quiet-seconds*
+                   :first-frame-not-before
+                   (* *route-first-frame-factor* (/ rate 1000d0))
+                   :timeout-seconds timeout)
+                (%route-write-ansi path initial))
+              (pty-send-input session
+                              (%route-octets
+                               (%route-action-text route subcase rows columns))
+                              :timeout-seconds timeout)
+              (setf sent-p t
+                    exit-code (%route-wait-for-exit session timeout)))
+          (error (condition) (setf error-value condition)))
       (%route-close-session-with-evidence session evidence-prefix))
     (list :passed (and (null error-value) (eql exit-code 0))
           :exit-code exit-code
-          :actual (if error-value
-                      (princ-to-string error-value)
-                      (format nil "child exit status ~a" exit-code))
+          :capture-error (and error-value (not sent-p) error-value)
+          :actual (if error-value (princ-to-string error-value)
+                    (format nil "child exit status ~a" exit-code))
           :evidence path)))
 (defun %route-run-resize-side (program route subcase evidence-prefix rate timeout
                                        config-path evidence-directory)

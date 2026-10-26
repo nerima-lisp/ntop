@@ -246,9 +246,9 @@
           collect (cons index subcase)))
 
 (defun run-route-harness (&key (mode "ntop") (btm "btm") (ntop "./ntop")
-                                   (evidence-directory "/tmp")
-                                   (rows 60) (columns 220) (rate 250)
-                                   (timeout-seconds 30) route-ids subcase-id)
+                               (evidence-directory "/tmp")
+                               (rows 60) (columns 220) (rate 250)
+                               (timeout-seconds 30) route-ids subcase-id)
   (unless (member mode '("ntop" "btm-self") :test (function string=))
     (error "Unknown route mode: ~s" mode))
   (let* ((directory (%route-temporary-directory evidence-directory))
@@ -268,88 +268,52 @@
                     (subresults nil)
                     (route-inputs nil))
                (cond
-                 ((and (string= mode "btm-self")
-                       (not (route-comparable-p route)))
-                  (loop for indexed-subcase in subcases
-                        for subcase-index = (car indexed-subcase)
-                        for subcase = (cdr indexed-subcase)
-                        do (push (%route-input-description route subcase)
-                                 route-inputs)
-                           (push (%route-noncomparable-manual-result
-                                  route subcase subcase-index directory)
-                                 subresults)))
-                 ((route-manual-reason route)
-                  (let ((subcase (cdar subcases)))
-                    (push (%route-input-description route subcase) route-inputs)
-                    (setf subresults
-                          (list (%route-manual-result route subcase directory)))))
-                 (t
-                  (loop for indexed-subcase in subcases
-                        for subcase-index = (car indexed-subcase)
-                        for subcase = (cdr indexed-subcase)
-                        do (push (%route-input-description route subcase)
-                                 route-inputs)
-                           (let ((manual-spec
-                                   (%route-btm-self-manual-spec
-                                    mode route subcase)))
-                             (if manual-spec
-                                 (let ((prefix
-                                         (namestring
-                                          (merge-pathnames
-                                           (format nil "~a-~3,'0d"
-                                                   (route-id route) subcase-index)
-                                           directory))))
-                                   (push (%route-manual-result
-                                          route subcase directory
-                                          (getf manual-spec :reason)
-                                          prefix
-                                          (getf manual-spec :procedure))
-                                         subresults))
-                                 (handler-case
-                                     (push (%route-side-pair
-                                            route subcase subcase-index mode
-                                            reference-program candidate-program
-                                            directory config-path rows columns
-                                            rate timeout-seconds)
-                                           subresults)
-                                   (error (condition)
-                                     (let* ((error-path
-                                              (merge-pathnames
-                                               (format nil "~a-~3,'0d-error.txt"
-                                                       (route-id route)
-                                                       subcase-index)
-                                               directory))
-                                            (frame-paths
-                                              (loop for side in
-                                                      '("reference" "candidate")
-                                                    for frame-path =
-                                                      (merge-pathnames
-                                                       (format nil
-                                                               "~a-~3,'0d-~a.ansi"
-                                                               (route-id route)
-                                                               subcase-index
-                                                               side)
-                                                       directory)
-                                                    when (probe-file frame-path)
-                                                      collect
-                                                      (namestring frame-path))))
-                                       (%write-text error-path
-                                                    (princ-to-string condition))
-                                       (push
-                                        (list :passed nil
-                                              :input
-                                              (%route-input-description
-                                               route subcase)
-                                              :expected (route-expected route)
-                                              :actual (princ-to-string condition)
-                                              :cause
-                                              "route execution raised an error"
-                                              :first-difference nil
-                                              :evidence
-                                              (append
-                                               frame-paths
-                                               (list (namestring error-path))))
-                                        subresults)))))))))
+                ((and (string= mode "btm-self")
+                      (not (route-comparable-p route)))
+                 (loop for indexed-subcase in subcases
+                       for subcase-index = (car indexed-subcase)
+                       for subcase = (cdr indexed-subcase)
+                       do (push (%route-input-description route subcase)
+                                route-inputs)
+                       (push (%route-noncomparable-manual-result
+                              route subcase subcase-index directory)
+                             subresults)))
+                ((route-manual-reason route)
+                 (let ((subcase (cdar subcases)))
+                   (push (%route-input-description route subcase) route-inputs)
+                   (setf subresults
+                         (list (%route-manual-result route subcase directory)))))
+                (t
+                 (loop for indexed-subcase in subcases
+                       for subcase-index = (car indexed-subcase)
+                       for subcase = (cdr indexed-subcase)
+                       do (push (%route-input-description route subcase)
+                                route-inputs)
+                       (let ((manual-spec
+                              (%route-btm-self-manual-spec
+                               mode route subcase)))
+                         (if manual-spec
+                             (let ((prefix
+                                    (namestring
+                                     (merge-pathnames
+                                      (format nil "~a-~3,'0d"
+                                              (route-id route) subcase-index)
+                                      directory))))
+                               (push (%route-manual-result
+                                      route subcase directory
+                                      (getf manual-spec :reason)
+                                      prefix
+                                      (getf manual-spec :procedure))
+                                     subresults))
+                           (push
+                            (%route-capture-subcase
+                             route subcase subcase-index directory
+                             (lambda ()
+                               (%route-side-pair route subcase subcase-index mode
+                                                 reference-program candidate-program
+                                                 directory config-path rows columns rate
+                                                 timeout-seconds)))
+                            subresults))))))
                (progn
                  (setf subresults (nreverse subresults))
                  (setf subresults
@@ -360,35 +324,35 @@
                                              route (car indexed-subcase))
                                             subresult))))
                (let* ((first-difference
-                        (find-if (lambda (subresult)
-                                   (getf subresult :first-difference))
-                                 subresults))
+                       (find-if (lambda (subresult)
+                                  (getf subresult :first-difference))
+                                subresults))
                       (result
-                        (list :id (route-id route)
-                              :status (%route-result-status route subresults)
-                              :input (format nil "~{~a~^; ~}"
-                                             (nreverse route-inputs))
-                              :expected (route-expected route)
-                              :actual (format nil "~{~a~^; ~}"
-                                              (mapcar
-                                               (lambda (subresult)
-                                                 (getf subresult :actual))
-                                               subresults))
-                              :first-difference
-                              (and first-difference
-                                   (getf first-difference :first-difference))
-                              :cause (format nil "~{~a~^; ~}"
+                       (list :id (route-id route)
+                             :status (%route-result-status route subresults)
+                             :input (format nil "~{~a~^; ~}"
+                                            (nreverse route-inputs))
+                             :expected (route-expected route)
+                             :actual (format nil "~{~a~^; ~}"
                                              (mapcar
                                               (lambda (subresult)
-                                                (getf subresult :cause))
+                                                (getf subresult :actual))
                                               subresults))
-                              :evidence
-                              (remove nil
-                                      (mapcan
-                                       (lambda (subresult)
-                                         (copy-list (getf subresult :evidence)))
-                                       subresults))
-                              :subresults subresults)))
+                             :first-difference
+                             (and first-difference
+                                  (getf first-difference :first-difference))
+                             :cause (format nil "~{~a~^; ~}"
+                                            (mapcar
+                                             (lambda (subresult)
+                                               (getf subresult :cause))
+                                             subresults))
+                             :evidence
+                             (remove nil
+                                     (mapcan
+                                      (lambda (subresult)
+                                        (copy-list (getf subresult :evidence)))
+                                      subresults))
+                             :subresults subresults)))
                  (push result results)
                  (format t "~d/~d ~a ~a~%"
                          route-number (length routes) (route-id route)
@@ -400,8 +364,4 @@
                          results directory)
     (format t "Route report: ~a~%" (namestring report-path))
     (format t "Evidence directory: ~a~%" (namestring directory))
-    (if (every (lambda (result)
-                 (member (getf result :status) '(:pass :manual)))
-               results)
-        0
-        1)))
+    (%route-results-exit-code results)))

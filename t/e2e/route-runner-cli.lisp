@@ -26,43 +26,54 @@
              (otherwise nil)))))
 
   (defun %route-run-invalid-flag-pair
-    (route description reference-args candidate-args mode btm ntop
-     reference-prefix candidate-prefix timeout)
-  (let* ((reference (%route-run-cli-side btm reference-args reference-prefix
-                                         timeout))
-         (candidate (%route-run-cli-side ntop candidate-args candidate-prefix
-                                         timeout))
-         (reference-code (getf reference :exit-code))
-         (candidate-code (getf candidate :exit-code))
-         (reference-output (%route-cli-output reference))
-         (candidate-output (%route-cli-output candidate))
-         (rejected-p (and (integerp reference-code)
-                          (integerp candidate-code)
-                          (not (zerop reference-code))
-                          (not (zerop candidate-code))
-                          (= reference-code candidate-code)))
-         (equal-p (string= reference-output candidate-output))
-         (passed (and rejected-p
-                      (or (not (string= mode "btm-self")) equal-p))))
-    (list :passed passed
-          :input description
-          :expected (route-expected route)
-          :actual (format nil "btm exit ~a: ~a; candidate exit ~a: ~a"
-                          reference-code
-                          (string-trim '(#\Space #\Newline #\Return)
-                                       reference-output)
-                          candidate-code
-                          (string-trim '(#\Space #\Newline #\Return)
-                                       candidate-output))
-          :cause (cond ((not rejected-p)
-                        "invalid flag was not rejected with matching nonzero exits")
-                       ((and (string= mode "btm-self") (not equal-p))
-                        "btm-self invalid-flag output differs")
-                       (t "both CLIs rejected the invalid flag with matching status"))
-          :first-difference nil
-          :evidence (mapcar #'namestring
-                            (list (getf reference :evidence)
-                                  (getf candidate :evidence))))))
+      (route description reference-args candidate-args mode btm ntop
+             reference-prefix candidate-prefix timeout)
+    (let* ((reference
+            (%route-capture-side :reference #'%route-run-cli-side btm
+                                 reference-args reference-prefix timeout))
+           (candidate
+            (%route-capture-side :candidate #'%route-run-cli-side ntop
+                                 candidate-args candidate-prefix timeout))
+           (reference-code (getf reference :exit-code))
+           (candidate-code (getf candidate :exit-code))
+           (reference-output (%route-cli-output reference))
+           (candidate-output (%route-cli-output candidate))
+           (rejected-p (and (integerp reference-code)
+                            (integerp candidate-code)
+                            (not (zerop reference-code))
+                            (not (zerop candidate-code))
+                            (= reference-code candidate-code)))
+           (equal-p (and (eql reference-code candidate-code)
+                         (string= reference-output candidate-output)))
+           (passed (and rejected-p
+                        (or (not (string= mode "btm-self")) equal-p)))
+           (difference (when (and (string= mode "btm-self") (not equal-p))
+                         "btm-self invalid-flag exit status or output differs")))
+      (list :passed passed
+            :classification
+            (unless passed
+              (cond (difference :semantic-mismatch)
+                    ((not (and (integerp candidate-code)
+                               (not (zerop candidate-code))))
+                     :candidate-failure)
+                    (t :assertion-failure)))
+            :input description
+            :expected (route-expected route)
+            :actual (format nil "btm exit ~a: ~a; candidate exit ~a: ~a"
+                            reference-code
+                            (string-trim '(#\Space #\Newline #\Return)
+                                         reference-output)
+                            candidate-code
+                            (string-trim '(#\Space #\Newline #\Return)
+                                         candidate-output))
+            :cause (cond ((not rejected-p)
+                          "invalid flag was not rejected with matching nonzero exits")
+                         (difference difference)
+                         (t "both CLIs rejected the invalid flag with matching status"))
+            :first-difference difference
+            :evidence (mapcar #'namestring
+                              (list (getf reference :evidence)
+                                    (getf candidate :evidence))))))
 )
 
 (in-package #:ntop.e2e)

@@ -1,4 +1,19 @@
 (in-package #:ntop.e2e)
+(progn
+  (defparameter *route-classification-definitions*
+    '((:reference-error "Reference harness errors" :harness-error)
+      (:candidate-error "Candidate harness errors" :harness-error)
+      (:harness-error "Unattributed harness errors" :harness-error)
+      (:semantic-mismatch "Semantic mismatches" :failure)
+      (:candidate-failure "Candidate failures" :failure)
+      (:assertion-failure "Other assertion failures" :failure)))
+  (defun %route-classification-count (subresults classification)
+    (count classification subresults
+           :key (lambda (subresult) (getf subresult :classification))))
+  (defun %route-classification-group-count (subresults group)
+    (loop for definition in *route-classification-definitions*
+          when (eq group (third definition))
+          sum (%route-classification-count subresults (first definition)))))
 
 (defun %route-result-status (route subresults)
   (cond
@@ -92,8 +107,7 @@
              (concatenate 'string
                           "| ID | Status | Input sequence | Expected | Actual | "
                           "First differing cell | Cause assessment | Evidence |~%"))
-     (format stream
-             "| --- | --- | --- | --- | --- | --- | --- | --- |~%")
+     (format stream "| --- | --- | --- | --- | --- | --- | --- | --- |~%")
      (dolist (result results)
        (format stream "| ~a | ~a | ~a | ~a | ~a | ~a | ~a | ~a |~%"
                (%route-report-cell (getf result :id))
@@ -109,18 +123,21 @@
              for subcase-index from 1
              do (format stream
                         (concatenate 'string
-                                     "  - ~a (~a): ~a; expected ~a; actual ~a; "
-                                     "first difference ~a; cause ~a; evidence ~{~a~^, ~}~%")
+                                     "  - ~a (~a): ~a; classification ~a; "
+                                     "expected ~a; actual ~a; first difference ~a; "
+                                     "cause ~a; evidence ~{~a~^, ~}~%")
                         (%route-report-cell
                          (or (getf subresult :subcase-id)
                              (format nil "~a-~a~d"
                                      (getf result :id)
                                      (if (< subcase-index 10) "00"
-                                         (if (< subcase-index 100) "0" ""))
+                                       (if (< subcase-index 100) "0" ""))
                                      subcase-index)))
                         (%route-report-cell (getf subresult :input))
                         (string-upcase
                          (symbol-name (%route-subresult-status subresult)))
+                        (%route-report-cell
+                         (or (getf subresult :classification) "unclassified"))
                         (%route-report-cell (getf subresult :expected))
                         (%route-report-cell (getf subresult :actual))
                         (%route-report-cell
@@ -128,8 +145,8 @@
                         (%route-report-cell (getf subresult :cause))
                         (getf subresult :evidence))))
      (let ((subresults
-             (loop for result in results
-                   append (copy-list (getf result :subresults)))))
+            (loop for result in results
+                  append (copy-list (getf result :subresults)))))
        (format stream "~%Route counts: ~d total, ~d PASS, ~d FAIL, ~d MANUAL.~%"
                (length results)
                (count :pass results :key (lambda (result) (getf result :status)))
@@ -139,7 +156,13 @@
                (length subresults)
                (count :pass subresults :key #'%route-subresult-status)
                (count :fail subresults :key #'%route-subresult-status)
-               (count :manual subresults :key #'%route-subresult-status))))))
+               (count :manual subresults :key #'%route-subresult-status))
+       (format stream "Harness errors: ~d~%"
+               (%route-classification-group-count subresults :harness-error))
+       (loop for definition in *route-classification-definitions*
+             do (format stream "~a: ~d~%" (second definition)
+                        (%route-classification-count subresults
+                                                     (first definition))))))))
 (progn
   (defun %route-report-widget-no-data-p (grid title)
     (let* ((top (and grid

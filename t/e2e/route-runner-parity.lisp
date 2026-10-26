@@ -276,6 +276,15 @@
 (defun %route-paired-result (description expected passed actual cause difference
                              reference candidate)
   (list :passed passed
+        :classification
+        (unless passed
+          (cond (difference :semantic-mismatch)
+                ((and (member :passed candidate)
+                      (not (getf candidate :passed))
+                      (or (not (member :passed reference))
+                          (getf reference :passed)))
+                 :candidate-failure)
+                (t :assertion-failure)))
         :input description
         :expected expected
         :actual actual
