@@ -83,12 +83,15 @@
                                              (format nil
                                                      (concatenate
                                                       (quote string)
-                                                      "~a Readiness ~a after ~,0f seconds; owned PID ~d alive ~a; route input was skipped.")
+                                                      "~a Readiness ~a after ~,0f "
+                                                      "seconds; owned PID ~d alive ~a; "
+                                                      "route input was skipped.")
                                                      readiness-diagnostic readiness-result
                                                      *route-process-readiness-timeout-seconds*
                                                      pid (if alive "yes" "no"))
                                              :cause
-                                             (format nil "~a Harness-owned PID ~d remained alive: ~a."
+                                             (format nil
+                                                     "~a Harness-owned PID ~d remained alive: ~a."
                                                      readiness-diagnostic pid
                                                      (if alive "yes" "no"))
                                              :evidence path))))))
