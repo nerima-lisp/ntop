@@ -242,4 +242,4 @@
     (cl-weave:expect
      (ntop.e2e::%route-modal-action-state-p
       route subcase candidate-search closed)
-     :to-be t)))
+     :to-be t))))
