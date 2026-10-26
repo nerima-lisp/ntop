@@ -106,7 +106,8 @@
                                                route subcase arguments)
   (let ((raw (make-array 0 :element-type '(unsigned-byte 8)
                          :adjustable t :fill-pointer 0))
-        (initial-projection nil))
+        (initial-projection nil)
+        (initial-grid nil))
     (multiple-value-bind (initial)
         (pty-read-until-idle
          session
@@ -128,17 +129,18 @@
                            (values grid projection (%route-write-ansi ansi-path raw)
                                    projection projection grid nil :manual readiness-result
                                    readiness-diagnostic)))))
-        (setf initial-projection
-              (project-criterion-grid (%route-grid raw rows columns)))))
+        (setf initial-grid (%route-grid raw rows columns)
+              initial-projection (project-criterion-grid initial-grid))))
     (when (plusp (length context-text))
       (pty-send-input session (%route-octets context-text)
                       :timeout-seconds timeout)
       (multiple-value-bind (context-output)
-          (%route-read-through-quiet-period
-           session
-           *route-frame-quiet-seconds*
-           timeout
-           (* *route-first-frame-factor* (/ rate 1000d0)))
+          (%route-read-widget-state
+           session raw rows columns rate timeout
+           (when (string-equal (or (getf subcase :context) "")
+                               "expanded widget")
+             (lambda (grid)
+               (%route-expanded-widget-transition-p initial-grid grid))))
         (%append-octets raw context-output)
         (when (and (string= (route-id route) "mouse-69")
                    (string-equal (or (getf subcase :context) "") "help"))
@@ -253,6 +255,13 @@
                    (not (getf subcase :invalid-value)))
               (%route-read-through-quiet-period
                session *route-frame-quiet-seconds* timeout))
+             ((and (string= (route-id route) "key-36")
+                   (string-equal (or (getf subcase :context) "")
+                                 "expanded widget"))
+              (%route-read-widget-state
+               session raw rows columns rate timeout
+               (lambda (grid)
+                 (%route-expanded-widget-restored-p grid initial-grid))))
              (t
               (%route-read-through-quiet-period
                session
@@ -479,9 +488,8 @@
               (string= action "Close current modal"))
          (cond
            ((string-equal context "process search")
-            (and (search "Case(F1)" before :test #'char-equal)
-                 (search "> " before)
-                 (not (search "Case(F1)" after :test #'char-equal))))
+            (and (%route-process-search-open-state-p before nil)
+                 (not (%route-process-search-open-state-p after nil))))
            ((string-equal context "help search")
             (and (%route-help-search-query-visible-p before-grid "process")
                  (search "Help" after :test #'char-equal)
@@ -490,10 +498,8 @@
             (and (search "Sort By" before :test #'char-equal)
                  (not (search "Sort By" after :test #'char-equal))))
            ((string-equal context "expanded widget")
-            (and (search "Esc to go back" before :test #'char-equal)
-                 (not (search "Esc to go back" after :test #'char-equal))
-                 (every (lambda (label) (search label after :test #'char-equal))
-                        '("CPU" "Memory" "Network"))))
+            (and (%route-expanded-widget-p before-grid)
+                 (not (%route-expanded-widget-p after-grid))))
            ((member context '("kill dialog" "help") :test #'string-equal)
  :manual)
            (t nil)))

@@ -150,3 +150,96 @@
               :to-equal 0)))
       (setf (symbol-function side-symbol) original-side)
       (uiop:delete-directory-tree directory :validate t)))))
+(cl-weave:describe
+ "structural modal transition checks"
+ (cl-weave:it
+  "classifies Escape from an expanded widget by frame geometry"
+  (let* ((route
+          (find "key-36" (ntop.e2e::route-catalog)
+                :key (function ntop.e2e::route-id)
+                :test (function string=)))
+         (subcase (list :context "expanded widget"))
+         (expanded (ntop.e2e:make-terminal-grid :rows 12 :cols 40))
+         (dashboard (ntop.e2e:make-terminal-grid :rows 12 :cols 40))
+         (still-expanded (ntop.e2e:make-terminal-grid :rows 12 :cols 40)))
+    (dolist (grid (list expanded still-expanded))
+      (ntop.e2e.test::criterion-test-write grid 0 0 "0" "┌")
+      (ntop.e2e.test::criterion-test-write grid 0 39 "0" "┐")
+      (ntop.e2e.test::criterion-test-write grid 11 0 "0" "└")
+      (ntop.e2e.test::criterion-test-write grid 11 39 "0" "┘"))
+    (dolist (grid (list dashboard))
+      (ntop.e2e.test::criterion-test-write grid 0 0 "0" "┌")
+      (ntop.e2e.test::criterion-test-write grid 0 19 "0" "┐")
+      (ntop.e2e.test::criterion-test-write grid 5 0 "0" "└")
+      (ntop.e2e.test::criterion-test-write grid 5 19 "0" "┘"))
+    (cl-weave:expect
+     (ntop.e2e::%route-expanded-widget-transition-p dashboard expanded)
+     :to-be t)
+    (cl-weave:expect
+     (ntop.e2e::%route-expanded-widget-restored-p dashboard dashboard)
+     :to-be t)
+    (cl-weave:expect
+     (ntop.e2e::%route-expanded-widget-restored-p still-expanded dashboard)
+     :to-be nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-modal-action-state-p route subcase expanded dashboard)
+     :to-be t)
+    (cl-weave:expect
+     (ntop.e2e::%route-modal-action-state-p
+      route subcase expanded still-expanded)
+     :to-be nil)))
+ (cl-weave:it
+  "compares expanded-widget Escape by frame state when other cells differ"
+  (let* ((route
+          (find "key-36" (ntop.e2e::route-catalog)
+                :key (function ntop.e2e::route-id)
+                :test (function string=)))
+         (subcase (list :context "expanded widget"))
+         (before (ntop.e2e:make-terminal-grid :rows 12 :cols 40))
+         (reference-grid (ntop.e2e:make-terminal-grid :rows 12 :cols 40))
+         (candidate-grid (ntop.e2e:make-terminal-grid :rows 12 :cols 40)))
+    (labels ((frame (grid top left bottom right)
+               (ntop.e2e.test::criterion-test-write grid top left "0" "┌")
+               (ntop.e2e.test::criterion-test-write grid top right "0" "┐")
+               (ntop.e2e.test::criterion-test-write grid bottom left "0" "└")
+               (ntop.e2e.test::criterion-test-write grid bottom right "0" "┘")))
+      (frame before 0 0 11 39)
+      (frame reference-grid 0 0 5 19)
+      (frame candidate-grid 0 20 5 39))
+    (let ((reference
+            (list :grid reference-grid :initial-grid before
+                  :projection (ntop.e2e:project-criterion-grid reference-grid)
+                  :initial-projection (ntop.e2e:project-criterion-grid before)))
+          (candidate
+            (list :grid candidate-grid :initial-grid before
+                  :projection (ntop.e2e:project-criterion-grid candidate-grid)
+                  :initial-projection (ntop.e2e:project-criterion-grid before))))
+      (cl-weave:expect
+       (not (ntop.e2e::criterion-projections-equal-p
+             (getf reference :projection) (getf candidate :projection)))
+       :to-be t)
+      (multiple-value-bind (passed difference)
+          (ntop.e2e::%route-all-expected-actual
+           route "ntop" subcase reference candidate)
+        (cl-weave:expect passed :to-be t)
+        (cl-weave:expect difference :to-be nil)))))
+ (cl-weave:it
+  "closes process search with either reference or candidate control labels"
+  (let* ((route
+          (find "key-36" (ntop.e2e::route-catalog)
+                :key (function ntop.e2e::route-id)
+                :test (function string=)))
+         (subcase (list :context "process search"))
+         (closed (criterion-test-grid 12 60 ""))
+         (reference-search (criterion-test-grid 12 60 ""))
+         (candidate-search (criterion-test-grid 12 60 "")))
+    (criterion-test-write reference-search 6 4 "0" "Case(F1) Whole(F2) Regex(F3) > ")
+    (criterion-test-write candidate-search 6 4 "0" "Case Whole Regex > ")
+    (cl-weave:expect
+     (ntop.e2e::%route-modal-action-state-p
+      route subcase reference-search closed)
+     :to-be t)
+    (cl-weave:expect
+     (ntop.e2e::%route-modal-action-state-p
+      route subcase candidate-search closed)
+     :to-be t)))

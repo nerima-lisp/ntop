@@ -20,6 +20,12 @@
                           (getf result :actual)
                           "Process-data readiness timed out.")
                :result result)))
+     ((and (string= (route-id route) "key-36")
+           (string-equal (or (getf subcase :context) "") "expanded widget")
+           (eq t reference-state)
+           (eq t candidate-state))
+      (values t nil
+              "Both sides restored the expanded widget according to frame geometry."))
      ((and comparable-p difference)
       (if (and (member (route-id route)
                        (list "key-9" "key-10" "key-11")

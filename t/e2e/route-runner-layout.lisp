@@ -155,6 +155,28 @@
                 (lambda (value) value)
                 (lambda (condition) (error condition)))))
 
+(defun %route-grid-after-output (raw output rows columns)
+  (%route-grid (concatenate '(vector (unsigned-byte 8)) raw output)
+               rows columns))
+
+(defun %route-expanded-widget-p (grid)
+  (and grid
+       (member (list 0 (1- (grid-height grid)) 0 (1- (grid-width grid)))
+               (criterion-frame-spans grid)
+               :test #'equal)))
+
+(defun %route-expanded-widget-transition-p (before-grid after-grid)
+  (and before-grid
+       (%route-expanded-widget-p after-grid)
+       (not (equal (criterion-frame-spans before-grid)
+                   (criterion-frame-spans after-grid)))))
+
+(defun %route-expanded-widget-restored-p (grid initial-grid)
+  (and grid initial-grid
+       (not (%route-expanded-widget-p grid))
+       (equal (criterion-frame-spans grid)
+              (criterion-frame-spans initial-grid))))
+
 (defun %route-grid-text (grid)
   (with-output-to-string (stream)
     (dotimes (row (grid-height grid))
