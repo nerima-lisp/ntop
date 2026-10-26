@@ -72,7 +72,10 @@
     (write-line "__NTOP_N6_EXCEPTION_READY__" *error-output*)
     (finish-output *error-output*)
     (error "Deliberate N6 test exception after terminal setup."))
-  (funcall render state config snapshot columns rows unavailability-reasons))
+  (let* ((no-color-value (uiop:getenv "NO_COLOR"))
+         (ntop.ui::*presentation-no-color-p*
+          (and no-color-value (plusp (length no-color-value)))))
+    (funcall render state config snapshot columns rows unavailability-reasons)))
 
 (defun run-application-loop
     (state config collection-channel poll-input poll-size render

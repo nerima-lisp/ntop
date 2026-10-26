@@ -300,10 +300,20 @@
     (if theme
         (cdr theme)
         (error "Unknown built-in presentation theme: ~A" name))))
+(defvar *presentation-no-color-p* nil)
 
 (defun presentation-theme-style (theme-name role)
   (multiple-value-bind (indicator style)
       (get-properties (presentation-theme theme-name) (list role))
     (if indicator
-        style
+        (if *presentation-no-color-p*
+            (if (member role
+                        '(:gpu-colors
+                          :cpu-colors
+                          :temperature-colors
+                          :disk-io-read-colors
+                          :disk-io-write-colors))
+                (make-list (length style))
+                nil)
+            style)
         (error "Unknown presentation theme role: ~S" role))))

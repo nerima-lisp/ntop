@@ -117,14 +117,46 @@
                             (not (ntop.app.presentation::%screen-no-color-p nil))
                             (not (ntop.app.presentation::%screen-no-color-p ""))
                             (ntop.app.presentation::%screen-no-color-p "1")
-                            (null (ntop.app.presentation::%screen-style
-                                   :default :border t))
+                            (and
+                             (null (ntop.app.presentation::%screen-style
+                                    :default :border t))
+                             (let ((ntop.ui::*presentation-no-color-p* t))
+                               (let* ((cpu-colors
+                                        (ntop.ui:presentation-theme-style
+                                         :default :cpu-colors))
+                                      (gpu-colors
+                                        (ntop.ui:presentation-theme-style
+                                         :default :gpu-colors))
+                                      (default-cpu-colors
+                                        (let ((ntop.ui::*presentation-no-color-p*
+                                               nil))
+                                          (ntop.ui:presentation-theme-style
+                                           :default :cpu-colors)))
+                                      (default-gpu-colors
+                                        (let ((ntop.ui::*presentation-no-color-p*
+                                               nil))
+                                          (ntop.ui:presentation-theme-style
+                                           :default :gpu-colors))))
+                                 (and
+                                  (null (ntop.ui:presentation-theme-style
+                                         :default :text))
+                                  (null (ntop.ui:presentation-theme-style
+                                         :default :table-header))
+                                  (null (ntop.ui:presentation-theme-style
+                                         :default :selected-text))
+                                  (= (length cpu-colors)
+                                     (length default-cpu-colors))
+                                  (every #'null cpu-colors)
+                                  (= (length gpu-colors)
+                                     (length default-gpu-colors))
+                                  (every #'null gpu-colors)))))
                             (equal (ntop.app.presentation::%screen-style
                                     :default :border nil)
                                    (ntop.ui:presentation-theme-style
                                     :default :border)))
-                          (null (ntop.app.presentation::%screen-table-style
-                                 :default :header t))
+                          (null
+                                  (ntop.app.presentation::%screen-table-style
+                                   :default :header t))
                           (equal (ntop.app.presentation::%screen-table-style
                                   :default :header nil)
                                  (ntop.ui:presentation-theme-style
