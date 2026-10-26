@@ -8,15 +8,19 @@
          (candidate-state (%route-action-state-p route mode subcase candidate :candidate)))
     (cond
      ((or (eq :manual (getf reference :readiness-status))
-          (eq :manual (getf candidate :readiness-status)))
-      (values nil difference
-              (format nil
-                      (concatenate
-                       'string
-                       "The Processes widget did not show rows within ~,0f seconds; "
-                       "no route input was sent. Follow the documented manual procedure.")
-                      *route-process-readiness-timeout-seconds*)
-              :manual))
+     (eq :manual (getf candidate :readiness-status)))
+  (values
+   nil difference
+   (format nil
+           (concatenate
+            'string
+            "The Processes widget did not show rows within ~,0f seconds; "
+            "readiness diagnostics: reference ~a; candidate ~a. "
+            "No route input was sent. Follow the documented manual procedure.")
+           *route-process-readiness-timeout-seconds*
+           (or (getf reference :readiness-diagnostic) "not captured")
+           (or (getf candidate :readiness-diagnostic) "not captured"))
+   :manual))
      ((and comparable-p difference)
       (if (and (member (route-id route)
                        (list "key-9" "key-10" "key-11")
@@ -101,6 +105,19 @@
                                "The expected transition was observed on the candidate, "
                                "but not the reference.")))))))
 
+(defun %route-interactive-actual (difference reference candidate)
+  (if (or (eq :manual (getf reference :readiness-status))
+          (eq :manual (getf candidate :readiness-status)))
+      (format nil "readiness timeout; reference ~a; candidate ~a"
+              (or (getf reference :readiness-diagnostic)
+                  (getf reference :actual)
+                  "diagnostic unavailable")
+              (or (getf candidate :readiness-diagnostic)
+                  (getf candidate :actual)
+                  "diagnostic unavailable"))
+      (format nil "reference/candidate condition-A ~a"
+              (if difference "differs" "matches"))))
+
 (defun %route-run-interactive-pair (route subcase description mode btm ntop
                                     reference-prefix candidate-prefix rows
                                     columns rate timeout config-path
@@ -111,7 +128,10 @@
          (candidate (%route-run-interactive-side
                      ntop route subcase candidate-prefix rows columns rate timeout
                      config-path evidence-directory))
-         (passed nil) (difference nil) (cause nil) (status nil))
+         (passed nil)
+         (difference nil)
+         (cause nil)
+         (status nil))
     (multiple-value-setq (passed difference cause status)
       (%route-all-expected-actual route mode subcase reference candidate))
     (when passed
@@ -123,11 +143,11 @@
             (setf passed nil
                   cause (format nil "reference ~a; candidate ~a"
                                 reference-actual candidate-actual))))))
-    (let ((result (%route-paired-result
-                   description (route-expected route) passed
-                   (format nil "reference/candidate condition-A ~a"
-                           (if difference "differs" "matches"))
-                   cause difference reference candidate)))
+    (let ((result
+            (%route-paired-result
+             description (route-expected route) passed
+             (%route-interactive-actual difference reference candidate)
+             cause difference reference candidate)))
       (when (eq status :manual)
         (let ((manual (%route-manual-result route subcase evidence-directory
                                             cause reference-prefix)))

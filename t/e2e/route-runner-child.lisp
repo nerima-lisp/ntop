@@ -68,33 +68,30 @@
                   (when (and (eq (route-kind route) :column)
                              (not (sb-ext:process-alive-p child)))
                     (error "Harness-owned column fixture PID ~d exited before the frame." pid))
-                  (when (and (%route-process-data-required-p route subcase)
-                             (not (eq :ready
-                                      (%route-wait-process-data
-                                       session raw screen-rows columns))))
-                    (let ((alive (sb-ext:process-alive-p child)))
-                      (return-from %route-run-sleep-child-side
-                        (list :status :manual
-                              :passed nil
-                              :actual
-                              (format nil
-                                      (concatenate
-                                       'string
-                                       "~a Processes still showed No data after ~,0f "
-                                       "seconds; owned PID ~d alive ~a, so the route "
-                                       "input was skipped.")
-                                      (pathname-name (pathname program))
-                                      *route-process-readiness-timeout-seconds*
-                                      pid (if alive "yes" "no"))
-                              :cause
-                              (format nil
-                                      (concatenate
-                                       'string
-                                       "No process rows appeared within ~,0f seconds "
-                                       "while harness-owned PID ~d remained alive: ~a.")
-                                      *route-process-readiness-timeout-seconds* pid
-                                      (if alive "yes" "no"))
-                              :evidence path))))
+                  (when (%route-process-data-required-p route subcase)
+                    (multiple-value-bind (readiness-result readiness-diagnostic)
+                        (%route-wait-process-data
+                         session raw screen-rows columns args)
+                      (when (eq :timeout readiness-result)
+                        (let ((alive (sb-ext:process-alive-p child)))
+                          (return-from %route-run-sleep-child-side
+                                       (list :status :manual
+                                             :readiness-result readiness-result
+                                             :readiness-diagnostic readiness-diagnostic
+                                             :passed nil
+                                             :actual
+                                             (format nil
+                                                     (concatenate
+                                                      (quote string)
+                                                      "~a Readiness ~a after ~,0f seconds; owned PID ~d alive ~a; route input was skipped.")
+                                                     readiness-diagnostic readiness-result
+                                                     *route-process-readiness-timeout-seconds*
+                                                     pid (if alive "yes" "no"))
+                                             :cause
+                                             (format nil "~a Harness-owned PID ~d remained alive: ~a."
+                                                     readiness-diagnostic pid
+                                                     (if alive "yes" "no"))
+                                             :evidence path))))))
                   (when (eq (route-kind route) :column)
                     (let ((grid (%route-grid raw screen-rows columns)))
                       (unless (%route-owned-row-p grid pid)

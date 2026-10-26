@@ -62,46 +62,65 @@
                            '("TERM" "HOME" "XDG_CONFIG_HOME")
                            :test #'string=)))))
       inherited-environment)))
-  (defun %route-process-widget-ready-p (grid)
-  (let* ((frames (and grid (criterion-projection-frames grid)))
-         (frame
-           (find-if (lambda (bounds)
-                      (search "Processes"
-                              (criterion-row-text grid (first bounds))
-                              :test (function char-equal)))
-                    frames))
-         (header-row
-           (and frame
-                (loop for row from (1+ (first frame)) below (second frame)
-                      when (criterion-process-header-row-p grid row (list frame))
-                        return row)))
-         (header-text (and header-row (criterion-row-text grid header-row)))
-         (pid-span
-           (and header-text
-                (or (first (criterion-label-spans header-text "PID"))
-                    (first (criterion-label-spans header-text "Count")))))
-         (name-span
-           (and header-text
-                (first (criterion-label-spans header-text "Name(n)"))))
-         (raw-name-end
-           (and name-span
-                (loop for label in (criterion-rule-values :process-header-labels)
-                      for span = (first (criterion-label-spans header-text label))
-                      when (and span (> (car span) (car name-span)))
-                        minimize (car span))))
-         (name-limit (or raw-name-end (and frame (fourth frame)))))
-    (and frame header-row pid-span name-span name-limit
-         (not (%route-widget-no-data-p grid "Processes"))
-         (loop for row from (1+ header-row) below (second frame)
-               for text = (criterion-row-text grid row)
-               for pid-value = (subseq text (car pid-span) (car name-span))
-               for name-value = (subseq text (car name-span) name-limit)
-               thereis (and (find-if (function digit-char-p) pid-value)
-                            (plusp (length
-                                    (string-trim
-                                     (list (code-char 32) (code-char 9)
-                                           (code-char 9474))
-                                     name-value))))))))
+  (defun %route-process-widget-ready-p (grid &optional arguments)
+    (let* ((expected-heading
+            (if (member "--process-command" arguments :test (function string=))
+                "Command(n)"
+              "Name(n)"))
+           (frames (and grid (criterion-projection-frames grid)))
+           (frame
+            (find-if (lambda (bounds)
+                       (search "Processes"
+                               (criterion-row-text grid (first bounds))
+                               :test (function char-equal)))
+                     frames))
+           (header-row
+            (and frame
+                 (loop for row from (1+ (first frame)) below (second frame)
+                       for text = (criterion-row-text grid row)
+                       when (and (or (criterion-label-spans text "PID")
+                                     (criterion-label-spans text "Count"))
+                                 (or (criterion-label-spans text "Name(n)")
+                                     (criterion-label-spans text "Command(n)")))
+                       return row)))
+           (header-text (and header-row (criterion-row-text grid header-row)))
+           (observed-heading
+            (and header-text
+                 (find-if (lambda (label)
+                            (criterion-label-spans header-text label))
+                          (list "Name(n)" "Command(n)"))))
+           (pid-span
+            (and header-text
+                 (or (first (criterion-label-spans header-text "PID"))
+                     (first (criterion-label-spans header-text "Count")))))
+           (name-span
+            (and header-text
+                 (first
+                  (criterion-label-spans header-text expected-heading))))
+           (raw-name-end
+            (and name-span
+                 (loop for label in (criterion-rule-values :process-header-labels)
+                       for span = (first (criterion-label-spans header-text label))
+                       when (and span (> (car span) (car name-span)))
+                       minimize (car span))))
+           (name-limit (or raw-name-end (and frame (fourth frame))))
+           (diagnostic
+            (format nil "Expected process heading ~a; observed ~a."
+                    expected-heading (or observed-heading "not found"))))
+      (values
+       (and frame header-row pid-span name-span name-limit
+            (not (%route-widget-no-data-p grid "Processes"))
+            (loop for row from (1+ header-row) below (second frame)
+                  for text = (criterion-row-text grid row)
+                  for pid-value = (subseq text (car pid-span) (car name-span))
+                  for name-value = (subseq text (car name-span) name-limit)
+                  thereis (and (find-if (function digit-char-p) pid-value)
+                               (plusp (length
+                                       (string-trim
+                                        (list (code-char 32) (code-char 9)
+                                              (code-char 9474))
+                                        name-value))))))
+       observed-heading diagnostic)))
   (defun %route-read-interval (session raw seconds)
     (multiple-value-bind (deadline deadline-seconds)
         (%deadline-for-call session "process readiness" nil)
@@ -136,7 +155,7 @@
                             session raw query-scan-index deadline)
                          (setf query-scan-index next-index)))))))
         raw)))
-  (defun %route-wait-process-data (session raw rows columns)
+  (defun %route-wait-process-data (session raw rows columns &optional arguments)
     (incf (e2e-session-deadline session)
           (%seconds-to-ticks *route-process-readiness-timeout-seconds*))
     (incf (e2e-session-timeout-seconds session)
@@ -144,19 +163,24 @@
     (let ((deadline (+ (%now)
                        (%seconds-to-ticks
                         *route-process-readiness-timeout-seconds*)))
-          (ready-samples 0))
-      (loop for remaining =
-              (%ticks-to-seconds (- deadline (%now)))
+          (ready-samples 0)
+          (readiness-diagnostic nil))
+      (loop for remaining = (%ticks-to-seconds (- deadline (%now)))
             while (plusp remaining)
             do (%route-read-interval
                 session raw
                 (min *route-process-readiness-sample-seconds* remaining))
-               (if (%route-process-widget-ready-p
-                    (%route-grid raw rows columns))
-                   (when (= 2 (incf ready-samples))
-                     (return-from %route-wait-process-data :ready))
-                 (setf ready-samples 0))
-            finally (return :timeout))))
+            (multiple-value-bind (ready-p observed-heading diagnostic)
+                (%route-process-widget-ready-p
+                 (%route-grid raw rows columns) arguments)
+              (declare (ignore observed-heading))
+              (setf readiness-diagnostic diagnostic)
+              (if ready-p
+                  (when (= 2 (incf ready-samples))
+                    (return-from %route-wait-process-data
+                                 (values :ready readiness-diagnostic)))
+                (setf ready-samples 0)))
+            finally (return (values :timeout readiness-diagnostic)))))
   (progn
   (defun %route-process-data-required-p (route subcase)
     (let ((context (or (getf subcase :context) "")))
