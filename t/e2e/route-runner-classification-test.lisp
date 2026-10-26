@@ -219,7 +219,7 @@
            (ntop.e2e::%route-write-report
             report-path "ntop" "btm" "ntop" results directory)
            (let ((report (uiop:read-file-string report-path)))
-             (cl-weave:expect (search "Subcase counts: 1 total, 0 PASS, 1 FAIL, 0 MANUAL"
+              (cl-weave:expect (search "Subcase counts: 1 total, 0 PASS, 1 FAIL, 0 N/A."
                                       report)
                               :to-satisfy (function plusp))
              (cl-weave:expect (search "Harness errors: 1" report)
@@ -355,3 +355,129 @@
              (cl-weave:expect (getf result :classification)
                               :to-equal :semantic-mismatch)))
       (setf (symbol-function side-symbol) side-function)))))
+
+(cl-weave:describe
+ "route applicability status aggregation"
+ (cl-weave:it
+  "records environmental N/A reason and evidence without procedure output"
+  (let* ((directory (ntop.e2e::%make-e2e-temporary-directory))
+         (prefix (namestring (merge-pathnames "powermetrics" directory)))
+         (evidence
+          (ntop.e2e::%route-fixture-write-capability-evidence
+           prefix "powermetrics unavailable"))
+         (subcase (list :applicability :powermetrics))
+         (reason "powermetrics is unavailable on this host")
+         (actual "the capability probe reported unavailable")
+         (result
+          (ntop.e2e::%route-fixture-na-result
+           subcase "ntop" reason actual evidence)))
+    (unwind-protect
+         (progn
+           (cl-weave:expect (getf result :status) :to-equal :na)
+           (cl-weave:expect (getf result :applicability)
+                            :to-equal :powermetrics)
+           (cl-weave:expect (getf result :reason) :to-equal reason)
+           (cl-weave:expect (getf result :actual) :to-equal actual)
+           (cl-weave:expect (getf result :evidence) :to-equal evidence)
+           (cl-weave:expect (ntop.e2e::%route-subresult-status result)
+                            :to-equal :na)
+           (cl-weave:expect (getf result :procedure) :to-be nil)
+           (cl-weave:expect
+            (fboundp (find-symbol "%ROUTE-MANUAL-PROCEDURE" "NTOP.E2E"))
+            :to-be nil)
+           (cl-weave:expect
+            (fboundp (find-symbol "%ROUTE-BTM-SELF-MANUAL-SPEC" "NTOP.E2E"))
+            :to-be nil))
+      (uiop:delete-directory-tree directory :validate t))))
+ (cl-weave:it
+  "keeps failed siblings visible around an evidence-backed N/A result"
+  (let* ((directory (ntop.e2e::%make-e2e-temporary-directory))
+         (prefix (namestring (merge-pathnames "applicability" directory)))
+         (evidence
+          (ntop.e2e::%route-fixture-write-capability-evidence
+           prefix "platform capability unavailable"))
+         (subcase (list :applicability :linux-only))
+         (na-result
+          (ntop.e2e::%route-fixture-na-result
+           subcase "ntop" "Linux-only feature unavailable" "macOS host" evidence))
+         (route (ntop.e2e::make-route-case :id "test")))
+    (unwind-protect
+         (progn
+           (cl-weave:expect (ntop.e2e::%route-subresult-status na-result)
+                            :to-be :na)
+           (cl-weave:expect
+            (ntop.e2e::%route-result-status
+             route (list (list :passed t) na-result (list :passed t)))
+            :to-be :pass)
+           (cl-weave:expect
+            (ntop.e2e::%route-result-status
+             route (list (list :passed t) na-result (list :passed nil)))
+            :to-be :fail)
+           (cl-weave:expect
+            (ntop.e2e::%route-result-status route (list na-result))
+            :to-be :na))
+      (uiop:delete-directory-tree directory :validate t))))
+ (cl-weave:it
+  "fails when expected route state is unobserved"
+  (let* ((route
+          (find "basic-mode" (ntop.e2e::route-catalog)
+                :key (function ntop.e2e::route-id)
+                :test (function string=)))
+         (subcase (first (ntop.e2e::%route-subcases-expanded route)))
+         (empty-side
+          (list :projection nil :initial-projection nil :grid nil :initial-grid nil))
+         (visible-grid
+          (let ((grid (ntop.e2e:make-terminal-grid :rows 12 :cols 100)))
+            (criterion-test-write grid 1 0 "0"
+                                  "RAM RX: TX: Total RX: Total TX: Disks Temperature")
+            grid))
+         (visible-side
+          (list :projection nil :initial-projection nil
+                :grid visible-grid :initial-grid visible-grid))
+         (unobserved
+          (loop for mode in (list "ntop" "btm-self")
+                collect
+                (multiple-value-list
+                 (ntop.e2e::%route-all-expected-actual
+                  route mode subcase empty-side empty-side))))
+         (asymmetric
+          (multiple-value-list
+           (ntop.e2e::%route-all-expected-actual
+            route "ntop" subcase visible-side empty-side))))
+    (cl-weave:expect (mapcar (function first) unobserved)
+                     :to-equal (list nil nil))
+    (cl-weave:expect
+     (every (lambda (result)
+              (and (stringp (third result))
+                   (plusp (length (third result)))
+                   (not (member :manual result))))
+            unobserved)
+     :to-be t)
+    (cl-weave:expect (first asymmetric) :to-be nil)
+    (cl-weave:expect
+     (and (stringp (third asymmetric))
+          (plusp (length (third asymmetric)))
+          (not (member :manual asymmetric)))
+     :to-be t)))
+ (cl-weave:it
+  "uses one N/A classification for subcase rows and totals"
+  (let* ((directory (ntop.e2e::%make-e2e-temporary-directory))
+         (prefix (namestring (merge-pathnames "status" directory)))
+         (evidence
+          (ntop.e2e::%route-fixture-write-capability-evidence
+           prefix "powermetrics unavailable"))
+         (na-result
+          (ntop.e2e::%route-fixture-na-result
+           (list :applicability :powermetrics) "ntop"
+           "powermetrics unavailable" "host does not support powermetrics"
+           evidence))
+         (subresults (list (list :passed t) na-result (list :passed nil)))
+         (route (ntop.e2e::make-route-case :id "test")))
+    (unwind-protect
+         (progn
+           (cl-weave:expect
+            (mapcar (function ntop.e2e::%route-subresult-status) subresults)
+            :to-equal (list :pass :na :fail))
+           (cl-weave:expect (ntop.e2e::%route-result-status route subresults)
+                            :to-be :fail))
+      (uiop:delete-directory-tree directory :validate t)))))

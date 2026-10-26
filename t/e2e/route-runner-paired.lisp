@@ -1,114 +1,43 @@
 (in-package #:ntop.e2e)
 
 (defun %route-all-expected-actual (route mode subcase reference candidate)
-  (let* ((difference (%route-projection-first-difference
-                      (getf reference :projection) (getf candidate :projection)))
-         (comparable-p (route-comparable-p route))
-         (reference-state (%route-action-state-p route mode subcase reference :reference))
-         (candidate-state (%route-action-state-p route mode subcase candidate :candidate)))
+  (let* ((comparable-p (route-comparable-p route))
+         (difference
+           (and comparable-p
+                (%route-projection-first-difference
+                 (getf reference :projection)
+                 (getf candidate :projection))))
+         (reference-state
+           (%route-action-state-p route mode subcase reference :reference))
+         (candidate-state
+           (%route-action-state-p route mode subcase candidate :candidate)))
+    (loop for side in (list :reference :candidate)
+          for result in (list reference candidate)
+          when (eq :manual (getf result :readiness-status))
+            do (error 'route-side-capture-error
+                      :side side
+                      :cause (or (getf result :readiness-diagnostic)
+                                 (getf result :cause)
+                                 "Process-data readiness timed out.")
+                      :result result))
     (cond
-     ((or (eq :manual (getf reference :readiness-status))
-          (eq :manual (getf candidate :readiness-status)))
-      (let* ((reference-failed-p
-               (eq :manual (getf reference :readiness-status)))
-             (side (if reference-failed-p :reference :candidate))
-             (result (if reference-failed-p reference candidate)))
-        (error 'route-side-capture-error
-               :side side
-               :cause (or (getf result :readiness-diagnostic)
-                          (getf result :cause)
-                          (getf result :actual)
-                          "Process-data readiness timed out.")
-               :result result)))
-     ((and (string= (route-id route) "key-36")
-           (string-equal (or (getf subcase :context) "") "expanded widget")
-           (eq t reference-state)
-           (eq t candidate-state))
-      (values t nil
-              "Both sides restored the expanded widget according to frame geometry."))
-     ((and comparable-p difference)
-      (if (and (member (route-id route)
-                       (list "key-9" "key-10" "key-11")
-                       :test (function string=))
-               (search "Move widget selection" (route-action route))
-               (or (eq reference-state :manual)
-                   (eq candidate-state :manual)))
-          (values nil difference
-                  "selected-widget focus was ambiguous; verify the border manually"
-                  :manual)
-        (values nil difference
-                (if (string= mode "btm-self")
-                    "btm-self condition-A projections differ"
-                  "condition-A reference and candidate differ"))))
-     ((and (eq reference-state :manual) (eq candidate-state :manual))
-      (values nil nil
-              (cond
-               ((string= (route-id route) "mouse-74")
-                (concatenate (quote string)
-                             "The Processes pane showed No data even with a live "
-                             "harness-owned child; no rows or selected sort marker "
-                             "were available to compare."))
-               ((string= (route-id route) "mouse-75")
-                (concatenate (quote string)
-                             "condition-A stayed equal after the BTM CPU click; verify "
-                             "the selected series manually."))
-               ((string= (route-id route) "mouse-77")
-                "The BTM screen had one Battery panel and no visible selection tabs.")
-               ((and (member (route-id route) '("key-9" "key-10" "key-11")
-                             :test #'string=)
-                     (search "Move widget selection" (route-action route)))
-                (if (string= (route-id route) "key-9")
-                    (format nil "~a ~a ~a ~a"
-                            "The default 60x220 BTM layout showed several widgets."
-                            "Ctrl+Right, Shift+Right, L, and D produced no captured character"
-                            "or ANSI-style change, and the cursor stayed hidden."
-                            "Selected-widget focus could not be observed.")
-                    (concatenate 'string
-                                 "Input reached BTM; condition-A cells and attributes did not "
-                                 "expose focus, and the cursor stayed hidden.")))
-               ((and (string= (route-id route) "key-38")
-                     (%route-widget-no-data-p
-                      (getf reference :initial-grid) "Processes")
-                     (%route-widget-no-data-p
-                      (getf candidate :initial-grid) "Processes")
-                     (null (%route-grid-headers
-                            (getf reference :initial-grid)))
-                     (null (%route-grid-headers
-                            (getf candidate :initial-grid))))
-                (format nil "~a ~a"
-                        "Both BTM Processes panes showed No data and no sort headers."
-                        "The c CPU-sort order could not be observed."))
-               (t
-                (let ((reason (%route-manual-reason route subcase reference candidate)))
-                  (if (null difference)
-                      (format nil "~a ~a"
-                              "State observation: Both condition-A projections matched."
-                              reason)
-                      reason))))
-              :manual))
-     ((or (eq reference-state :manual) (eq candidate-state :manual))
-      (values nil difference "the expected route state is not measurable on at least one side"
-              :manual))
-     ((if (and (eq (route-kind route) :extension) (not comparable-p))
-          candidate-state (and reference-state candidate-state))
-      (values t difference
-              (if comparable-p "condition-A projections match"
-                "approved §D extension deviation")))
-     ((and (member mode '("ntop" "btm-self") :test #'string=)
-           (null reference-state) (null candidate-state) (null difference))
-      (values nil nil
-              (concatenate
-               'string
-               "Observed state: Both condition-A projections matched; neither saved frame showed "
-               "the expected transition. Verify the documented before/action/after "
-               "procedure manually.")
-              :manual))
-     (t (values nil difference
-                (if reference-state
-                    "The expected transition was observed on the reference, but not the candidate."
-                  (concatenate 'string
-                               "The expected transition was observed on the candidate, "
-                               "but not the reference.")))))))
+      ((and (not comparable-p) candidate-state)
+       (values t nil "candidate expected state was observed" nil))
+      ((and comparable-p difference)
+       (values nil difference
+               "condition-A reference and candidate differ" nil))
+      ((and reference-state candidate-state)
+       (values t nil "expected states and condition-A match" nil))
+      (t
+       (values nil difference
+               (cond
+                 ((or (eq reference-state :manual)
+                      (eq candidate-state :manual))
+                  "state observer could not determine the expected result")
+                 ((not reference-state)
+                  "reference expected state was not observed")
+                 (t "candidate expected state was not observed"))
+               nil)))))
 
 (defun %route-interactive-actual (difference reference candidate)
   (if (or (eq :manual (getf reference :readiness-status))
@@ -137,44 +66,37 @@
            :candidate #'%route-run-interactive-side ntop route subcase
            candidate-prefix rows columns rate timeout config-path
            evidence-directory))
-         (reference-state
-           (%route-action-state-p route mode subcase reference :reference))
-         (candidate-state
-           (%route-action-state-p route mode subcase candidate :candidate))
-         (passed nil)
-         (difference nil)
-         (cause nil)
-         (status nil))
-    (multiple-value-setq (passed difference cause status)
-      (%route-all-expected-actual route mode subcase reference candidate))
-    (when passed
-      (multiple-value-bind (reference-ok reference-actual)
-          (%route-content-check route subcase reference)
-        (multiple-value-bind (candidate-ok candidate-actual)
-            (%route-content-check route subcase candidate)
-          (unless (and reference-ok candidate-ok)
-            (setf passed nil
-                  reference-state (and reference-state reference-ok)
-                  candidate-state (and candidate-state candidate-ok)
-                  cause (format nil "reference ~a; candidate ~a"
-                                reference-actual candidate-actual))))))
-    (setf (getf reference :passed) reference-state
-          (getf candidate :passed) candidate-state)
-    (let ((result
-            (%route-paired-result
-             description (route-expected route) passed
-             (%route-interactive-actual difference reference candidate)
-             cause difference reference candidate)))
-      (when (eq status :manual)
-        (let ((manual (%route-manual-result route subcase evidence-directory
-                                            cause reference-prefix)))
-          (setf (getf result :status) :manual
-                (getf result :expected) (getf manual :expected)
-                (getf result :cause) (getf manual :cause)
-                (getf result :evidence)
-                (append (getf result :evidence) (getf manual :evidence)))
-          (remf result :classification)))
-      result)))
+         (applicability-result
+           (%route-fixture-applicability-result
+            route subcase mode reference candidate)))
+    (when applicability-result
+      (return-from %route-run-interactive-pair applicability-result))
+    (let* ((reference-state
+             (%route-action-state-p route mode subcase reference :reference))
+           (candidate-state
+             (%route-action-state-p route mode subcase candidate :candidate))
+           (passed nil)
+           (difference nil)
+           (cause nil))
+      (multiple-value-setq (passed difference cause)
+        (%route-all-expected-actual route mode subcase reference candidate))
+      (when passed
+        (multiple-value-bind (reference-ok reference-actual)
+            (%route-content-check route subcase reference)
+          (multiple-value-bind (candidate-ok candidate-actual)
+              (%route-content-check route subcase candidate)
+            (unless (and reference-ok candidate-ok)
+              (setf passed nil
+                    reference-state (and reference-state reference-ok)
+                    candidate-state (and candidate-state candidate-ok)
+                    cause (format nil "reference ~a; candidate ~a"
+                                  reference-actual candidate-actual))))))
+      (setf (getf reference :passed) (eq reference-state t)
+            (getf candidate :passed) (eq candidate-state t))
+      (%route-paired-result
+       description (route-expected route) passed
+       (%route-interactive-actual difference reference candidate)
+       cause difference reference candidate))))
 
 (defun %route-run-control-pair
     (route description base-args candidate-args mode btm ntop reference-prefix

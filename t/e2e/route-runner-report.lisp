@@ -15,73 +15,85 @@
           when (eq group (third definition))
           sum (%route-classification-count subresults (first definition)))))
 
-(defun %route-result-status (route subresults)
-  (cond
-    ((some (lambda (result)
-             (and (not (eq :manual (getf result :status)))
-                  (not (getf result :passed))))
-           subresults)
-     :fail)
-    ((route-manual-reason route) :manual)
-    ((some (lambda (result) (eq :manual (getf result :status))) subresults)
-     :manual)
-    ((and subresults
-          (every (lambda (result) (getf result :passed)) subresults))
-     :pass)
-    (t :fail)))
+(progn
+  (defun %route-result-status (route subresults)
+    (declare (ignore route))
+    (let ((statuses (mapcar (function %route-subresult-status) subresults)))
+      (cond
+        ((or (null statuses) (member :fail statuses)) :fail)
+        ((member :pass statuses) :pass)
+        (t :na))))
+  (defun %route-status-label (status)
+    (ecase status
+      (:pass "PASS")
+      (:fail "FAIL")
+      (:na "N/A"))))
 (defun %route-subresult-status (subresult)
-  (or (getf subresult :status)
-      (if (getf subresult :passed) :pass :fail)))
-(defun %route-noncomparable-manual-result
+  (let* ((status (or (getf subresult :status)
+                     (if (getf subresult :passed) :pass :fail)))
+         (applicability (getf subresult :applicability))
+         (evidence (getf subresult :evidence)))
+    (cond
+      ((eq status :pass) :pass)
+      ((eq status :fail) :fail)
+      ((and (eq status :na)
+            (stringp (getf subresult :reason))
+            (plusp (length (getf subresult :reason)))
+            (stringp (getf subresult :actual))
+            (plusp (length (getf subresult :actual)))
+            (listp evidence)
+            evidence
+            (every (lambda (path)
+                     (and (stringp path) (plusp (length path))
+                          (probe-file path)))
+                   evidence)
+            (or (member applicability
+                        (list :battery-tabs :linux-only :mouse-other :powermetrics))
+                (and (eq applicability :mode)
+                     (string= (or (getf subresult :mode) "") "btm-self")
+                     (member (getf subresult :route-id)
+                             (list "extension-170" "extension-171"
+                                   "extension-172" "extension-173"
+                                   "restore-exception")
+                             :test #'string=))))
+       :na)
+      (t :fail))))
+(defun %route-btm-self-na-result
     (route subcase subcase-index directory)
   (let* ((id (route-id route))
-         (context (or (getf subcase :context) "CLI"))
-         (input (%route-input-description route subcase))
-         (path (merge-pathnames
-                (format nil "~a-~d-no-btm.md" id subcase-index)
-                directory))
+         (context (or (getf subcase :context) "widget"))
          (reason
            (cond
-             ((string= id "cpu-frequency")
-              (concatenate 'string
-                           "powermetrics needs sudo and device-specific cluster readings; "
-                           "BTM has no equivalent frequency route."))
              ((string= id "extension-170")
-              (cond
-                ((string= context "Memory")
-                 "BTM has no Memory-to-GPU view cycle matching this ntop route.")
-                ((string= context "Temperatures")
-                 "BTM has no Temperatures-to-graph-to-Battery cycle matching this route.")
-                ((string= context "Disks")
-                 "BTM has no Disks-to-I/O-graph view cycle matching this ntop route.")
-                (t (format nil "BTM has no ~a widget-view cycle matching this ntop route."
-                           context))))
+              (format nil "BTM has no ~a widget-view cycle for this route."
+                      context))
              ((string= id "extension-171")
-              "BTM has no route for ntop's one-window backward history scroll.")
+              "BTM has no backward graph-history route.")
              ((string= id "extension-172")
-              "BTM has no route for ntop's one-window forward history scroll.")
+              "BTM has no forward graph-history route.")
              ((string= id "extension-173")
-              "BTM has no route for ntop's return-to-current graph command.")
-             ((string= id "sleep-child")
-              (concatenate 'string
-                           "BTM 0.14.9 showed No data for the harness-owned PID on this "
-                           "macOS host, leaving no BTM row control."))
+              "BTM has no return-to-current graph route.")
              ((string= id "restore-exception")
-              (concatenate 'string
-                           "BTM has no call-with-terminal-session exception-boundary route "
-                           "to compare with ntop."))
-             (t (format nil "BTM has no control route for ~a." (route-action route)))))
-         (procedure (%route-manual-procedure route subcase input context)))
+              "BTM has no terminal-session exception-boundary route.")
+             (t (error "Route ~a is not allowed to be N/A in btm-self." id))))
+         (actual "Skipped because btm-self has no BTM equivalent.")
+         (path
+           (merge-pathnames
+            (format nil "~a-~d-no-btm.md" id subcase-index)
+            directory)))
     (%write-text
      path
-     (format nil
-             "# ~a~%~%Reason: ~a~%~%Procedure: ~a~%~%Expected: ~a~%~%"
-             id reason procedure (route-expected route)))
-    (list :status :manual
+     (format nil "Route: ~a~%Mode: btm-self~%Applicability: mode~%Reason: ~a~%Observed: ~a~%"
+             id reason actual))
+    (list :status :na
           :passed nil
-          :input input
+          :route-id id
+          :mode "btm-self"
+          :applicability :mode
+          :input (%route-input-description route subcase)
           :expected (route-expected route)
-          :actual "Not run in btm-self control; no btm equivalent."
+          :actual actual
+          :reason reason
           :cause reason
           :evidence (list (namestring path)))))
 
@@ -111,7 +123,7 @@
      (dolist (result results)
        (format stream "| ~a | ~a | ~a | ~a | ~a | ~a | ~a | ~a |~%"
                (%route-report-cell (getf result :id))
-               (string-upcase (symbol-name (getf result :status)))
+               (%route-status-label (getf result :status))
                (%route-report-cell (getf result :input))
                (%route-report-cell (getf result :expected))
                (%route-report-cell (getf result :actual))
@@ -147,16 +159,16 @@
      (let ((subresults
             (loop for result in results
                   append (copy-list (getf result :subresults)))))
-       (format stream "~%Route counts: ~d total, ~d PASS, ~d FAIL, ~d MANUAL.~%"
+       (format stream "~%Route counts: ~d total, ~d PASS, ~d FAIL, ~d N/A.~%"
                (length results)
                (count :pass results :key (lambda (result) (getf result :status)))
                (count :fail results :key (lambda (result) (getf result :status)))
-               (count :manual results :key (lambda (result) (getf result :status))))
-       (format stream "Subcase counts: ~d total, ~d PASS, ~d FAIL, ~d MANUAL.~%"
+               (count :na results :key (lambda (result) (getf result :status))))
+       (format stream "Subcase counts: ~d total, ~d PASS, ~d FAIL, ~d N/A.~%"
                (length subresults)
                (count :pass subresults :key #'%route-subresult-status)
                (count :fail subresults :key #'%route-subresult-status)
-               (count :manual subresults :key #'%route-subresult-status))
+               (count :na subresults :key #'%route-subresult-status))
        (format stream "Harness errors: ~d~%"
                (%route-classification-group-count subresults :harness-error))
        (loop for definition in *route-classification-definitions*
