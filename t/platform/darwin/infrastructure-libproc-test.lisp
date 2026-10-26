@@ -86,12 +86,19 @@
       (%f8a-darwin-test-write-integer pids 0 4 11)
       (%f8a-darwin-test-write-integer pids 4 4 0)
       (%f8a-darwin-test-write-integer pids 8 4 22)
-      (let ((task-row (ntop.platform.darwin::decode-darwin-taskallinfo task)))
+      (let ((task-row
+              (ntop.platform.darwin::decode-darwin-taskallinfo task 125 3))
+            (without-timebase
+              (ntop.platform.darwin::decode-darwin-taskallinfo task)))
         (cl-weave:expect (getf task-row :virtual-memory-bytes) :to-be 8192)
         (cl-weave:expect (getf task-row :resident-memory-bytes) :to-be 4096)
-        (cl-weave:expect (getf task-row :user-time-ns) :to-be 77)
-        (cl-weave:expect (getf task-row :system-time-ns) :to-be 23)
-        (cl-weave:expect (getf task-row :thread-count) :to-be 4))
+        (cl-weave:expect (getf task-row :cpu-time-ns) :to-be 4166)
+        (cl-weave:expect (getf task-row :user-time-ns) :to-be 3208)
+        (cl-weave:expect (getf task-row :system-time-ns) :to-be 958)
+        (cl-weave:expect (getf task-row :thread-count) :to-be 4)
+        (cl-weave:expect (getf without-timebase :cpu-time-ns) :to-be-null)
+        (cl-weave:expect
+         (getf without-timebase :resident-memory-bytes) :to-be 4096))
       (cl-weave:expect
        (ntop.platform.darwin::decode-darwin-rusage-info usage)
        :to-equal '(:read-bytes 1234 :write-bytes 5678))
@@ -109,10 +116,14 @@
       (%f8a-darwin-test-write-string octets 48 64 "worker-thread")
       (let ((row
               (ntop.platform.darwin::decode-darwin-proc-threadinfo
+               octets 77 125 3))
+            (without-timebase
+              (ntop.platform.darwin::decode-darwin-proc-threadinfo
                octets 77)))
         (cl-weave:expect (getf row :thread-id) :to-be 77)
         (cl-weave:expect (getf row :name) :to-equal "worker-thread")
-        (cl-weave:expect (getf row :cpu-time-ns) :to-be 150)
+        (cl-weave:expect (getf row :cpu-time-ns) :to-be 6250)
+        (cl-weave:expect (getf without-timebase :cpu-time-ns) :to-be-null)
         (cl-weave:expect (getf row :state) :to-equal "Waiting")
         (cl-weave:expect (getf row :priority) :to-be 12))))
 
@@ -305,4 +316,115 @@
       :to-be-null))))
 )
 
+
+
+(cl-weave:describe
+ "Darwin executable names and process rows"
+ (cl-weave:it
+  "extracts executable basenames from KERN_PROCARGS2"
+  (let* ((path "/Applications/Ntop/bin/worker")
+         (octets (%f8a-darwin-test-octets (+ 5 (length path)))))
+    (%f8a-darwin-test-write-integer octets 0 4 2)
+    (%f8a-darwin-test-write-string octets 4 (length path) path)
+    (cl-weave:expect
+     (ntop.platform.darwin::%darwin-process-path-basename
+      (ntop.platform.darwin::%darwin-procargs2-executable-path octets))
+     :to-equal "worker")))
+ (cl-weave:it
+  "rejects malformed KERN_PROCARGS2 headers"
+  (let ((octets (%f8a-darwin-test-octets 8)))
+    (%f8a-darwin-test-write-integer octets 0 4 -1)
+    (%f8a-darwin-test-write-string octets 4 4 "bad")
+    (cl-weave:expect
+     (ntop.platform.darwin::%darwin-procargs2-executable-path octets)
+     :to-be-null)))
+ #+darwin
+ (cl-weave:it
+  "falls back from KERN_PROCARGS2 to proc_pidpath and metadata"
+  (let ((procargs-name nil)
+        (pidpath-name "from-pidpath")
+        (procargs-fails-p nil)
+        (pidpath-fails-p nil))
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin::%darwin-procargs2-name)
+       (lambda (pid)
+         (declare (ignore pid))
+         (if procargs-fails-p (error "mock sysctl failure") procargs-name)))
+      ((symbol-function 'ntop.platform.darwin::%darwin-pidpath-name)
+       (lambda (pid)
+         (declare (ignore pid))
+         (if pidpath-fails-p (error "mock pidpath failure") pidpath-name))))
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-process-executable-name 1 "metadata")
+      :to-equal "from-pidpath")
+     (setf procargs-fails-p t)
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-process-executable-name 1 "metadata")
+      :to-equal "from-pidpath")
+     (setf procargs-fails-p nil procargs-name "from-procargs")
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-process-executable-name 1 "metadata")
+      :to-equal "from-procargs")
+     (setf procargs-name nil pidpath-name nil pidpath-fails-p t)
+     (cl-weave:expect
+      (ntop.platform.darwin::%darwin-process-executable-name 1 "metadata")
+      :to-equal "metadata"))))
+ #+darwin
+ (cl-weave:it
+  "reads the Mach timebase once and keeps rows when it is unavailable"
+  (let ((timebase-calls 0)
+        (row-timebase nil)
+        (rows :unset)
+        (unavailable :unset)
+        (timebase-mode :success))
+    (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin::%darwin-list-pids)
+       (lambda () (values '(17) nil)))
+      ((symbol-function 'ntop.platform.darwin::mach-timebase-info)
+       (lambda (on-value on-error)
+         (incf timebase-calls)
+         (if (eq timebase-mode :success)
+             (funcall on-value 125 3)
+             (funcall on-error :mach-error))))
+      ((symbol-function 'ntop.platform.darwin::%darwin-process-row)
+       (lambda (pid uid include-threads-p numerator denominator)
+         (declare (ignore uid include-threads-p))
+         (setf row-timebase (list numerator denominator))
+         (list :pid pid :cpu-time-ns (when numerator 5)
+               :resident-memory-bytes 4096))))
+     (ntop.platform.darwin:read-darwin-process-rows
+      (lambda (values) (setf rows values))
+      (lambda (reason) (setf unavailable reason)))
+     (cl-weave:expect timebase-calls :to-be 1)
+     (cl-weave:expect row-timebase :to-equal '(125 3))
+     (cl-weave:expect (getf (first rows) :cpu-time-ns) :to-be 5)
+     (cl-weave:expect unavailable :to-be :unset)
+     (setf timebase-mode :failure rows :unset row-timebase :unset)
+     (ntop.platform.darwin:read-darwin-process-rows
+      (lambda (values) (setf rows values))
+      (lambda (reason) (setf unavailable reason)))
+     (cl-weave:expect timebase-calls :to-be 2)
+     (cl-weave:expect row-timebase :to-equal '(nil nil))
+     (cl-weave:expect (getf (first rows) :cpu-time-ns) :to-be-null)
+     (cl-weave:expect
+      (getf (first rows) :resident-memory-bytes) :to-be 4096)
+     (cl-weave:expect unavailable :to-be :unset))))
+ #+darwin
+ (cl-weave:it
+  "returns resident memory for the current user process"
+  (let ((rows nil)
+        (unavailable nil)
+        (pid (sb-posix:getpid))
+        (uid (sb-posix:getuid)))
+    (ntop.platform.darwin:read-darwin-process-rows
+     (lambda (values) (setf rows values))
+     (lambda (reason) (setf unavailable reason)))
+    (let ((row (find pid rows :key (lambda (value) (getf value :pid)))))
+      (cl-weave:expect unavailable :to-be-null)
+      (cl-weave:expect row :to-be-truthy)
+      (cl-weave:expect (getf row :ruid) :to-be uid)
+      (cl-weave:expect
+       (integerp (getf row :resident-memory-bytes)) :to-be t)
+      (cl-weave:expect (stringp (getf row :name)) :to-be t)
+      (cl-weave:expect (plusp (length (getf row :name))) :to-be t)))))
 )

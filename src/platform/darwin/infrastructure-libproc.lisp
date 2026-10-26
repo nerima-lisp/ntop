@@ -5,7 +5,9 @@
     :proc-pidinfo-bsdinfo 3 :proc-pidinfo-taskallinfo 2
     :proc-pidinfo-listthreads 6 :proc-pidinfo-threadinfo 5
     :proc-rusage-v2 2 :sysctl-kern 1 :sysctl-proc 14
-    :sysctl-proc-pid 1 :initial-buffer-size 4096 :maximum-buffer-size 1048576
+    :sysctl-proc-pid 1 :sysctl-procargs2 49
+    :proc-pidpath-buffer-size 4096 :initial-buffer-size 4096
+    :maximum-buffer-size 1048576
     :pid-width 4
     :bsdinfo-size 136 :bsdinfo-flags 0 :bsdinfo-pid 12 :bsdinfo-ppid 16
     :bsdinfo-uid 20 :bsdinfo-ruid 28 :bsdinfo-name 48
@@ -38,8 +40,38 @@
     (funcall (if signed-p #'decode-little-endian-signed
                  #'decode-little-endian-unsigned)
              octets :start offset :end (+ offset width)))
+  (progn
   (defun %darwin-process-string (octets offset width)
     (decode-c-string octets :start offset :end (+ offset width)))
+  (defun %darwin-process-path-basename (path)
+    (when (and (stringp path) (plusp (length path)))
+      (let* ((start (1+ (or (position #\/ path :from-end t) -1)))
+             (basename (subseq path start)))
+        (and (plusp (length basename)) basename))))
+  (defun %darwin-procargs2-executable-path (octets)
+    (check-type octets (vector (unsigned-byte 8)))
+    (when (>= (length octets) 4)
+      (let* ((argument-count
+               (decode-little-endian-signed octets :start 0 :end 4))
+             (path-start 4)
+             (path-end (or (position 0 octets :start path-start)
+                           (length octets))))
+        (when (and (not (minusp argument-count)) (< path-start path-end))
+          (decode-c-string octets :start path-start :end path-end)))))
+  #+darwin
+  (defun %darwin-procargs2-name (pid)
+    (let ((name nil)
+          (layout +darwin-process-layout+))
+      (sysctl-read-mib
+       (list (getf layout :sysctl-kern)
+             (getf layout :sysctl-procargs2)
+             pid)
+       (lambda (octets)
+         (setf name
+               (%darwin-process-path-basename
+                (%darwin-procargs2-executable-path octets))))
+       (lambda (reason) (declare (ignore reason))))
+      name)))
   (defun decode-darwin-proc-bsdinfo (octets)
   (check-type octets (vector (unsigned-byte 8)))
   (let ((layout +darwin-process-layout+))
@@ -103,50 +135,83 @@
                    octets (getf layout :kinfo-start-usec) 8)
                   1000000d0))))))
   (progn
-  (defun decode-darwin-taskallinfo (octets)
-    (check-type octets (vector (unsigned-byte 8)))
-    (let ((layout +darwin-process-layout+))
-      (unless (= (length octets) (getf layout :taskallinfo-size))
-        (error "Expected a 232-byte proc_taskallinfo buffer."))
+  (defun decode-darwin-taskallinfo
+    (octets &optional timebase-numerator timebase-denominator)
+  (check-type octets (vector (unsigned-byte 8)))
+  (let* ((layout +darwin-process-layout+)
+         (timebase-valid-p
+           (and (integerp timebase-numerator)
+                (plusp timebase-numerator)
+                (integerp timebase-denominator)
+                (plusp timebase-denominator))))
+    (unless (= (length octets) (getf layout :taskallinfo-size))
+      (error "Expected a 232-byte proc_taskallinfo buffer."))
+    (let* ((user-ticks
+             (%darwin-process-integer
+              octets (getf layout :taskallinfo-user) 8))
+           (system-ticks
+             (%darwin-process-integer
+              octets (getf layout :taskallinfo-system) 8))
+           (total-ticks (+ user-ticks system-ticks)))
       (list :virtual-memory-bytes
             (%darwin-process-integer octets (getf layout :taskallinfo-vsize) 8)
             :resident-memory-bytes
             (%darwin-process-integer octets (getf layout :taskallinfo-rss) 8)
-            :user-time-ns
-            (%darwin-process-integer octets (getf layout :taskallinfo-user) 8)
-            :system-time-ns
-            (%darwin-process-integer octets (getf layout :taskallinfo-system) 8)
-            :thread-count
-            (%darwin-process-integer octets (getf layout :taskallinfo-threads) 4))))
-  (defun decode-darwin-proc-threadinfo (octets thread-id)
-  (check-type octets (vector (unsigned-byte 8)))
-  (check-type thread-id (integer 1 *))
-  (let ((layout +darwin-process-layout+))
-    (unless (= (length octets) (getf layout :threadinfo-size))
-      (error "Expected a 112-byte proc_threadinfo buffer."))
-    (let ((name (%darwin-process-string
-                 octets
-                 (getf layout :threadinfo-name)
-                 (getf layout :threadinfo-name-size))))
-      (list :thread-id thread-id
-            :name (and (plusp (length name)) name)
             :cpu-time-ns
-            (+ (%darwin-process-integer
-                octets (getf layout :threadinfo-user) 8)
+            (and timebase-valid-p
+                 (mach-ticks-to-nanoseconds
+                  total-ticks timebase-numerator timebase-denominator))
+            :user-time-ns
+            (and timebase-valid-p
+                 (mach-ticks-to-nanoseconds
+                  user-ticks timebase-numerator timebase-denominator))
+            :system-time-ns
+            (and timebase-valid-p
+                 (mach-ticks-to-nanoseconds
+                  system-ticks timebase-numerator timebase-denominator))
+            :thread-count
+            (%darwin-process-integer octets (getf layout :taskallinfo-threads) 4)))))
+  (defun decode-darwin-proc-threadinfo
+    (octets thread-id &optional timebase-numerator timebase-denominator)
+    (check-type octets (vector (unsigned-byte 8)))
+    (check-type thread-id (integer 1 *))
+    (let ((layout +darwin-process-layout+))
+      (unless (= (length octets) (getf layout :threadinfo-size))
+        (error "Expected a 112-byte proc_threadinfo buffer."))
+      (let* ((name (%darwin-process-string
+                    octets
+                    (getf layout :threadinfo-name)
+                    (getf layout :threadinfo-name-size)))
+             (user-ticks
+               (%darwin-process-integer
+                octets (getf layout :threadinfo-user) 8))
+             (system-ticks
                (%darwin-process-integer
                 octets (getf layout :threadinfo-system) 8))
-            :state
-            (cdr (assoc
-                  (%darwin-process-integer
-                   octets
-                   (getf layout :threadinfo-state)
-                   (getf layout :threadinfo-state-width))
-                  *darwin-thread-statuses*))
-            :priority
-            (%darwin-process-integer
-             octets
-             (getf layout :threadinfo-priority)
-             (getf layout :threadinfo-priority-width)))))))
+             (timebase-valid-p
+               (and (integerp timebase-numerator)
+                    (plusp timebase-numerator)
+                    (integerp timebase-denominator)
+                    (plusp timebase-denominator))))
+        (list :thread-id thread-id
+              :name (and (plusp (length name)) name)
+              :cpu-time-ns
+              (and timebase-valid-p
+                   (mach-ticks-to-nanoseconds
+                    (+ user-ticks system-ticks)
+                    timebase-numerator timebase-denominator))
+              :state
+              (cdr (assoc
+                    (%darwin-process-integer
+                     octets
+                     (getf layout :threadinfo-state)
+                     (getf layout :threadinfo-state-width))
+                    *darwin-thread-statuses*))
+              :priority
+              (%darwin-process-integer
+               octets
+               (getf layout :threadinfo-priority)
+               (getf layout :threadinfo-priority-width)))))))
   (defun decode-darwin-rusage-info (octets)
   (check-type octets (vector (unsigned-byte 8)))
   (let ((layout +darwin-process-layout+))
@@ -181,6 +246,9 @@
       (pid sb-alien:int) (flavor sb-alien:int)
       (argument sb-alien:unsigned-long-long)
       (buffer sb-alien:system-area-pointer) (buffer-size sb-alien:int))
+    (:routine %proc-pidpath "proc_pidpath" sb-alien:int
+      (pid sb-alien:int) (buffer sb-alien:system-area-pointer)
+      (buffer-size sb-alien:unsigned-int))
     (:routine %proc-pid-rusage "proc_pid_rusage" sb-alien:int
       (pid sb-alien:int) (flavor sb-alien:int)
       (buffer sb-alien:system-area-pointer)))
@@ -237,6 +305,23 @@
     (handler-case (funcall thunk)
       (error () nil)))
   #+darwin
+(progn
+  (defun %darwin-pidpath-name (pid)
+    (let* ((size (getf +darwin-process-layout+ :proc-pidpath-buffer-size))
+           (buffer (make-array size
+                               :element-type '(unsigned-byte 8)
+                               :initial-element 0))
+           (count (sb-sys:with-pinned-objects (buffer)
+                    (%proc-pidpath pid (sb-sys:vector-sap buffer) size))))
+      (when (and (plusp count) (<= count size))
+        (let ((end (or (position 0 buffer :end count) count)))
+          (%darwin-process-path-basename
+           (decode-c-string buffer :start 0 :end end))))))
+  (defun %darwin-process-executable-name (pid metadata-name)
+    (or (%darwin-try (lambda () (%darwin-procargs2-name pid)))
+        (%darwin-try (lambda () (%darwin-pidpath-name pid)))
+        metadata-name)))
+  #+darwin
 (defun %darwin-info-decoded (pid flavor size decoder &optional (argument 0))
   (handler-case
       (let ((octets (%darwin-info pid flavor size t argument)))
@@ -278,7 +363,8 @@
             when (>= capacity (getf layout :maximum-buffer-size))
               return nil
             do (setf capacity (* 2 capacity)))))
-  (defun %darwin-thread-rows (pid)
+  (defun %darwin-thread-rows
+      (pid &optional timebase-numerator timebase-denominator)
     (let ((layout +darwin-process-layout+))
       (loop for thread-id in (%darwin-thread-ids pid)
             for row = (%darwin-info-decoded
@@ -286,10 +372,14 @@
                        (getf layout :proc-pidinfo-threadinfo)
                        (getf layout :threadinfo-size)
                        (lambda (octets)
-                         (decode-darwin-proc-threadinfo octets thread-id))
+                         (decode-darwin-proc-threadinfo
+                          octets thread-id timebase-numerator
+                          timebase-denominator))
                        thread-id)
             when row collect row)))
-  (defun %darwin-process-row (pid real-uid include-threads-p)
+  (defun %darwin-process-row (pid real-uid include-threads-p
+                                  &optional timebase-numerator
+                                    timebase-denominator)
     (let* ((metadata (%darwin-metadata pid))
            (ruid (getf metadata :ruid)))
       (when metadata
@@ -300,7 +390,10 @@
                            (getf +darwin-process-layout+
                                  :proc-pidinfo-taskallinfo)
                            (getf +darwin-process-layout+ :taskallinfo-size)
-                           #'decode-darwin-taskallinfo)))
+                           (lambda (octets)
+                             (decode-darwin-taskallinfo
+                              octets timebase-numerator
+                              timebase-denominator)))))
                (usage (and own-p
                            (handler-case
                                (let ((bytes (%darwin-rusage pid)))
@@ -308,22 +401,19 @@
                                       (decode-darwin-rusage-info bytes)))
                              (error () nil))))
                (threads (and own-p include-threads-p
-                             (%darwin-thread-rows pid))))
+                             (%darwin-thread-rows pid timebase-numerator timebase-denominator))))
           (list :pid (getf metadata :pid)
                 :ppid (getf metadata :ppid)
                 :uid (getf metadata :uid)
                 :ruid ruid
-                :name (getf metadata :name)
+                :name (%darwin-process-executable-name pid (getf metadata :name))
                 :state (getf metadata :state)
                 :kernel-thread-p (getf metadata :kernel-thread-p)
                 :start-time-unix-seconds
                 (getf metadata :start-time-unix-seconds)
                 :priority (getf metadata :priority)
                 :nice (getf metadata :nice)
-                :cpu-time-ns
-                (and task
-                     (+ (getf task :user-time-ns)
-                        (getf task :system-time-ns)))
+                :cpu-time-ns (getf task :cpu-time-ns)
                 :resident-memory-bytes (getf task :resident-memory-bytes)
                 :virtual-memory-bytes (getf task :virtual-memory-bytes)
                 :read-bytes (getf usage :read-bytes)
@@ -338,13 +428,26 @@
         (error () (values nil :private-api-unavailable)))
     (if failure
         (funcall on-unavailable failure)
-        (let ((real-uid (sb-posix:getuid)))
+        (let ((real-uid (sb-posix:getuid))
+              (timebase-numerator nil)
+              (timebase-denominator nil))
+          (handler-case
+              (mach-timebase-info
+               (lambda (numerator denominator)
+                 (setf timebase-numerator numerator
+                       timebase-denominator denominator))
+               (lambda (reason) (declare (ignore reason))))
+            (error ()
+              (setf timebase-numerator nil
+                    timebase-denominator nil)))
           (funcall
            on-value
            (loop for pid in pids
                  for row =
                    (handler-case
-                       (%darwin-process-row pid real-uid include-threads-p)
+                       (%darwin-process-row
+                        pid real-uid include-threads-p
+                        timebase-numerator timebase-denominator)
                      (error () nil))
                  when row collect row))))))
   #-darwin

@@ -205,11 +205,11 @@
     "reads details for the current process threads when requested"
     (let* ((pid (sb-posix:getpid))
            (row (ntop.platform.darwin::%darwin-process-row
-                 pid (sb-posix:getuid) t))
+                 pid (sb-posix:getuid) t 1 1))
            (threads (getf row :threads))
            (record
              (ntop.process.infrastructure::%darwin-process-record
-              row (make-hash-table :test #'eql)))
+              row (make-hash-table :test (function eql))))
            (record-threads
              (ntop.process.domain:process-record-threads record)))
       (cl-weave:expect (not (null threads)) :to-be t)
