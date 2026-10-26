@@ -413,6 +413,7 @@
    (:file "t/e2e/btm-config-test")
    (:file "t/e2e/cli-test")
    (:file "t/e2e/criterion-test")
+   (:file "t/e2e/route-runner-layout-test")
    (:file "t/e2e/route-runner-readiness-test")
    (:file "t/e2e/domain-parity-export-test")
    (:file "t/e2e/routes-test")
