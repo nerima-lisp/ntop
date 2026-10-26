@@ -427,6 +427,7 @@
    (:file "t/e2e/btm-config-test")
    (:file "t/e2e/cli-test")
    (:file "t/e2e/criterion-test")
+   (:file "t/e2e/route-runner-observers-test")
    (:file "t/e2e/route-runner-layout-test")
    (:file "t/e2e/route-runner-readiness-test")
    (:file "t/e2e/route-runner-classification-test")
