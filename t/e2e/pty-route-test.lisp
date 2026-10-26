@@ -214,6 +214,36 @@ while True:
             original-close-pty)
       (ntop.e2e::close-e2e-session session))))
  (cl-weave:it
+  "reaps a SIGKILLed child after draining exhausts the shared deadline"
+  (let* ((session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" "import time; time.sleep(30)") 24 80
+            :timeout-seconds 3d0))
+         (process (ntop.e2e::e2e-session-process session))
+         (original-drain
+           (symbol-function 'ntop.e2e::%e2e-drain-session-until-exit))
+         (original-now (symbol-function 'ntop.e2e::%now))
+         (clock-value 0)
+         (drain-called nil))
+    (unwind-protect
+         (progn
+           (cl-weave:expect (sb-ext:process-alive-p process) :to-be t)
+           (setf (symbol-function 'ntop.e2e::%now)
+                 (lambda () clock-value))
+           (setf (symbol-function 'ntop.e2e::%e2e-drain-session-until-exit)
+                 (lambda (ignored-session ignored-timeout &optional ignored-operation)
+                   (declare (ignore ignored-session ignored-timeout ignored-operation))
+                   (setf drain-called t
+                         clock-value (ntop.e2e::%seconds-to-ticks 1.1d0))
+                   nil))
+           (ntop.e2e::%reap-e2e-process session)
+           (cl-weave:expect drain-called :to-be t)
+           (cl-weave:expect (sb-ext:process-alive-p process) :to-be nil))
+      (setf (symbol-function 'ntop.e2e::%e2e-drain-session-until-exit)
+            original-drain)
+      (setf (symbol-function 'ntop.e2e::%now) original-now)
+      (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
   "recognizes the BTM and ntop help-search prompts"
   (cl-weave:expect
    (ntop.e2e::%route-help-search-open-state-p
