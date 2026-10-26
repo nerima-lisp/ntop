@@ -165,7 +165,7 @@ while True:
          (progn
            (setf output
                  (ntop.e2e::%route-read-through-quiet-period
-                  session 0.05d0 2d0))
+                  session 0.05d0 2d0 0.25d0))
            (let* ((text (ntop.e2e::%octets-to-text output))
                   (result
                     (ntop.e2e:parse-ansi
