@@ -5,6 +5,11 @@
     (when (every #'identity values)
       (reduce #'+ values))))
 
+(defun %sum-available-row-values (rows accessor)
+  (let ((values (remove nil (mapcar accessor rows))))
+    (when values
+      (reduce #'+ values))))
+
 (defun %maximum-row-values (rows accessor)
   (let ((values (mapcar accessor rows)))
     (when (every #'identity values)
@@ -32,8 +37,8 @@
    :name (process-row-name representative)
    :command (process-row-command representative)
    :cpu-percent (%sum-row-values rows #'process-row-cpu-percent)
-   :memory-percent (%sum-row-values rows #'process-row-memory-percent)
-   :memory-bytes (%sum-row-values rows #'process-row-memory-bytes)
+   :memory-percent (%sum-available-row-values rows #'process-row-memory-percent)
+   :memory-bytes (%sum-available-row-values rows #'process-row-memory-bytes)
    :virtual-memory-bytes (process-row-virtual-memory-bytes representative)
    :read-bytes-per-second
    (%sum-row-values rows #'process-row-read-bytes-per-second)

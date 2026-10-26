@@ -263,6 +263,39 @@
                               group))
                        :to-equal
                        '(nil nil))))
+                   (cl-weave:it
+                    "sums available grouped memory and leaves all-missing groups unavailable"
+                    (let* ((rows
+                            (list (%wp4-grouping-row 1)
+                                  (%wp4-grouping-row 2 :memory-bytes 0 :memory-percent 0.0)))
+                           (group
+                            (first
+                             (ntop.process.domain::group-process-domain-rows rows :name))))
+                      (cl-weave:expect
+                       (list (ntop.process.domain:process-row-memory-bytes group)
+                             (ntop.process.domain:process-row-memory-percent group))
+                       :to-equal
+                       '(0 0.0)))
+                    (let* ((rows
+                            (list (%wp4-grouping-row 3)
+                                  (%wp4-grouping-row 4 :memory-bytes 4096 :memory-percent 1.25)))
+                           (group
+                            (first
+                             (ntop.process.domain::group-process-domain-rows rows :name))))
+                      (cl-weave:expect
+                       (list (ntop.process.domain:process-row-memory-bytes group)
+                             (ntop.process.domain:process-row-memory-percent group))
+                       :to-equal
+                       '(4096 1.25)))
+                    (let* ((rows (list (%wp4-grouping-row 5) (%wp4-grouping-row 6)))
+                           (group
+                            (first
+                             (ntop.process.domain::group-process-domain-rows rows :name))))
+                      (cl-weave:expect
+                       (list (ntop.process.domain:process-row-memory-bytes group)
+                             (ntop.process.domain:process-row-memory-percent group))
+                       :to-equal
+                       '(nil nil))))
                    (cl-weave:around-each (next)
                                          (let ((cl-weave:*property-seed*
                                                 20261024))
