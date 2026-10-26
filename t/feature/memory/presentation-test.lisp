@@ -219,6 +219,19 @@
          "default"))
       (cl-weave:expect (search "RAM" (cl-tty-kit:screen-to-string screen))
                        :to-be nil)))
+  (cl-weave:it "renders the initial RAM gauge before counters are sampled"
+    (let ((screen (cl-tty-kit:make-screen 32 1))
+          (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 32 :height 1)))
+      (ntop.memory.presentation::%draw-memory-gauge
+       screen rectangle
+       (list :ram-used-bytes nil :ram-total-bytes nil)
+       "default")
+      (cl-weave:expect
+       (not (null (search "RAM" (cl-tty-kit:screen-to-string screen))))
+       :to-be t)
+      (cl-weave:expect
+       (not (null (search "0.0B/0.0B" (cl-tty-kit:screen-to-string screen))))
+       :to-be t)))
 
   (cl-weave:it "hides cache history when cache collection is disabled"
     (let* ((screen (cl-tty-kit:make-screen 80 12))
