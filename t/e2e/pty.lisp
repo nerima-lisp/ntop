@@ -29,6 +29,7 @@
   started-at
   deadline
   timeout-seconds
+  (reaped-p nil)
   (closed-p nil)
   (output (make-array 0 :element-type (quote (unsigned-byte 8))
                       :adjustable t :fill-pointer 0))

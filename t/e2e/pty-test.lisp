@@ -288,6 +288,63 @@
                              t))
                         (ntop.e2e::close-e2e-session session)))))
 (cl-weave:describe
+ "E2E PTY child reaping"
+ (cl-weave:it
+  "reaps a SIGKILLed child before draining output and closing the PTY"
+  (let* ((command
+          (concatenate
+           'string
+           "import os,signal,time; "
+           "signal.signal(signal.SIGHUP,signal.SIG_IGN); "
+           "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+           "os.write(1,b'REAP_READY'); time.sleep(30)"))
+         (session
+          (ntop.e2e::launch-e2e-process
+           "python3" (list "-c" command) 24 80 :timeout-seconds 5d0))
+         (process (ntop.e2e::e2e-session-process session))
+         (original-close (symbol-function 'cl-tty-kit:close-pty))
+         (close-state nil)
+         (ready-output nil))
+    (unwind-protect
+         (progn
+           (multiple-value-bind (frame)
+               (ntop.e2e::pty-read-until-idle
+                session :quiet-seconds 0.05d0 :timeout-seconds 2d0)
+             (setf ready-output frame))
+           (cl-weave:expect
+            (not (null
+                  (search "REAP_READY"
+                          (ntop.e2e::%octets-to-text ready-output))))
+            :to-be
+            t)
+           (cl-weave:expect (sb-ext:process-alive-p process) :to-be t)
+           (unwind-protect
+                (progn
+                  (setf (symbol-function 'cl-tty-kit:close-pty)
+                        (lambda (pty)
+                          (setf close-state
+                                (list
+                                 (ntop.e2e::e2e-session-reaped-p session)
+                                 (sb-ext:process-alive-p process)
+                                 (ntop.e2e::%octets-to-text
+                                  (ntop.e2e::e2e-session-output session))))
+                          (funcall original-close pty)))
+                  (ntop.e2e::close-e2e-session session))
+             (setf (symbol-function 'cl-tty-kit:close-pty) original-close))
+           (cl-weave:expect (first close-state) :to-be t)
+           (cl-weave:expect (second close-state) :to-be nil)
+           (cl-weave:expect
+            (not (null (search "REAP_READY" (third close-state))))
+            :to-be
+            t)
+           (cl-weave:expect
+            (ntop.e2e::e2e-session-closed-p session)
+            :to-be
+            t))
+      (setf (symbol-function 'cl-tty-kit:close-pty) original-close)
+      (unless (ntop.e2e::e2e-session-closed-p session)
+        (ntop.e2e::close-e2e-session session))))))
+(cl-weave:describe
  "PTY initial screen readiness"
  (cl-weave:it
   "ignores terminal mode setup and cursor query bytes"
