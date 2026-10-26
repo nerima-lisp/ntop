@@ -80,16 +80,13 @@
                                 config)))
                          (if (ntop.shared.application:application-config-basic-p
                               config)
-                             (%draw-cpu-basic target
-                                              rectangle
-                                              sample
-                                              config
-                                              theme)
+                             (progn
+                               (%draw-cpu-basic target rectangle sample config theme)
+                               nil)
                              (%draw-cpu-graph target
                                               rectangle
                                               state
                                               sample
                                               config
                                               series
-                                              theme)))
-                       nil)
+                                              theme))))

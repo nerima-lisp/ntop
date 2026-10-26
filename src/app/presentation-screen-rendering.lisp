@@ -104,10 +104,15 @@
                                    series-by-widget
                                    snapshot
                                    unavailability-reasons
-                                   &optional cpu-frame-rectangles current-time-unix-seconds)
+                                   &optional cpu-frame-rectangles current-time-unix-seconds selection-id)
   (let* ((basic-p (ntop.shared.application:application-config-basic-p config))
+         (widget-selection-id
+           (or selection-id
+               (and selected-p (%screen-widget-base widget))))
+         (widget-selected-p
+           (eq widget-selection-id (%screen-widget-base widget)))
          (basic-table-frame-p
-           (and basic-p selected-p
+           (and basic-p widget-selected-p
                 (not
                  (and (eq widget :process-table)
                       (member (ntop.app.domain:app-state-active-dialog state)
@@ -171,9 +176,9 @@
               (list (list search-body-rectangle nil)))
              (process-sort-p
               (if basic-p
-                  (list (list (fourth sort-layout) selected-p))
+                  (list (list (fourth sort-layout) widget-selected-p))
                   (list
-                   (list (fourth sort-layout) selected-p)
+                   (list (fourth sort-layout) widget-selected-p)
                    (list (third sort-layout) nil))))
              (old-network-legend-p
               (list
@@ -183,9 +188,9 @@
                  :y (ntop.ui:rectangle-y rectangle)
                  :width (ntop.ui:rectangle-width rectangle)
                  :height (max 0 (- (ntop.ui:rectangle-height rectangle) 4)))
-                selected-p)))
+                widget-selected-p)))
              ((or (not basic-p) basic-table-frame-p)
-              (list (list rectangle selected-p)))
+              (list (list rectangle widget-selected-p)))
              (t nil)))
          (clickable-areas nil))
     (multiple-value-bind (widget-state widget-config widget-series)
@@ -196,7 +201,7 @@
                                config
                                unavailability-reasons
                                current-time-unix-seconds
-                               selected-p)
+                               widget-selected-p)
       (loop for (frame-rectangle frame-selected-p) in frame-rectangles
             do (%screen-draw-frame target
                                    frame-rectangle
@@ -223,19 +228,41 @@
                                        widget-series))))
       (when (and (not basic-p) cpu-frame-rectangles)
         (%screen-draw-frame target (first cpu-frame-rectangles) config
-                            selected-p
+                            (eq widget-selection-id :cpu)
                             t)
         (when (and config
                    (ntop.shared.application:application-config-cpu-left-legend-p
                     config))
           (%screen-draw-frame target (first cpu-frame-rectangles) config
-                              selected-p
+                              (eq widget-selection-id :cpu)
                               nil
                               nil
                               t))
         (%screen-draw-frame target (second cpu-frame-rectangles) config
-                            selected-p))
-      clickable-areas)))
+                            (eq widget-selection-id :cpu-legend)))
+      (setf clickable-areas
+            (nconc clickable-areas
+                   (when (and (plusp (ntop.ui:rectangle-width rectangle))
+                              (plusp (ntop.ui:rectangle-height rectangle))
+                              (member (%screen-widget-base widget)
+                                      (quote (:cpu :memory :network :disks :temperature :process))
+                                      :test (function eq)))
+                     (if (and (eq widget :cpu) cpu-frame-rectangles)
+                         (list
+                          (ntop.ui:make-clickable-area
+                           :rectangle (first cpu-frame-rectangles)
+                           :action :screen-widget
+                           :value :cpu)
+                          (ntop.ui:make-clickable-area
+                           :rectangle (second cpu-frame-rectangles)
+                           :action :screen-widget
+                           :value :cpu-legend))
+                         (list
+                          (ntop.ui:make-clickable-area
+                           :rectangle rectangle
+                           :action :screen-widget
+                           :value (%screen-widget-base widget)))))))
+  clickable-areas)))
 
 (defun draw-application-screen
   (target state config snapshot columns rows unavailability-reasons
@@ -251,11 +278,20 @@
            (render-config (%screen-config config mode))
            (*screen-table-theme*
              (ntop.shared.application:application-config-theme render-config))
-           (selected
+           (selected-widget
              (%screen-widget-base
               (if (eq mode :basic)
                   (%screen-basic-table-selection state)
                   (ntop.app.domain:app-state-selected-widget state))))
+           (stored-selection-id
+             (gethash :screen-selection-id
+                      (ntop.app.domain:app-state-widget-v-states state)))
+           (selection-id
+             (if (or (eq stored-selection-id selected-widget)
+                     (and (eq stored-selection-id :cpu-legend)
+                          (eq selected-widget :cpu)))
+                 stored-selection-id
+                 selected-widget))
            (paused-p (ntop.app.domain:app-state-paused-p state))
            (content-rows (if paused-p (max 0 (1- rows)) rows))
            (layout-results
@@ -280,7 +316,7 @@
                                               widget
                                               rectangle
                                               (eq (%screen-widget-base layout-widget)
-                                                  selected)
+                                                  selection-id)
                                               state
                                               render-config
                                               series-by-widget
@@ -288,7 +324,8 @@
                                               unavailability-reasons
                                               (and (eq layout-widget :cpu)
                                                    cpu-frames)
-                                              current-time-unix-seconds))))))
+                                              current-time-unix-seconds
+                                              selection-id))))))
       (setf clickable-areas
             (nconc clickable-areas
                    (%screen-draw-active-process-modal target

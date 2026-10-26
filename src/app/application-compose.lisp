@@ -387,9 +387,10 @@
     (setf (application-composition-previous-screen composition)
           (cl-tty-kit:screen-copy screen))
     areas))
-  (defun %compose-application-action (composition state action)
+(defun %compose-application-action (composition state action)
   (check-type state ntop.app.domain:app-state)
   (check-type action ntop.app.domain:app-action)
+  (setf action (%screen-selection-pointer-action composition state action))
   (multiple-value-bind (next-state forwarded-action history-intent)
       (transition-application-state state action)
     (%copy-transition-state-into state next-state)
@@ -399,9 +400,9 @@
       (when (and (eq kind :select) (null forwarded-action))
         (setf (application-composition-selection-active-p composition) t))
       (let ((process-handled-p
-              (%update-process-dialog-state composition state action)))
+             (%update-process-dialog-state composition state action)))
         (let ((selected-widget-before
-                (ntop.app.domain:app-state-selected-widget state)))
+               (ntop.app.domain:app-state-selected-widget state)))
           (%apply-layout-navigation state
                                     action
                                     (application-composition-config composition)

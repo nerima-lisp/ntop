@@ -264,4 +264,63 @@
                                :to-equal
                                (ntop.ui:presentation-theme-style
                                 :default
-                                :highlighted-border)))))))))
+                                :highlighted-border))))))))
+                   (cl-weave:it "highlights CPU graph and legend frames by their separate IDs"
+  (let* ((state (ntop.app.domain:make-app-state :selected-widget :cpu))
+         (normal-style
+           (ntop.ui:presentation-theme-style :default :border))
+         (selected-style
+           (ntop.ui:presentation-theme-style :default :highlighted-border))
+         (expanded-config (%wp12b-screen-default-config)))
+    (multiple-value-bind (areas screen)
+        (%wp12b-screen-render 80 24 :state state)
+      (cl-weave:expect
+       (and
+        (not
+         (null
+          (find-if (lambda (area)
+                     (and (eq (ntop.ui:clickable-area-action area) :screen-widget)
+                          (eq (ntop.ui:clickable-area-value area) :cpu)))
+                   areas)))
+        (not
+         (null
+          (find-if (lambda (area)
+                     (and (eq (ntop.ui:clickable-area-action area) :screen-widget)
+                          (eq (ntop.ui:clickable-area-value area) :cpu-legend)))
+                   areas))))
+       :to-be t)
+      (cl-weave:expect
+       (list (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
+             (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 46 0)))
+       :to-equal
+       (list selected-style normal-style)))
+    (setf (gethash :screen-selection-id
+                   (ntop.app.domain:app-state-widget-v-states state))
+          :cpu-legend)
+    (multiple-value-bind (areas screen)
+        (%wp12b-screen-render 80 24 :state state)
+      (declare (ignore areas))
+      (cl-weave:expect
+       (list (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
+             (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 46 0)))
+       :to-equal
+       (list normal-style selected-style)))
+    (setf (ntop.shared.application:application-config-expanded-p expanded-config) t
+          (gethash :screen-selection-id
+                   (ntop.app.domain:app-state-widget-v-states state))
+          :cpu)
+    (multiple-value-bind (areas screen)
+        (%wp12b-screen-render 80 24 :state state :config expanded-config)
+      (declare (ignore areas))
+      (cl-weave:expect
+       (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
+       :to-equal selected-style))
+    (setf (gethash :screen-selection-id
+                   (ntop.app.domain:app-state-widget-v-states state))
+          :cpu-legend)
+    (multiple-value-bind (areas screen)
+        (%wp12b-screen-render 80 24 :state state :config expanded-config)
+      (declare (ignore areas))
+      (cl-weave:expect
+       (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
+       :to-equal normal-style)))))

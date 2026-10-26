@@ -42,6 +42,74 @@
           (eq (first value) :widget)
           (%selectable-widget-p (second value)))
      (second value))))
+(defun %selection-pointer-coordinates (value marker)
+  (when (and (listp value)
+             (= (length value) 3)
+             (eq (first value) marker)
+             (integerp (second value))
+             (integerp (third value)))
+    (values (second value) (third value) t)))
+
+(defun %composition-clickable-area-at (composition action x y)
+  (find-if
+   (lambda (area)
+     (let ((rectangle (ntop.ui:clickable-area-rectangle area)))
+       (and (eq (ntop.ui:clickable-area-action area) action)
+            (<= (ntop.ui:rectangle-x rectangle) x)
+            (< x (+ (ntop.ui:rectangle-x rectangle)
+                    (ntop.ui:rectangle-width rectangle)))
+            (<= (ntop.ui:rectangle-y rectangle) y)
+            (< y (+ (ntop.ui:rectangle-y rectangle)
+                    (ntop.ui:rectangle-height rectangle))))))
+   (reverse (application-composition-clickable-areas composition))))
+
+(defun %screen-selection-pointer-action (composition state action)
+  (unless (eq (ntop.app.domain:app-action-kind action) :select)
+    (return-from %screen-selection-pointer-action action))
+  (let* ((value (ntop.app.domain:app-action-value action))
+         (states (ntop.app.domain:app-state-widget-v-states state)))
+    (multiple-value-bind (x y pointer-p)
+        (%selection-pointer-coordinates value :widget)
+      (when pointer-p
+        (let ((area (%composition-clickable-area-at
+                     composition :screen-widget x y)))
+          (when area
+            (let* ((selection-id (ntop.ui:clickable-area-value area))
+                   (widget (if (eq selection-id :cpu-legend)
+                               :cpu
+                             selection-id)))
+              (setf (gethash :screen-selection-id states) selection-id)
+              (return-from %screen-selection-pointer-action
+                (ntop.app.domain:make-app-action :kind :select :value widget)))))))
+    (multiple-value-bind (x y pointer-p)
+        (%selection-pointer-coordinates value :cpu-series)
+      (when pointer-p
+        (let ((widget-area (%composition-clickable-area-at
+                            composition :screen-widget x y))
+              (row-area (%composition-clickable-area-at
+                         composition :select-row x y)))
+          (when (and widget-area
+                     (member (ntop.ui:clickable-area-value widget-area)
+                             '(:cpu :cpu-legend)
+                             :test (function eq))
+                     row-area)
+            (let* ((current-state (gethash :cpu states))
+                   (table-state
+                    (if (typep current-state (quote ntop.ui:table-state))
+                        (copy-structure current-state)
+                      (ntop.ui:make-table-state)))
+                   (row-index (ntop.ui:clickable-area-value row-area)))
+              (when (integerp row-index)
+                (setf (ntop.ui:table-state-selected-index table-state)
+                      row-index
+                      (gethash :cpu states) table-state
+                      (gethash :screen-selection-id states) :cpu-legend)
+                (return-from %screen-selection-pointer-action
+                  (ntop.app.domain:make-app-action :kind :select :value :cpu))))))))
+    (let ((widget (%selected-widget-from-action value)))
+      (when widget
+        (setf (gethash :screen-selection-id states) widget)))
+    action))
 
 (defun %transition-select (state action)
   (let ((widget

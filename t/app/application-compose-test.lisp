@@ -334,6 +334,213 @@
        (ntop.app.application::application-composition-selection-active-p
         selection-composition)
        :to-be t)))
+  (cl-weave:it "routes widget and expanded CPU legend pointer selections through rendered areas"
+  (let* ((forwarded nil)
+         (memory-area
+           (ntop.ui:make-clickable-area
+            :rectangle (ntop.ui:make-rectangle :x 2 :y 1 :width 1 :height 1)
+            :action :screen-widget
+            :value :memory))
+         (legend-area
+           (ntop.ui:make-clickable-area
+            :rectangle (ntop.ui:make-rectangle :x 10 :y 1 :width 6 :height 3)
+            :action :screen-widget
+            :value :cpu-legend))
+         (cpu-area
+           (ntop.ui:make-clickable-area
+            :rectangle (ntop.ui:make-rectangle :x 10 :y 1 :width 6 :height 3)
+            :action :screen-widget
+            :value :cpu))
+         (row-area
+           (ntop.ui:make-clickable-area
+            :rectangle (ntop.ui:make-rectangle :x 11 :y 2 :width 4 :height 1)
+            :action :select-row
+            :value 0))
+         (areas (list row-area legend-area memory-area))
+         (config (ntop.shared.application:make-application-config))
+         (composition
+           (ntop.app.application:make-application-composition
+            config
+            :on-action (lambda (state action)
+                         (push (list state action) forwarded))
+            :draw-screen
+            (lambda (target state config snapshot columns rows reasons series)
+              (declare (ignore target state config snapshot columns rows reasons series))
+              areas)))
+         (state (ntop.app.domain:make-app-state :selected-widget :process))
+         (on-action
+           (ntop.app.application:application-composition-on-action composition)))
+    (%render-composition-test-instance composition state nil nil 4)
+    (funcall on-action
+             state
+             (ntop.app.domain:make-app-action
+              :kind :select :value (list :widget 2 1)))
+    (cl-weave:expect
+     (ntop.app.domain:app-state-selected-widget state)
+     :to-be :memory)
+    (cl-weave:expect
+     (gethash :screen-selection-id
+              (ntop.app.domain:app-state-widget-v-states state))
+     :to-be :memory)
+    (setf (ntop.app.domain:app-state-selected-widget state) :cpu
+          (gethash :cpu (ntop.app.domain:app-state-widget-v-states state))
+          (ntop.ui:make-table-state :selected-index 1))
+    (%render-composition-test-instance composition state nil nil 4)
+    (funcall on-action
+             state
+             (ntop.app.domain:make-app-action
+              :kind :select :value (list :cpu-series 11 2)))
+    (cl-weave:expect
+     (ntop.app.domain:app-state-selected-widget state)
+     :to-be :cpu)
+    (cl-weave:expect
+     (gethash :screen-selection-id
+              (ntop.app.domain:app-state-widget-v-states state))
+     :to-be :cpu-legend)
+    (cl-weave:expect
+     (ntop.ui:table-state-selected-index
+      (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
+     :to-be 0)
+    (cl-weave:expect
+     (ntop.app.application::application-composition-selection-active-p
+      composition)
+     :to-be t)
+    (cl-weave:expect forwarded :to-be nil)
+    (setf areas (list row-area cpu-area memory-area)
+          (ntop.ui:table-state-selected-index
+           (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
+          1)
+    (%render-composition-test-instance composition state nil nil 4)
+    (funcall on-action
+             state
+             (ntop.app.domain:make-app-action
+              :kind :select :value (list :cpu-series 11 2)))
+    (cl-weave:expect
+     (ntop.app.domain:app-state-selected-widget state)
+     :to-be :cpu)
+    (cl-weave:expect
+     (gethash :screen-selection-id
+              (ntop.app.domain:app-state-widget-v-states state))
+     :to-be :cpu-legend)
+    (cl-weave:expect
+     (ntop.ui:table-state-selected-index
+      (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
+     :to-be 0)
+    (cl-weave:expect
+     (ntop.app.application::application-composition-selection-active-p
+      composition)
+     :to-be t)
+    (cl-weave:expect forwarded :to-be nil)
+    (let* ((actual-config (%wp12b-screen-default-config))
+           (actual-composition
+             (ntop.app.application:make-application-composition actual-config))
+           (actual-state
+             (ntop.app.domain:make-app-state :selected-widget :cpu))
+           (actual-on-action
+             (ntop.app.application:application-composition-on-action
+              actual-composition))
+           (x 149)
+           (y 0))
+      (with-output-to-string (stream)
+        (let ((*standard-output* stream))
+          (funcall
+           (ntop.app.application:application-composition-render actual-composition)
+           actual-state actual-config nil 160 48 nil)))
+      (let* ((actual-areas
+               (ntop.app.application::application-composition-clickable-areas
+                actual-composition))
+             (actual-memory-area
+               (find-if
+                (lambda (area)
+                  (and (eq (ntop.ui:clickable-area-action area) :screen-widget)
+                       (eq (ntop.ui:clickable-area-value area) :memory)))
+                actual-areas))
+             (rectangle
+               (and actual-memory-area
+                    (ntop.ui:clickable-area-rectangle actual-memory-area))))
+        (cl-weave:expect
+         (and rectangle
+              (<= (ntop.ui:rectangle-x rectangle) x)
+              (< x (+ (ntop.ui:rectangle-x rectangle)
+                      (ntop.ui:rectangle-width rectangle)))
+              (<= (ntop.ui:rectangle-y rectangle) y)
+              (< y (+ (ntop.ui:rectangle-y rectangle)
+                      (ntop.ui:rectangle-height rectangle))))
+         :to-be t)
+        (funcall actual-on-action
+                 actual-state
+                 (ntop.app.domain:make-app-action
+                  :kind :select :value (list :widget x y)))
+        (cl-weave:expect
+         (ntop.app.domain:app-state-selected-widget actual-state)
+         :to-be :memory)
+        (cl-weave:expect
+         (gethash :screen-selection-id
+                  (ntop.app.domain:app-state-widget-v-states actual-state))
+         :to-be :memory)))))
+  (cl-weave:it "returns and routes expanded CPU average row areas"
+  (let* ((config (ntop.shared.application:make-application-config))
+         (composition
+           (ntop.app.application:make-application-composition config))
+         (state (ntop.app.domain:make-app-state :selected-widget :cpu))
+         (snapshot (%composition-test-snapshot 10d0 :cpu-usage 50d0))
+         (on-action
+           (ntop.app.application:application-composition-on-action composition)))
+    (setf (ntop.shared.application:application-config-expanded-p config) t)
+    (with-output-to-string (stream)
+      (let ((*standard-output* stream))
+        (funcall
+         (ntop.app.application:application-composition-render composition)
+         state config snapshot 80 24 nil)))
+    (let* ((areas
+             (ntop.app.application::application-composition-clickable-areas
+              composition))
+           (cpu-area
+             (find-if
+              (lambda (area)
+                (and (eq (ntop.ui:clickable-area-action area) :screen-widget)
+                     (eq (ntop.ui:clickable-area-value area) :cpu)))
+              areas))
+           (average-area
+             (find-if
+              (lambda (area)
+                (and (eq (ntop.ui:clickable-area-action area) :select-row)
+                     (eql (ntop.ui:clickable-area-value area) 1)))
+              areas)))
+      (cl-weave:expect (not (null cpu-area)) :to-be t)
+      (cl-weave:expect (not (null average-area)) :to-be t)
+      (when (and cpu-area average-area)
+        (let* ((cpu-rectangle (ntop.ui:clickable-area-rectangle cpu-area))
+               (row-rectangle (ntop.ui:clickable-area-rectangle average-area))
+               (x (ntop.ui:rectangle-x row-rectangle))
+               (y (ntop.ui:rectangle-y row-rectangle)))
+          (cl-weave:expect
+           (and (<= (ntop.ui:rectangle-x cpu-rectangle) x)
+                (< x (+ (ntop.ui:rectangle-x cpu-rectangle)
+                        (ntop.ui:rectangle-width cpu-rectangle)))
+                (<= (ntop.ui:rectangle-y cpu-rectangle) y)
+                (< y (+ (ntop.ui:rectangle-y cpu-rectangle)
+                        (ntop.ui:rectangle-height cpu-rectangle))))
+           :to-be t)
+          (funcall on-action
+                   state
+                   (ntop.app.domain:make-app-action
+                    :kind :select :value (list :cpu-series x y)))
+          (cl-weave:expect
+           (ntop.app.domain:app-state-selected-widget state)
+           :to-be :cpu)
+          (cl-weave:expect
+           (gethash :screen-selection-id
+                    (ntop.app.domain:app-state-widget-v-states state))
+           :to-be :cpu-legend)
+          (cl-weave:expect
+           (ntop.ui:table-state-selected-index
+            (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
+           :to-be 1)
+          (cl-weave:expect
+           (ntop.app.application::application-composition-selection-active-p
+            composition)
+           :to-be t))))))
 
   (cl-weave:it "clears owned history in place and forwards reset collection"
     (let* ((forwarded nil)
