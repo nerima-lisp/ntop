@@ -163,9 +163,13 @@ while True:
          (output nil))
     (unwind-protect
          (progn
+           (cl-weave:expect
+            (cl-tty-kit:fd-wait
+             (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be t)
            (setf output
                  (ntop.e2e::%route-read-through-quiet-period
-                  session 0.05d0 2d0 0.25d0))
+                  session 0.05d0 2d0))
            (let* ((text (ntop.e2e::%octets-to-text output))
                   (result
                     (ntop.e2e:parse-ansi
@@ -178,6 +182,69 @@ while True:
              (cl-weave:expect
               text :to-equal (format nil "~c[31mX" (code-char 27)))
              (cl-weave:expect result :to-be :accepted)))
+      (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
+  "keeps reading a UTF-8 code point split across the quiet period"
+  (let* ((script
+           (format nil
+                   "import os, termios, time, tty
+fd=0
+tty.setraw(fd)
+os.write(1,bytes([0xe3,0x81]))
+time.sleep(0.15)
+os.write(1,bytes([0x82]))
+while True:
+    time.sleep(1)
+"))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 24 80 :timeout-seconds 3d0))
+         (output nil))
+    (unwind-protect
+         (progn
+           (cl-weave:expect
+            (cl-tty-kit:fd-wait
+             (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be t)
+           (setf output
+                 (ntop.e2e::%route-read-through-quiet-period
+                  session 0.05d0 2d0))
+           (cl-weave:expect
+            (ntop.e2e::%octets-to-text output)
+            :to-equal
+            (format nil "~c" (code-char #x3042))))
+      (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
+  "does not treat a UTF-8 continuation byte as standalone C1 CSI"
+  (let* ((script
+           (format nil
+                   "import os, time, tty
+fd=0
+tty.setraw(fd)
+time.sleep(0.05)
+os.write(1,bytes([0xc3,0x9b]))
+while True:
+    time.sleep(1)
+"))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 24 80 :timeout-seconds 2d0))
+         (output nil))
+    (unwind-protect
+         (progn
+           (cl-weave:expect
+            (cl-tty-kit:fd-wait
+             (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be t)
+           (setf output
+                 (ntop.e2e::%route-read-through-quiet-period
+                  session 0.05d0 2d0))
+           (cl-weave:expect
+            (ntop.e2e::%octets-to-text output)
+            :to-equal (format nil "~c" (code-char #x00db)))
+           (cl-weave:expect
+            (sb-ext:process-alive-p (ntop.e2e::e2e-session-process session))
+            :to-be t))
       (ntop.e2e::close-e2e-session session))))
  (cl-weave:it
   "closes the PTY after the child-reap fallback"

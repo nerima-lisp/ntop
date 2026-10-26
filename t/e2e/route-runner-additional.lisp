@@ -17,7 +17,6 @@
     (list :exit-code (host-kit:process-result-exit-code result)
           :stdout stdout
           :stderr stderr)))
-
 (defun %route-incomplete-escape-suffix-p (octets)
   (let* ((end (length octets))
          (escape-position (position #x1b octets :from-end t))
@@ -36,6 +35,7 @@
                (= (aref octets (1+ escape-position)) #x5b)
                (eq (csi-state (+ escape-position 2)) :incomplete))
           (and csi-position
+               (not (%route-utf8-continuation-byte-p octets csi-position))
                (or (null escape-position)
                    (> csi-position escape-position))
                (eq (csi-state (1+ csi-position)) :incomplete))))))
@@ -46,40 +46,37 @@
   (%validate-seconds initial-quiet-seconds "INITIAL-QUIET-SECONDS")
   (multiple-value-bind (deadline deadline-seconds)
       (%deadline-for-call session "read" timeout-seconds)
-    (let ((quiet-deadline
-           (+ (%now) (%seconds-to-ticks initial-quiet-seconds)))
-          (buffer (make-array 4096 :element-type '(unsigned-byte 8)))
-          (output (make-array 0 :element-type '(unsigned-byte 8)
+    (let ((quiet-deadline (+ (%now) (%seconds-to-ticks initial-quiet-seconds)))
+          (buffer (make-array 4096 :element-type (quote (unsigned-byte 8))))
+          (output (make-array 0 :element-type (quote (unsigned-byte 8))
                               :adjustable t :fill-pointer 0))
           (query-scan-index 0))
       (loop for now = (%now)
             do (when (>= now deadline)
                  (%signal-timeout "read" deadline-seconds))
-            (when (>= now quiet-deadline)
-              (if (%route-incomplete-escape-suffix-p output)
-                  (setf quiet-deadline deadline)
-                  (return (values output (%elapsed-seconds session now)))))
-            (let ((wait-until (min deadline quiet-deadline)))
-              (when (cl-tty-kit:fd-wait
-                     (e2e-session-fd session) :input
-                     (%ticks-to-seconds (- wait-until now)))
-                (let ((count (cl-tty-kit:fd-read-octets
-                              (e2e-session-fd session) buffer)))
-                  (cond
-                   ((null count) nil)
-                   ((zerop count)
-                    (error "PTY closed before the quiet period completed."))
-                   (t
-                    (loop for index below count
-                          do (vector-push-extend (aref buffer index) output))
-                    (%e2e-session-record-output session
-                                                (subseq buffer 0 count))
-                    (multiple-value-bind (next-index)
-                        (%pty-answer-cursor-query
-                         session output query-scan-index deadline)
-                      (setf query-scan-index next-index))
-                    (setf quiet-deadline
-                          (+ (%now) (%seconds-to-ticks quiet-seconds))))))))))))
+               (when (>= now quiet-deadline)
+                 (if (or (%route-incomplete-escape-suffix-p output)
+                       (%route-incomplete-utf8-suffix-p output))
+                     (setf quiet-deadline deadline)
+                     (return (values output (%elapsed-seconds session now)))))
+               (let ((wait-until (min deadline quiet-deadline)))
+                 (when (cl-tty-kit:fd-wait
+                        (e2e-session-fd session) :input
+                        (%ticks-to-seconds (- wait-until now)))
+                   (let ((count (cl-tty-kit:fd-read-octets (e2e-session-fd session) buffer)))
+                     (cond
+                       ((zerop count)
+                        (error "PTY closed before the quiet period completed."))
+                       (t
+                        (loop for index below count do
+                          (vector-push-extend (aref buffer index) output))
+                        (%e2e-session-record-output session (subseq buffer 0 count))
+                        (multiple-value-bind (next-index)
+                            (%pty-answer-cursor-query
+                             session output query-scan-index deadline)
+                          (setf query-scan-index next-index
+                                quiet-deadline (+ (%now)
+                                                  (%ticks-to-seconds quiet-seconds)))))))))))))
 (defun %route-close-session-with-evidence (session evidence-prefix)
   (let* ((ansi-path
            (merge-pathnames (format nil "~a.ansi" evidence-prefix)))
@@ -104,7 +101,6 @@
                (write-string timing-text stream))))
       (close-e2e-session session))
     (namestring ansi-path)))
-
 (defun %route-read-initial-and-action (session rows columns rate timeout
                                                action-text context-text evidence-prefix
                                                route subcase arguments)
@@ -272,7 +268,6 @@
                 (%route-write-ansi ansi-path raw)
                 before-action initial-projection before-grid
                 (nreverse action-grids) nil)))))
-
 (defun %route-run-interactive-side (program route subcase evidence-prefix
                                     rows columns rate timeout config-path
                                     evidence-directory)
