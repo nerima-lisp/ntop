@@ -90,8 +90,12 @@
          (char "┌" 0))
         (cl-weave:expect (not (null (search "All" output))) :to-be t)
         (cl-weave:expect (not (null (search "AVG" output))) :to-be t)
-        (cl-weave:expect (not (null (search "N/A" output))) :to-be t)
-        (cl-weave:expect (search "No data" output) :to-equal nil)
+        (cl-weave:expect (not (null (search "No data" output))) :to-be t)
+        (cl-weave:expect
+         (getf (second (ntop.cpu.presentation::%cpu-legend-rows nil config 7))
+               :usage)
+         :to-equal
+         "No data")
         (cl-weave:expect
          (mapcar (function ntop.ui:clickable-area-action) areas)
          :to-equal
@@ -99,4 +103,24 @@
         (cl-weave:expect
          (mapcar (function ntop.ui:clickable-area-value) areas)
          :to-equal
-         (list 0 1))))))
+         (list 0 1)))
+      (let ((sample (ntop.cpu.domain:make-cpu-sample :sampled-at 1d0)))
+        (cl-weave:expect
+         (getf (second (ntop.cpu.presentation::%cpu-legend-rows sample config 7))
+               :usage)
+         :to-equal
+         "N/A")
+        (cl-weave:expect (ntop.cpu.presentation::%cpu-title nil)
+                         :to-equal
+                         " CPU ─ No data ")
+        (cl-weave:expect (ntop.cpu.presentation::%cpu-title sample)
+                         :to-equal
+                         " CPU ─ N/A N/A N/A ")))
+      (let* ((empty-screen (cl-tty-kit:make-screen 16 1))
+             (empty-rectangle
+               (ntop.ui:make-rectangle :x 0 :y 0 :width 16 :height 1)))
+        (ntop.cpu.presentation::%draw-cpu-empty empty-screen empty-rectangle "default")
+        (cl-weave:expect
+         (not (null (search "No data" (cl-tty-kit:screen-to-string empty-screen))))
+         :to-be
+         t))))

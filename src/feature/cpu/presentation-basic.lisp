@@ -36,7 +36,7 @@
                                   (nth (mod index (length colors)) colors))))
 
 (defun %draw-cpu-empty (target rectangle theme)
-  (let* ((label "N/A")
+  (let* ((label "No data")
          (width (ntop.ui:rectangle-width rectangle))
          (height (ntop.ui:rectangle-height rectangle)))
     (when (and (plusp width) (plusp height))

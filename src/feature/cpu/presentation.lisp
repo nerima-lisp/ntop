@@ -105,9 +105,10 @@
             :label
             (%cpu-legend-label (list :kind :average) label-width)
             :usage
-            (%cpu-usage-text
-             (and sample
-                  (ntop.cpu.domain:cpu-sample-average-usage-percent sample)))
+            (if sample
+                (%cpu-usage-text
+                 (ntop.cpu.domain:cpu-sample-average-usage-percent sample))
+                "No data")
             :frequency
             "N/A")))
    (loop for core in (%cpu-cores sample)
@@ -355,18 +356,19 @@
       "N/A"))
 
 (defun %cpu-title (sample)
-  (let ((loads
-         (and sample
-              (list (ntop.cpu.domain:cpu-sample-load-average-1 sample)
-                    (ntop.cpu.domain:cpu-sample-load-average-5 sample)
-                    (ntop.cpu.domain:cpu-sample-load-average-15 sample)))))
-    (if (and loads (every #'realp loads))
-        (apply #'ntop.ui:format-cpu-title loads)
-        (format nil
-                " CPU ─ ~A ~A ~A "
-                (%cpu-load-text (first loads))
-                (%cpu-load-text (second loads))
-                (%cpu-load-text (third loads))))))
+  (if sample
+      (let ((loads
+             (list (ntop.cpu.domain:cpu-sample-load-average-1 sample)
+                   (ntop.cpu.domain:cpu-sample-load-average-5 sample)
+                   (ntop.cpu.domain:cpu-sample-load-average-15 sample))))
+        (if (every (function realp) loads)
+            (apply (function ntop.ui:format-cpu-title) loads)
+            (format nil
+                    " CPU ─ ~A ~A ~A "
+                    (%cpu-load-text (first loads))
+                    (%cpu-load-text (second loads))
+                    (%cpu-load-text (third loads)))))
+      " CPU ─ No data "))
 
 (defun %draw-cpu-title (target rectangle sample theme)
   (let ((width (ntop.ui:rectangle-width rectangle))

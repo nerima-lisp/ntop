@@ -329,16 +329,20 @@
                 "default"))
        :to-equal (list "CPU3")))))
 
-(cl-weave:describe "CPU presentation unavailable data"
-  (cl-weave:it "formats missing sample values and validates widget state"
+(cl-weave:describe "CPU presentation pending and unavailable data"
+  (cl-weave:it "distinguishes pending collection from unavailable values"
     (let* ((config (ntop.shared.application:make-application-config))
            (rows (ntop.cpu.presentation::%cpu-legend-rows nil config 5))
-           (partial (ntop.cpu.domain:make-cpu-sample :sampled-at 1d0 :load-average-1 1.25d0)))
+           (partial
+             (ntop.cpu.domain:make-cpu-sample :sampled-at 1d0 :load-average-1 1.25d0))
+           (partial-rows
+             (ntop.cpu.presentation::%cpu-legend-rows partial config 5)))
       (cl-weave:expect (ntop.cpu.presentation::%cpu-title nil)
-                       :to-equal " CPU ─ N/A N/A N/A ")
+                       :to-equal " CPU ─ No data ")
       (cl-weave:expect (ntop.cpu.presentation::%cpu-title partial)
                        :to-equal " CPU ─ 1.25 N/A N/A ")
-      (cl-weave:expect (getf (second rows) :usage) :to-equal "N/A")
+      (cl-weave:expect (getf (second rows) :usage) :to-equal "No data")
+      (cl-weave:expect (getf (second partial-rows) :usage) :to-equal "N/A")
       (cl-weave:expect (ntop.cpu.presentation::%cpu-usage-text nil)
                        :to-equal "N/A")
       (cl-weave:expect (ntop.cpu.presentation::%cpu-frequency-text -1)
@@ -429,7 +433,7 @@
              (ntop.ui:make-rectangle :x 0 :y 0 :width 12 :height 1)))
       (ntop.ui:draw-widget :cpu empty-screen empty-rectangle nil config nil)
       (cl-weave:expect
-       (not (null (search "N/A" (cl-tty-kit:screen-to-string empty-screen))))
+       (not (null (search "No data" (cl-tty-kit:screen-to-string empty-screen))))
        :to-be t))
     (let* ((sample (ntop.cpu.domain:make-cpu-sample :sampled-at 1d0 :average-usage-percent 25d0))
            (screen (cl-tty-kit:make-screen 24 2))
