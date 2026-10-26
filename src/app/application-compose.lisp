@@ -202,7 +202,8 @@
         (setf help-state
               (ntop.app.presentation:make-help-state
                :selected-widget
-               (ntop.app.domain:app-state-selected-widget state))))
+               (ntop.app.domain:app-state-selected-widget state)
+               :sectioned-p t)))
       (when
           (and help-state
                (or (and (eq kind :dialog)
@@ -250,7 +251,8 @@
                (or (gethash :help states)
                    (ntop.app.presentation:make-help-state
                     :selected-widget
-                    (ntop.app.domain:app-state-selected-widget state))))
+                    (ntop.app.domain:app-state-selected-widget state)
+                    :sectioned-p t)))
              (rectangle (%help-dialog-rectangle columns rows))
              (search-row-p
                (ntop.app.presentation:help-state-search-active-p help-state))
@@ -270,7 +272,9 @@
                     :query (ntop.app.presentation:help-state-query help-state)
                     :search-active-p nil
                     :scroll-offset
-                    (ntop.app.presentation:help-state-scroll-offset help-state))
+                    (ntop.app.presentation:help-state-scroll-offset help-state)
+                    :sectioned-p
+                    (ntop.app.presentation:help-state-sectioned-p help-state))
                    help-state))
              (theme (ntop.shared.application:application-config-theme config))
              (x (ntop.ui:rectangle-x rectangle))
@@ -470,28 +474,17 @@
             (function eq)))
 
 (defun %help-action-p (action)
-    (let ((kind (ntop.app.domain:app-action-kind action))
-          (value (ntop.app.domain:app-action-value action)))
-      (case kind
-        (:search
-         (or (stringp value)
-             (member value
-                     '(:help :submit :clear :delete-backward :delete-word-backward)
-                     :test
-                     (function eq))))
-        (:navigation
-         (member value
-                 '(:first-row :last-row
-                              :previous-row
-                              :next-row
-                              :page-up
-                              :page-down
-                              :half-page-up
-                              :half-page-down
-                              :scroll-up
-                              :scroll-down
-                              :up
-                              :down)
-                 :test
-                 (function eq)))
-        (:select (symbolp value)))))
+  (let ((kind (ntop.app.domain:app-action-kind action))
+        (value (ntop.app.domain:app-action-value action)))
+    (case kind
+      (:search
+       (or (stringp value)
+           (member value '(:help :submit :clear :delete-backward :delete-word-backward)
+                   :test #'eq)))
+      (:navigation
+       (or (help-section-value-p value)
+           (member value '(:first-row :last-row :previous-row :next-row
+                           :page-up :page-down :half-page-up :half-page-down
+                           :scroll-up :scroll-down :up :down)
+                   :test #'eq)))
+      (:select (symbolp value)))))

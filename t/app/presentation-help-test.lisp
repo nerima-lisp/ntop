@@ -231,7 +231,7 @@
                        (search "Cycle selected widget view"
                                (cl-tty-kit:screen-row-string screen 1))
                        :to-be
-                       4)
+                       5)
                       (cl-weave:expect
                        (search "Search: GPU|"
                                (cl-tty-kit:screen-row-string screen 6))

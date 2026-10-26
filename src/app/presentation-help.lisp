@@ -6,11 +6,13 @@
                    (&key (selected-widget :process)
                          (query "")
                          (search-active-p nil)
-                         (scroll-offset 0))))
+                         (scroll-offset 0)
+                         (sectioned-p nil))))
   selected-widget
   query
   search-active-p
-  scroll-offset)
+  scroll-offset
+  sectioned-p)
 
 (defun %help-entry-fields (entry)
   (case (ntop.app.domain:parity-entry-kind entry)
@@ -23,7 +25,12 @@
      (values (list (ntop.app.domain:parity-extension-key entry))
              (ntop.app.domain:parity-extension-action entry)
              (ntop.app.domain:parity-extension-contexts entry)
-             (ntop.app.domain:parity-extension-behavior entry)))))
+             (ntop.app.domain:parity-extension-behavior entry)))
+    (:mouse
+     (values (list (ntop.app.domain:parity-mouse-gesture entry))
+             (ntop.app.domain:parity-mouse-action entry)
+             (ntop.app.domain:parity-mouse-contexts entry)
+             (ntop.app.domain:parity-mouse-behavior entry)))))
 
 (defun %help-entry-matches-query-p (entry query)
   (multiple-value-bind (keys action contexts behavior)
@@ -103,23 +110,29 @@
     (t query)))
 
 (defun %help-scroll-offset-after-action (state offset value page-size)
-  (let* ((last-offset
-          (max 0 (- (length (%help-visible-lines state)) page-size)))
-         (offset
-          (if (eq offset :end)
-              last-offset
-              (max 0 offset)))
+  (let* ((section-number (%help-action-section-number value))
+         (lines
+           (%help-visible-lines
+            state (or section-number (help-state-sectioned-p state))))
+         (last-offset (max 0 (- (length lines) page-size)))
+         (offset (if (eq offset :end) last-offset (max 0 offset)))
          (half-page (max 1 (floor page-size 2))))
-    (case value
-      (:first-row 0)
-      (:last-row :end)
-      ((:up :scroll-up :previous-row) (max 0 (1- offset)))
-      ((:down :scroll-down :next-row) (min last-offset (1+ offset)))
-      (:page-up (max 0 (- offset page-size)))
-      (:page-down (min last-offset (+ offset page-size)))
-      (:half-page-up (max 0 (- offset half-page)))
-      (:half-page-down (min last-offset (+ offset half-page)))
-      (otherwise offset))))
+    (if section-number
+        (or (let ((position
+                    (position (%help-section-header section-number)
+                              lines :test #'string=)))
+              (when position (min last-offset position)))
+            offset)
+        (case value
+          (:first-row 0)
+          (:last-row :end)
+          ((:up :scroll-up :previous-row) (max 0 (1- offset)))
+          ((:down :scroll-down :next-row) (min last-offset (1+ offset)))
+          (:page-up (max 0 (- offset page-size)))
+          (:page-down (min last-offset (+ offset page-size)))
+          (:half-page-up (max 0 (- offset half-page)))
+          (:half-page-down (min last-offset (+ offset half-page)))
+          (otherwise offset)))))
 
 (defun help-state-transition (state action &key (page-size 10))
   (check-type state help-state)
@@ -130,7 +143,8 @@
          (query (help-state-query state))
          (search-active-p (help-state-search-active-p state))
          (scroll-offset (help-state-scroll-offset state))
-         (selected-widget (help-state-selected-widget state)))
+         (selected-widget (help-state-selected-widget state))
+         (sectioned-p (help-state-sectioned-p state)))
     (cond
       ((eq kind :search)
        (cond
@@ -145,18 +159,15 @@
               (setf scroll-offset 0))
             (setf query next-query)))))
       ((eq kind :navigation)
-       (setf scroll-offset (%help-scroll-offset-after-action state
-                                                             scroll-offset
-                                                             value
-                                                             page-size))))
-    (make-help-state :selected-widget
-                     selected-widget
-                     :query
-                     query
-                     :search-active-p
-                     search-active-p
-                     :scroll-offset
-                     scroll-offset)))
+       (when (%help-action-section-number value)
+         (setf sectioned-p t))
+       (setf scroll-offset
+             (%help-scroll-offset-after-action state scroll-offset value page-size))))
+    (make-help-state :selected-widget selected-widget
+                     :query query
+                     :search-active-p search-active-p
+                     :scroll-offset scroll-offset
+                     :sectioned-p sectioned-p)))
 
 (defun %help-widget-label (widget)
   (string-capitalize
@@ -166,16 +177,74 @@
   (multiple-value-bind (keys action contexts behavior)
       (%help-entry-fields entry)
     (declare (ignore contexts))
-    (format nil "~{~A~^, ~}  ~A: ~A" keys action behavior)))
+    (format nil "~{~A~^, ~} - ~A: ~A" keys action behavior)))
 
-(defun %help-visible-lines (state)
-  (let ((entries (help-state-visible-entries state)))
-    (if entries
-        (mapcar #'%help-entry-line entries)
-        (list
-         (if (plusp (length (help-state-query state)))
-             "No matching key bindings."
-             "No key bindings for this widget.")))))
+(progn
+  (defparameter *help-sections*
+    '((1 "General" ("all" "all widgets" "normal" "help") nil)
+      (2 "CPU widget" ("graphs" "CPU legend") nil)
+      (3 "Process widget" ("process table" "normal process table" "process tree") nil)
+      (4 "Process search widget" ("process search" "help search") nil)
+      (5 "Process sort widget" ("process sort") nil)
+      (6 "Temperature widget" ("temperature table" "Temperatures") nil)
+      (7 "Disk widget" ("disk table" "Disks") nil)
+      (8 "Battery widget" ("battery tabs" "battery widget") nil)
+      (9 "Basic memory widget" nil ("Toggle memory values"))))
+  (defun %help-section-header (number)
+    (let ((section (assoc number *help-sections*)))
+      (when section
+        (format nil "~D - ~A" (first section) (second section)))))
+  (defun %help-action-section-number (value)
+    (when (and (consp value)
+               (eq (first value) :help-section)
+               (null (cddr value))
+               (stringp (second value))
+               (= (length (second value)) 1))
+      (let ((character (char (second value) 0)))
+        (when (char<= #\1 character #\9)
+          (- (char-code character) (char-code #\0))))))
+  (defun %help-entry-in-section-p (entry section)
+    (when (member (ntop.app.domain:parity-entry-kind entry)
+                  '(:key :extension :mouse)
+                  :test #'eq)
+      (multiple-value-bind (keys action contexts behavior)
+          (%help-entry-fields entry)
+        (declare (ignore keys behavior))
+        (or (some (lambda (context)
+                    (member context (third section) :test #'string-equal))
+                  contexts)
+            (and (stringp action)
+                 (member action (fourth section) :test #'string=))))))
+  (defun %help-section-visible-lines (state)
+    (let* ((query (help-state-query state))
+           (catalog (ntop.app.domain:btm-parity-catalog))
+           (lines
+             (loop for section in *help-sections*
+                   for entries = (%help-filter-entries
+                                  (remove-if-not
+                                   (lambda (entry)
+                                     (%help-entry-in-section-p entry section))
+                                   catalog)
+                                  query)
+                   append (if entries
+                              (cons (%help-section-header (first section))
+                                    (mapcar #'%help-entry-line entries))
+                              nil))))
+      (if lines
+          lines
+          (list (if (plusp (length query))
+                    "No matching key bindings."
+                    "No key bindings for this widget.")))))
+  (defun %help-visible-lines
+      (state &optional (sectioned-p (help-state-sectioned-p state)))
+    (if sectioned-p
+        (%help-section-visible-lines state)
+        (let ((entries (help-state-visible-entries state)))
+          (if entries
+              (mapcar #'%help-entry-line entries)
+              (list (if (plusp (length (help-state-query state)))
+                        "No matching key bindings."
+                        "No key bindings for this widget.")))))))
 
 (defun %help-write (target x y text style)
   (when (plusp (length text))

@@ -33,6 +33,28 @@
          (progn
            (cl-weave:expect draw-count :to-be 1)
            (cl-weave:expect
+            (ntop.app.presentation:help-state-sectioned-p
+             (gethash :help (ntop.app.domain:app-state-widget-v-states state)))
+            :to-be t)
+           (let* ((general-row
+                    (loop for row from 11 below 36
+                          when
+                          (search "1 - General"
+                                  (cl-tty-kit:screen-row-string screen row))
+                            return row))
+                  (general-entry
+                    (and general-row
+                         (cl-tty-kit:screen-row-string screen
+                                                       (1+ general-row)))))
+             (cl-weave:expect (not (null general-row)) :to-be t)
+             (cl-weave:expect
+              (not
+               (null
+                (and general-entry
+                     (search " - " general-entry)
+                     (search ": " general-entry))))
+              :to-be t))
+           (cl-weave:expect
             (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 32 10))
             :to-equal
             (ntop.app.presentation::%screen-style :default :border))
@@ -53,11 +75,33 @@
          (cl-weave:expect (search "Help: Process" top-row) :to-be nil)
          (cl-weave:expect (char bottom-row 32) :to-equal #\└)
          (cl-weave:expect (char bottom-row 127) :to-equal #\┘))
-       (setf
-        (ntop.app.domain:app-state-active-dialog state) :help-search
-        (gethash :help (ntop.app.domain:app-state-widget-v-states state))
-        (ntop.app.presentation:make-help-state
-         :selected-widget :process :query "" :search-active-p t))
+       (progn
+        (remhash :help (ntop.app.domain:app-state-widget-v-states state))
+        (funcall
+         (ntop.app.application:application-composition-on-action composition)
+         state
+         (ntop.app.domain:make-app-action :kind :help))
+        (render-current)
+        (cl-weave:expect
+          (ntop.app.presentation:help-state-sectioned-p
+           (gethash :help (ntop.app.domain:app-state-widget-v-states state)))
+          :to-be t)
+         (cl-weave:expect
+          (not
+           (null
+            (loop for row from 11 below 36
+                  thereis
+                  (search "1 - General"
+                          (cl-tty-kit:screen-row-string
+                           (ntop.app.application::application-composition-screen
+                            composition)
+                           row)))))
+          :to-be t)
+        (setf
+         (ntop.app.domain:app-state-active-dialog state) :help-search
+         (gethash :help (ntop.app.domain:app-state-widget-v-states state))
+         (ntop.app.presentation:make-help-state
+          :selected-widget :process :query "" :search-active-p t)))
        (render-current)
        (let* ((screen
                 (ntop.app.application::application-composition-screen composition))
@@ -71,3 +115,56 @@
          (cl-weave:expect (char search-row 32) :to-equal #\Space)
          (cl-weave:expect (char search-row 127) :to-equal #\Space)
          (cl-weave:expect (search "Search:" search-row) :to-be 33))))))
+(cl-weave:describe "help search overlay retains numbered sections"
+  (cl-weave:it
+   "renders a matching section after search opens from a numbered jump"
+   (let* ((config (ntop.shared.application:make-application-config))
+          (composition
+            (ntop.app.application:make-application-composition config))
+          (render
+            (ntop.app.application:application-composition-render composition))
+          (state (ntop.app.domain:make-app-state :selected-widget :process))
+          (section-state
+            (ntop.app.presentation:help-state-transition
+             (ntop.app.presentation:make-help-state :selected-widget :process)
+             (ntop.app.domain:make-app-action
+              :kind :navigation :value '(:help-section "1"))
+             :page-size 25))
+          (search-open-state
+            (ntop.app.presentation:help-state-transition
+             section-state
+             (ntop.app.domain:make-app-action :kind :search :value :help)
+             :page-size 25))
+          (search-state
+            (ntop.app.presentation:help-state-transition
+             search-open-state
+             (ntop.app.domain:make-app-action :kind :search :value "CPU")
+             :page-size 25)))
+     (setf (ntop.app.domain:app-state-active-dialog state) :help-search
+           (gethash :help (ntop.app.domain:app-state-widget-v-states state))
+           search-state)
+     (with-output-to-string (stream)
+       (let ((*standard-output* stream))
+         (funcall render state config nil 160 48 nil)))
+     (let ((screen
+             (ntop.app.application::application-composition-screen composition)))
+       (cl-weave:expect
+        (ntop.app.presentation:help-state-sectioned-p search-state) :to-be t)
+       (cl-weave:expect
+         (ntop.app.presentation:help-state-query search-state) :to-equal "CPU")
+        (let ((matching-entry
+                (loop for row from 10 below 36
+                      for line = (cl-tty-kit:screen-row-string screen row)
+                      when (and (search "CPU" line)
+                                (search " - " line)
+                                (search ": " line))
+                        return line)))
+          (cl-weave:expect (not (null matching-entry)) :to-be t))
+       (cl-weave:expect
+        (not
+         (null
+          (loop for row from 10 below 36
+                thereis
+                (search "2 - CPU widget"
+                        (cl-tty-kit:screen-row-string screen row)))))
+        :to-be t)))))

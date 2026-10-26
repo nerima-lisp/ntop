@@ -69,9 +69,10 @@
    ))
 
 (define-ntop-package #:ntop.app.presentation (:documentation "Screen layout and widgets.")
-  (:export
-   ;; WP12b: whole-screen presentation.
-   #:make-help-state #:help-state-p #:help-state-selected-widget
-   #:help-state-query #:help-state-search-active-p #:help-state-scroll-offset
-   #:help-state-transition #:help-state-visible-entries
-   #:draw-application-screen))
+                     (:export
+                      ;; WP12b: whole-screen presentation.
+                      #:make-help-state #:help-state-p #:help-state-selected-widget
+                      #:help-state-query #:help-state-search-active-p
+                      #:help-state-sectioned-p #:help-state-scroll-offset
+                      #:help-state-transition #:help-state-visible-entries
+                      #:draw-application-screen))
