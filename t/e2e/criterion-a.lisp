@@ -77,83 +77,84 @@
         "none"))
     )
   (progn
-  (defun %condition-a-complete-utf8-prefix-length (octets)
-    (let ((octet-count (length octets)))
-      (when (zerop octet-count)
-        (return-from %condition-a-complete-utf8-prefix-length 0))
-      (let ((sequence-start
-              (loop for position downfrom (1- octet-count)
-                    above (max -1 (- octet-count 4))
-                    unless (<= #x80 (aref octets position) #xbf)
-                      return position)))
-        (unless sequence-start
-          (return-from %condition-a-complete-utf8-prefix-length octet-count))
-        (let* ((lead (aref octets sequence-start))
-               (continuation-count (- octet-count sequence-start 1))
-               (expected-continuations
-                 (cond
+    (defun %condition-a-complete-utf8-prefix-length (octets)
+      (let ((octet-count (length octets)))
+        (when (zerop octet-count)
+          (return-from %condition-a-complete-utf8-prefix-length 0))
+        (let ((sequence-start
+               (loop for position downfrom (1- octet-count)
+                     above (max -1 (- octet-count 4))
+                     unless (<= #x80 (aref octets position) #xbf)
+                     return position)))
+          (unless sequence-start
+            (return-from %condition-a-complete-utf8-prefix-length octet-count))
+          (let* ((lead (aref octets sequence-start))
+                 (continuation-count (- octet-count sequence-start 1))
+                 (expected-continuations
+                  (cond
                    ((<= #xc2 lead #xdf) 1)
                    ((<= #xe0 lead #xef) 2)
                    ((<= #xf0 lead #xf4) 3)
                    (t 0))))
-          (if (< continuation-count expected-continuations)
-              sequence-start
+            (if (< continuation-count expected-continuations)
+                sequence-start
               octet-count)))))
-  (defun %condition-a-live-grid (octets rows columns)
-    (%route-grid
-     (subseq octets 0 (%condition-a-complete-utf8-prefix-length octets))
-     rows columns))
-  (defun %condition-a-capture
-      (program arguments rows columns rate timeout-seconds environment raw-path)
-    (let* ((session (launch-e2e-process program arguments rows columns
-                                        :environment environment
-                                        :timeout-seconds timeout-seconds))
-           (process (e2e-session-process session))
-           (raw (make-array 0 :element-type '(unsigned-byte 8)
-                            :adjustable t :fill-pointer 0))
-           (first-frame-seconds
-            (* *condition-a-first-frame-factor* (/ rate 1000d0)))
-           (previous-projection nil)
-           (stable-samples 0))
-      (unwind-protect
-          (loop
-            (%route-read-interval session raw *condition-a-observation-seconds*)
-            (let* ((grid (%condition-a-live-grid raw rows columns))
-                   (projection (project-criterion-grid grid))
-                   (process-frame
+    (defun %condition-a-live-grid (octets rows columns)
+      (%route-grid
+       (subseq octets 0 (%condition-a-complete-utf8-prefix-length octets))
+       rows columns))
+    (defun %condition-a-capture
+        (program arguments rows columns rate timeout-seconds environment raw-path)
+      (let* ((session (launch-e2e-process program arguments rows columns
+                                          :environment environment
+                                          :timeout-seconds timeout-seconds))
+             (process (e2e-session-process session))
+             (raw (make-array 0 :element-type '(unsigned-byte 8)
+                              :adjustable t :fill-pointer 0))
+             (first-frame-seconds
+              (* *condition-a-first-frame-factor* (/ rate 1000d0)))
+             (previous-projection nil)
+             (stable-samples 0))
+        (unwind-protect
+            (loop
+             (%route-read-interval session raw *condition-a-observation-seconds*)
+             (let* ((grid (%condition-a-live-grid raw rows columns))
+                    (projection (project-criterion-grid grid))
+                    (process-frame
                      (find-if
                       (lambda (frame)
                         (search "Processes"
                                 (criterion-row-text grid (first frame))
                                 :test #'char-equal))
                       (criterion-projection-frames grid)))
-                   (process-header-ready-p
+                    (process-header-ready-p
                      (and process-frame
-                          (or (<= (- (second process-frame)
-                                     (first process-frame))
-                                  2)
+                          (or (<= (- (second process-frame) (first process-frame)) 2)
                               (plusp
                                (length
-                                (%condition-a-category-entries
-                                 projection "process-header")))))))
-              (when (and process-header-ready-p
-                         (%pty-visible-screen-output-p raw)
-                         (plusp (length (criterion-projection-frames grid))))
-                (if (equalp previous-projection projection)
-                    (incf stable-samples)
-                    (setf stable-samples 0))
-                (setf previous-projection projection)
-                (when (and (>= (%elapsed-seconds session (%now))
-                               first-frame-seconds)
-                           (>= stable-samples 2))
-                  (unless (sb-ext:process-alive-p process)
-                    (error "~a exited before its terminal frame stabilized."
-                           program))
-                  (return grid))))
-        (unwind-protect
-            (when (plusp (length raw))
-              (%write-octets raw-path raw))
-          (close-e2e-session session)))))))
+                                (%condition-a-category-entries projection "process-header")))
+                              (loop for row from (first process-frame) to (second process-frame)
+                                    thereis (search "No data"
+                                                    (criterion-row-text grid row)
+                                                    :test #'char-equal))))))
+               (when (and process-header-ready-p
+                          (%pty-visible-screen-output-p raw)
+                          (plusp (length (criterion-projection-frames grid))))
+                 (if (equalp previous-projection projection)
+                     (incf stable-samples)
+                   (setf stable-samples 0))
+                 (setf previous-projection projection)
+                 (when (and (>= (%elapsed-seconds session (%now))
+                                first-frame-seconds)
+                            (>= stable-samples 2))
+                   (unless (sb-ext:process-alive-p process)
+                     (error "~a exited before its terminal frame stabilized."
+                            program))
+                   (return grid)))))
+          (unwind-protect
+              (when (plusp (length raw))
+                (%write-octets raw-path raw))
+            (close-e2e-session session))))))
 
 
 

@@ -228,4 +228,114 @@
      :to-equal #\A)
     (cl-weave:expect
      (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 1))
-     :to-equal #\Space))))
+     :to-equal #\Space)))
+ (cl-weave:it
+  "keeps the capture session open across samples and closes it on errors"
+  (let* ((original-launch
+          (symbol-function 'ntop.e2e::launch-e2e-process))
+         (original-close
+          (symbol-function 'ntop.e2e::close-e2e-session))
+         (original-functions
+          (list (cons 'ntop.e2e::launch-e2e-process original-launch)
+                (cons 'ntop.e2e::%route-read-interval
+                      (symbol-function 'ntop.e2e::%route-read-interval))
+                (cons 'ntop.e2e::%condition-a-live-grid
+                      (symbol-function 'ntop.e2e::%condition-a-live-grid))
+                (cons 'ntop.e2e::%pty-visible-screen-output-p
+                      (symbol-function 'ntop.e2e::%pty-visible-screen-output-p))
+                (cons 'ntop.e2e::%elapsed-seconds
+                      (symbol-function 'ntop.e2e::%elapsed-seconds))
+                (cons 'ntop.e2e::close-e2e-session original-close)))
+         (active-session nil)
+         (grid (let ((grid (ntop.e2e:make-terminal-grid :rows 12 :cols 40)))
+                 (criterion-test-write
+                  grid 2 0 "38;5;7;49"
+                  (concatenate 'string "┌─ Processes ─"
+                               (make-string 25 :initial-element #\─)
+                               "┐"))
+                 (loop for row from 3 below 10
+                       do (criterion-test-write grid row 0 "38;5;7;49" "│")
+                       (criterion-test-write grid row 39 "38;5;7;49" "│"))
+                 (criterion-test-write grid 4 2 "38;5;8;49" "No data")
+                 (criterion-test-write
+                  grid 10 0 "38;5;7;49"
+                  (concatenate 'string "└"
+                               (make-string 38 :initial-element #\─)
+                               "┘"))
+                 grid))
+         (sample-count 0)
+         (close-count 0)
+         (fail-on-sample nil))
+    (setf active-session
+          (funcall original-launch "sleep" (list "30") 12 40
+                   :timeout-seconds 5d0))
+    (unwind-protect
+        (progn
+          (setf (symbol-function 'ntop.e2e::launch-e2e-process)
+                (lambda (&rest arguments)
+                  (declare (ignore arguments))
+                  active-session)
+                (symbol-function 'ntop.e2e::%route-read-interval)
+                (lambda (session raw seconds)
+                  (declare (ignore raw seconds))
+                  (cl-weave:expect (eq session active-session) :to-be t)
+                  (cl-weave:expect
+                   (ntop.e2e::e2e-session-closed-p session)
+                   :to-be nil)
+                  (incf sample-count)
+                  (when (eql sample-count fail-on-sample)
+                    (error "sample failure")))
+                (symbol-function 'ntop.e2e::%condition-a-live-grid)
+                (lambda (octets rows columns)
+                  (declare (ignore octets rows columns))
+                  grid)
+                (symbol-function 'ntop.e2e::%pty-visible-screen-output-p)
+                (lambda (octets)
+                  (declare (ignore octets))
+                  t)
+                (symbol-function 'ntop.e2e::%elapsed-seconds)
+                (lambda (session now)
+                  (declare (ignore session now))
+                  10d0)
+                (symbol-function 'ntop.e2e::close-e2e-session)
+                (lambda (session)
+                  (incf close-count)
+                  (funcall original-close session)))
+          (cl-weave:expect
+           (eq (ntop.e2e::%condition-a-capture
+                "ntop" nil 12 40 700 5d0 nil nil)
+               grid)
+           :to-be
+           t)
+          (cl-weave:expect sample-count :to-equal 3)
+          (cl-weave:expect close-count :to-equal 1)
+          (cl-weave:expect
+           (ntop.e2e::e2e-session-closed-p active-session)
+           :to-be
+           t)
+          (setf active-session
+                (funcall original-launch "sleep" (list "30") 12 40
+                         :timeout-seconds 5d0)
+                sample-count 0
+                close-count 0
+                fail-on-sample 2)
+          (let ((condition
+                 (handler-case
+                     (progn
+                       (ntop.e2e::%condition-a-capture
+                        "ntop" nil 12 40 700 5d0 nil nil)
+                       nil)
+                   (error (condition) condition))))
+            (cl-weave:expect (typep condition 'simple-error) :to-be t))
+          (cl-weave:expect sample-count :to-equal 2)
+          (cl-weave:expect close-count :to-equal 1)
+          (cl-weave:expect
+           (ntop.e2e::e2e-session-closed-p active-session)
+           :to-be
+           t))
+      (dolist (entry original-functions)
+        (setf (symbol-function (car entry)) (cdr entry)))
+      (when (and active-session
+                 (not (ntop.e2e::e2e-session-closed-p active-session)))
+        (funcall original-close active-session)))))
+)
