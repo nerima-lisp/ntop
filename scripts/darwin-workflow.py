@@ -39,7 +39,7 @@ def _archive_paths() -> set[str]:
         "--no-update-lock-file",
         "--no-write-lock-file",
     ]
-    command.append(".")
+    command.append("path:.")
     result = run_bounded(
         command,
         timeout_seconds=WORKFLOW_TIMEOUT_SECONDS,
