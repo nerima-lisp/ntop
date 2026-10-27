@@ -393,3 +393,81 @@
                                          (t t))))))
             do (return t)
           finally (return nil))))
+
+(defun %route-read-through-quiet-period
+    (session quiet-seconds timeout-seconds
+             &optional (initial-quiet-seconds quiet-seconds) completion-predicate
+             &key (completion-samples-required 2))
+  (%validate-seconds quiet-seconds "QUIET-SECONDS")
+  (%validate-seconds initial-quiet-seconds "INITIAL-QUIET-SECONDS")
+  (multiple-value-bind (deadline deadline-seconds)
+      (%deadline-for-call session "read" timeout-seconds)
+    (let ((quiet-deadline (+ (%now) (%seconds-to-ticks initial-quiet-seconds)))
+          (buffer (make-array 4096 :element-type (quote (unsigned-byte 8))))
+          (output (make-array 0 :element-type (quote (unsigned-byte 8))
+                              :adjustable t :fill-pointer 0))
+          (query-scan-index 0)
+          (completion-samples 0))
+      (loop for now = (%now)
+            do (when (>= now deadline)
+                 (%signal-timeout "read" deadline-seconds))
+               (when (>= now quiet-deadline)
+                 (if (or (%route-incomplete-escape-suffix-p output)
+                         (%route-incomplete-utf8-suffix-p output)
+                         (and completion-predicate
+                              (not (funcall completion-predicate output))))
+                     (setf quiet-deadline deadline)
+                     (return (values output (%elapsed-seconds session now)))))
+               (let ((wait-until (min deadline quiet-deadline)))
+                 (when (cl-tty-kit:fd-wait
+                        (e2e-session-fd session) :input
+                        (%ticks-to-seconds (- wait-until now)))
+                   (let ((count
+                           (cl-tty-kit:fd-read-octets
+                            (e2e-session-fd session) buffer)))
+                     (cond
+                       ((zerop count)
+                        (error "PTY closed before the quiet period completed."))
+                       (t
+                        (loop for index below count
+                              do (vector-push-extend (aref buffer index) output))
+                        (%e2e-session-record-output session (subseq buffer 0 count))
+                        (multiple-value-bind (next-index)
+                            (%pty-answer-cursor-query
+                             session output query-scan-index deadline)
+                          (setf query-scan-index next-index
+                                quiet-deadline
+                                (+ (%now) (%ticks-to-seconds quiet-seconds))))
+                        (if (and completion-predicate
+                                 (not (%route-incomplete-escape-suffix-p output))
+                                 (not (%route-incomplete-utf8-suffix-p output))
+                                 (funcall completion-predicate output))
+                            (when (= completion-samples-required
+                                     (incf completion-samples))
+                              (return
+                                (values output
+                                        (%elapsed-seconds session (%now)))))
+                            (setf completion-samples 0)))))))))))
+
+(defun %route-incomplete-escape-suffix-p (octets)
+  (let* ((end (length octets))
+         (escape-position (position #x1b octets :from-end t))
+         (csi-position (position #x9b octets :from-end t)))
+    (labels ((csi-state (start)
+               (loop for index from start below end
+                     for byte = (aref octets index)
+                     do (cond
+                          ((<= #x40 byte #x7e) (return :complete))
+                          ((<= #x20 byte #x3f))
+                          (t (return :invalid)))
+                     finally (return :incomplete))))
+      (or (and escape-position (= (1+ escape-position) end))
+          (and escape-position
+               (< (1+ escape-position) end)
+               (= (aref octets (1+ escape-position)) #x5b)
+               (eq (csi-state (+ escape-position 2)) :incomplete))
+          (and csi-position
+               (not (%route-utf8-continuation-byte-p octets csi-position))
+               (or (null escape-position)
+                   (> csi-position escape-position))
+               (eq (csi-state (1+ csi-position)) :incomplete))))))

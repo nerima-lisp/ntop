@@ -243,3 +243,55 @@
      (ntop.e2e::%route-modal-action-state-p
       route subcase candidate-search closed)
      :to-be t))))
+(cl-weave:describe
+ "route read completion predicates"
+ (cl-weave:it
+  "returns after one complete state while output continues"
+  (let* ((script
+           (concatenate (quote string)
+             "import os,time;os.write(1,bytes([82,69,65,68,89,27,91]));"
+             "time.sleep(0.15);os.write(1,bytes([51,49,109]));"
+             "time.sleep(0.25);os.write(1,bytes([68,79,78,69]));"
+             "[time.sleep(0.05) or os.write(1,bytes([46])) for _ in range(50)]"))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 24 80 :timeout-seconds 4d0))
+         (started (ntop.e2e::%now))
+         (output nil))
+    (unwind-protect
+         (progn
+           (cl-weave:expect
+            (cl-tty-kit:fd-wait
+             (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be t)
+           (setf output
+                 (ntop.e2e::%route-read-through-quiet-period
+                  session 1d0 2d0 0.1d0
+                  (lambda (octets)
+                    (let ((text (ntop.e2e::%octets-to-text octets)))
+                      (and (search "READY" text)
+                           (not (search "DONE" text)))))
+                  :completion-samples-required 1))
+           (cl-weave:expect
+            (search "READY" (ntop.e2e::%octets-to-text output))
+            :to-satisfy (function identity))
+           (cl-weave:expect
+            (ntop.e2e::%route-incomplete-escape-suffix-p output)
+            :to-be nil)
+           (cl-weave:expect
+            (search "DONE" (ntop.e2e::%octets-to-text output))
+            :to-be nil)
+           (cl-weave:expect
+            (< (ntop.e2e::%ticks-to-seconds
+                (- (ntop.e2e::%now) started))
+               0.8d0)
+            :to-be t)
+           (cl-weave:expect
+            (sb-ext:process-alive-p (ntop.e2e::e2e-session-process session))
+            :to-be t))
+      (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
+  "loads the widget state reader used by route actions"
+  (cl-weave:expect
+   (fboundp (quote ntop.e2e::%route-read-widget-state))
+   :to-be-truthy)))
