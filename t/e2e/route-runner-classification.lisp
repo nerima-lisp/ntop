@@ -11,7 +11,9 @@
                        (route-side-capture-error-cause condition)))))
   (defun %route-capture-side (side function &rest arguments)
     (handler-case
-        (let* ((result (apply function arguments))
+        (let* ((result
+                 (let ((*route-frame-capture-side* side))
+                   (apply function arguments)))
                (cause (getf result :capture-error))
                (readiness-failure-p
                  (or (eq :manual (getf result :readiness-status))

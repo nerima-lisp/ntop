@@ -38,12 +38,11 @@
         (progn
           (handler-case
               (progn
-                (multiple-value-bind (initial)
-                    (pty-read-until-idle
-                     session :quiet-seconds *route-frame-quiet-seconds*
-                     :first-frame-not-before 0.75d0
-                     :timeout-seconds timeout)
-                  (%append-octets ansi initial))
+                (multiple-value-setq (ansi)
+                  (%route-capture-frame
+                   session ansi rows columns
+                   :side (or *route-frame-capture-side* :interactive)
+                   :stage :terminal-initial))
                 (setf during (%route-terminal-signature
                               (e2e-session-fd session)))
                 (unless (and (sb-ext:process-alive-p process)
