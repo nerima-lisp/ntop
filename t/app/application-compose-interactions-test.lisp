@@ -413,7 +413,7 @@
              (gethash :help (ntop.app.domain:app-state-widget-v-states state)))
            (visible-lines
              (ntop.app.presentation::%help-visible-lines help-state :width 77))
-           (expected-offset (max 0 (- (length visible-lines) 9))))
+           (expected-offset (max 0 (- (length visible-lines) 10))))
       (cl-weave:expect
        (ntop.app.presentation:help-state-search-active-p help-state)
        :to-be t)

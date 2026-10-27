@@ -74,5 +74,5 @@
                       #:make-help-state #:help-state-p #:help-state-selected-widget
                       #:help-state-query #:help-state-search-active-p
                       #:help-state-sectioned-p #:help-state-scroll-offset
-                      #:help-state-transition
+                      #:help-state-transition #:help-dialog-width
                       #:draw-application-screen))

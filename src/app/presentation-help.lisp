@@ -36,7 +36,9 @@
     (state offset value page-size line-width)
   (let* ((section-number (%help-action-section-number value))
          (lines (%help-visible-lines state :width line-width))
-         (last-offset (max 0 (- (length lines) page-size)))
+         (last-offset (max 0
+              (- (length lines) page-size
+                 (if (help-state-search-active-p state) 1 0))))
          (offset (if (eq offset :end) last-offset (max 0 offset)))
          (half-page (max 1 (floor page-size 2))))
     (if section-number
@@ -189,6 +191,15 @@
 
   (defun %help-visible-lines (state &key width)
     (mapcar #'first (%help-styled-lines state width)))
+  (defun help-dialog-width (columns)
+    (check-type columns (integer 0 *))
+    (let ((max-text-width
+            (loop for line in (%help-visible-lines (make-help-state))
+                  maximize (ntop.ui:measure-table-text line))))
+      (if (<= columns max-text-width)
+          columns
+        ;; Keep both side margins even, as BTM does for its centered help dialog.
+        (+ max-text-width (mod (- columns max-text-width) 2)))))
 
 
 (defun %help-write (target x y text style)
@@ -301,7 +312,7 @@
                                (max 0 (- height 2 (if search-active-p 1 0))))
                               (lines (%help-styled-lines state content-width))
                               (max-scroll-index
-                               (max 0 (- (length lines) content-height)))
+                               (max 0 (- (length lines) (max 0 (- height 2)))))
                               (offset
                                (if (eq (help-state-scroll-offset state) :end)
                                    max-scroll-index
@@ -319,7 +330,7 @@
                                x
                                y
                                width
-                               height
+                               (max 0 (- height (if search-active-p 1 0)))
                                :border :single
                                :style border-style)
                            (%help-write target
@@ -354,9 +365,9 @@
                            (when (and search-active-p (> height 2))
                              (%help-draw-search-line
                               target
-                              (1+ x)
-                              (+ y height -2)
-                              content-width
+                              x
+                              (+ y height -1)
+                              width
                               state
                               title-style
                               text-style

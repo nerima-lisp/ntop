@@ -145,9 +145,10 @@
       (cl-weave:expect (search "C                       Sort by GPU usage"
                                (cl-tty-kit:screen-row-string screen 2))
                        :to-be 1)
-      (cl-weave:expect (search "Search: GPU"
-                               (cl-tty-kit:screen-row-string screen 6))
-                       :to-be 1)
+      (cl-weave:expect
+       (search "Search: GPU"
+               (cl-tty-kit:screen-row-string screen 7))
+       :to-be 0)
       (cl-weave:expect
        (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
        :to-equal (ntop.app.presentation::%screen-style :gruvbox :border))
@@ -204,7 +205,22 @@
         (cl-weave:expect (offset opened) :to-equal 0)
         (cl-weave:expect (active-p opened) :to-be t)
         (cl-weave:expect (query submitted) :to-equal "cpu")
-        (cl-weave:expect (active-p submitted) :to-be nil)))
+        (progn
+          (cl-weave:expect (active-p submitted) :to-be nil)
+          (let* ((search-state
+                   (ntop.app.presentation::make-help-state :search-active-p t))
+                 (lines (ntop.app.presentation::%help-visible-lines search-state))
+                 (last-offset (max 0 (- (length lines) 22)))
+                 (before
+                   (ntop.app.presentation::make-help-state
+                    :search-active-p t :scroll-offset last-offset))
+                 (next
+                   (ntop.app.presentation::help-state-transition
+                    before (%wp12b-app-action :navigation :down) :page-size 21)))
+            (cl-weave:expect (length lines) :to-equal 143)
+            (cl-weave:expect
+             (ntop.app.presentation::help-state-scroll-offset next)
+             :to-equal last-offset)))))
   (cl-weave:it "applies navigation actions at their scroll boundaries"
     (flet ((move (state kind value page-size)
              (ntop.app.presentation::help-state-transition

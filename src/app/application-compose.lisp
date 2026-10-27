@@ -158,7 +158,9 @@
                (> rows 2)))
              (page-size
               (max 1 (- (min rows 27) 2 (if search-row-p 1 0))))
-             (line-width (max 1 (- (min columns 96) 3))))
+             (line-width
+              (max 1
+                   (- (ntop.app.presentation:help-dialog-width columns) 3))))
         (setf help-state
               (ntop.app.presentation:help-state-transition
                help-state action :page-size page-size :line-width line-width))
@@ -170,7 +172,7 @@
         (setf (gethash :help states) help-state)
         t))))
   (defun %help-dialog-rectangle (columns rows)
-    (let* ((width (min columns 96))
+    (let* ((width (ntop.app.presentation:help-dialog-width columns))
            (height (min rows 27)))
       (ntop.ui:make-rectangle
        :x (floor (- columns width) 2)

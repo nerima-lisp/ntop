@@ -27,6 +27,13 @@
              (bottom (cl-tty-kit:screen-row-string screen 32))
              (outside (cl-tty-kit:screen-row-string screen 0)))
         (cl-weave:expect draw-count :to-be 1)
+        (cl-weave:expect
+         (mapcar
+          (lambda (columns)
+            (ntop.ui:rectangle-width
+             (ntop.app.application::%help-dialog-rectangle columns 40)))
+          '(94 95 96 97 98 120))
+         :to-equal '(94 95 96 95 96 96))
         (cl-weave:expect (char top 12) :to-equal #\┌)
         (cl-weave:expect (search " Help " top) :to-be 13)
         (cl-weave:expect (search "Esc to close" top) :to-be 94)
@@ -45,7 +52,7 @@
         (cl-weave:expect
          (cl-tty-kit:cell-style (cl-tty-kit:screen-cell screen 0 0))
          :to-equal (ntop.app.presentation::%screen-style :default :general-widget)))))
-  (cl-weave:it "keeps numbered GPU matches and the search row inside a small frame"
+  (cl-weave:it "keeps the search row below a small help frame"
     (let* ((config (ntop.shared.application:make-application-config))
            (composition (ntop.app.application:make-application-composition config))
            (render (ntop.app.application:application-composition-render composition))
@@ -59,13 +66,13 @@
       (let* ((screen (ntop.app.application::application-composition-screen composition))
              (top (cl-tty-kit:screen-row-string screen 0))
              (first-entry (cl-tty-kit:screen-row-string screen 1))
-             (search-row (cl-tty-kit:screen-row-string screen 22))
-             (bottom (cl-tty-kit:screen-row-string screen 23)))
+             (search-row (cl-tty-kit:screen-row-string screen 23))
+             (bottom (cl-tty-kit:screen-row-string screen 22)))
         (cl-weave:expect (char top 0) :to-equal #\┌)
         (cl-weave:expect (search " Help " top) :to-be 1)
         (cl-weave:expect (search "Esc to close" top) :to-be 66)
         (cl-weave:expect (search "3 - Process widget" first-entry) :to-be 1)
-        (cl-weave:expect (search "Search: GPU" search-row) :to-be 1)
+        (cl-weave:expect (search "Search: GPU" search-row) :to-be 0)
         (cl-weave:expect (char bottom 0) :to-equal #\└)
         (cl-weave:expect (char bottom 79) :to-equal #\┘)))))
 
