@@ -5,10 +5,7 @@
            rows columns rate timeout)
   (let* ((description (%route-input-description route subcase))
          (route-id (route-id route))
-         (effective-rate
-          (if (member route-id '("key-20" "key-21") :test #'string=)
-              (max rate 1000)
-            rate))
+         (effective-rate (max rate (getf subcase :minimum-rate rate)))
          (context (or (getf subcase :context) ""))
          (reference-prefix
           (namestring
@@ -24,10 +21,7 @@
                       (%write-text config-path
                                    (let ((*btm-layout* (%route-config-layout route subcase)))
                                      (btm-config-string
-                                      (if (member route-id
-                                                  '("resize" "mouse-75" "mouse-77") :test #'string=)
-                                          (max rate 1000)
-                                        effective-rate)
+                                      effective-rate
                                       (string-equal context "process tree"))))
                       (%route-base-arguments btm config-path route subcase evidence-directory)))
          (candidate-args (%route-base-arguments ntop config-path route subcase

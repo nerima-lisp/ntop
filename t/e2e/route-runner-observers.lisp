@@ -8,6 +8,16 @@
    actual
    (unless passed
      cause)))
+(defun %route-observer-completion-p (completion subcase initial grid)
+  (case completion
+    (:expanded-widget-restored
+     (%route-expanded-widget-restored-p grid initial))
+    (:help-section-transition
+     (%route-help-section-transition-p subcase initial grid))
+    (:graph-window-transition
+     (%route-graph-window-transition-p subcase initial grid))
+    (otherwise
+     (error "Unknown observer completion predicate: ~s." completion))))
 
 (defun %route-observer-prompt-cursor-moved-p (route side initial grid)
   (let* ((steps (getf side :action-grids))

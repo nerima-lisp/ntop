@@ -161,10 +161,15 @@
                 (list "key-52" (list 1) :graph :graph)
                 (list "key-53" (list 1) :graph :graph)
                 (list "key-67" (list 1 2) :processes :navigation)
+                (list "key-66" (list 1 2 3 4 5 6 7 8 9) :help :navigation)
                 (list "mouse-71" (list 1) :dashboard :mouse)
                 (list "mouse-72" (list 1) :dashboard :mouse)
                 (list "mouse-76" (list 1 2) :processes :mouse)
                 (list "mouse-77" (list 1) :battery :selection :battery-tabs)
+                (list "mouse-69" (list 1) :graph :graph)
+                (list "mouse-69" (list 3) :help :navigation)
+                (list "mouse-70" (list 1) :graph :graph)
+                (list "mouse-70" (list 3) :help :navigation)
                 (list "mouse-79" (list 1 2) :dashboard :transition)
                 (list "mouse-79" (list 3) :capability :mouse :mouse-other)
                 (list "flag-100" (list 1 2) :capability :transition :linux-only)
@@ -199,105 +204,6 @@
                (loop for index from 133 to 152
                      collect (list (format nil "column-~d" index) (list 1)
                                    :processes :column))))
-
-(defun %route-subcase-fixture (context fixture)
-  (let ((context (or context "")))
-    (cond
-      ((or (string-equal context "help")
-           (search "help" context :test (function char-equal)))
-       :help)
-      ((search "expanded widget" context :test (function char-equal))
-       :dashboard)
-      ((search "search" context :test (function char-equal))
-       :search)
-      (t fixture))))
-
-(defun %route-subcase-metadata (route-id index subcase)
-  (let ((plan
-          (find-if
-           (lambda (entry)
-             (and (string= route-id (first entry))
-                  (member index (second entry))))
-           +route-subcase-plans+)))
-    (when plan
-      (let* ((probe (fourth plan))
-             (input (getf subcase :input))
-             (fixture (%route-subcase-fixture
-                       (getf subcase :context) (third plan)))
-             (query-procedure (getf (sixth plan) :query-procedure))
-             (query-fixture
-               (when query-procedure
-                 (cond
-                   ((eq fixture :help) :help-search)
-                   ((member query-procedure
-                            '(:toggle-case :toggle-whole-word :toggle-regex))
-                    :sleep-variants)
-                   (t :process-search))))
-             (query-initial
-               (case query-procedure
-                 ((:toggle-case :toggle-whole-word)
-                  (if (eq query-fixture :help-search)
-                      "process"
-                    "ntop-t-sleep"))
-                 (:toggle-regex
-                  (if (eq query-fixture :help-search)
-                      "process"
-                    "^ntop-t-sleep$"))
-                 ((:cursor-start :cursor-end :clear
-                   :delete-previous-character :delete-next-character)
-                  "abcd")
-                 (:delete-previous-word "alpha beta")))
-             (query-cursor
-               (case query-procedure
-                 (:cursor-start 4)
-                 (:cursor-end 0)
-                 (:clear 2)
-                 (:delete-previous-word 10)
-                 ((:delete-previous-character :delete-next-character) 2)))
-             (query-sentinel
-               (when (member query-procedure '(:cursor-start :cursor-end))
-                 "X"))
-             (option-label
-               (and (eq probe :search-results)
-                    (cond
-                      ((member input (list "F1" "Alt+c" "Alt+C")
-                               :test (function string=))
-                       "Case")
-                      ((member input (list "F2" "Alt+w" "Alt+W")
-                               :test (function string=))
-                       "Whole")
-                      ((member input (list "F3" "Alt+r" "Alt+R")
-                               :test (function string=))
-                       "Regex")))))
-        (append
-         (list :fixture fixture :probe probe)
-         (when (fifth plan)
-           (list :applicability (fifth plan)))
-         (sixth plan)
-         (when query-fixture
-           (list :query-fixture query-fixture))
-         (when (eq query-fixture :sleep-variants)
-           (list :query-fixture-prefix "ntop-t-"
-                 :query-fixture-tags '("sleep" "sleepy" "Sleep")))
-         (when (eq fixture :process-tree)
-           (list :fixture-tree-parent-name "ntop-t-parent"
-                 :fixture-tree-child-name "ntop-t-child"))
-         (when query-initial
-           (list :query-initial query-initial))
-         (when (integerp query-cursor)
-           (list :query-cursor query-cursor))
-         (when query-sentinel
-           (list :query-sentinel query-sentinel))
-         (when option-label
-           (list :search-option-label option-label)))))))
-
-(defun %route-subcases-with-metadata (route-id subcases)
-  (loop for subcase in subcases
-        for index from 1
-        for metadata = (%route-subcase-metadata route-id index subcase)
-        collect (if metadata
-                    (append (copy-list subcase) metadata)
-                    subcase)))
 
 (defun %route-action (entry kind)
   (case kind
@@ -350,14 +256,13 @@
   (values :automated nil))
 
 (defun %additional-route (id action input expected classification reason
-                          comparable-p)
+                             comparable-p)
   (make-route-case :id id
                    :kind :additional
                    :action action
                    :entry nil
                    :expected expected
-                   :subcases (%route-subcases-with-metadata
-                              id (list (list :context nil :input input)))
+                   :subcases (%route-subcases-with-metadata id action (list (list :context nil :input input)))
                    :classification classification
                    :manual-reason reason
                    :comparable-p comparable-p))
@@ -417,8 +322,7 @@
        :action action
        :entry entry
        :expected (%route-expectation entry kind action)
-       :subcases (%route-subcases-with-metadata
-                  id (%route-subcases entry kind))
+       :subcases (%route-subcases-with-metadata id action (%route-subcases entry kind))
        :classification classification
        :manual-reason reason
        :comparable-p (not (eq kind :extension))))))

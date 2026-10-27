@@ -69,57 +69,52 @@
                    (%route-key-input "Escape"))))
          (setup-inputs
            (append
-            (cond
-              ((and (eq (route-kind route) :mouse)
-                    (member (route-action route) (list "Scroll up" "Scroll down")
-                            :test (function string=))
-                    (member context (list "help" "graphs")
-                            :test (function string-equal)))
-               (%route-mouse-action-inputs
-                route
-                (list :context context
-                      :gesture (if (string= (route-action route) "Scroll up")
-                                   "wheel-down"
-                                 "wheel-up"))
-                grid rows columns))
-              ((and (eq (route-kind route) :key)
-                    (member (route-action route)
-                            (list "Zoom graph out" "Reset graph zoom")
-                            :test (function string=))
-                    (string-equal context "graphs"))
-               (list "+"))
-              ((and (eq (route-kind route) :key)
-                    (string= (route-action route) "Select help section"))
-               (cond
-                 ((string= (getf subcase :input) "1") (list "2"))
-                 ((member (getf subcase :input) (list "7" "8" "9")
-                          :test (function string=))
-                  (list "1")))))
+            (getf subcase :fixture-setup-inputs)
+            (when (getf subcase :fixture-setup-gesture)
+              (%route-mouse-action-inputs
+               route
+               (list :context context
+                     :gesture (getf subcase :fixture-setup-gesture))
+               grid rows columns))
             navigation-inputs
             tree-inputs)))
     (labels ((send-inputs (inputs)
-               (dolist (input inputs)
-                 (let ((expected-query
-                         (and tree-focus
-                              (string= input tree-query)
-                              tree-query)))
-                   (pty-send-input session (%route-octets input)
-                                   :timeout-seconds timeout)
-                   (multiple-value-bind (output)
-                       (%route-read-through-quiet-period
-                        session *route-frame-quiet-seconds* timeout
-                        (* *route-first-frame-factor* (/ rate 1000d0))
-                        (when expected-query
-                          (lambda (input-output)
-                            (multiple-value-bind (query)
-                                (%route-observer-prompt-state
-                                 (%route-grid-after-output
-                                  raw input-output rows columns))
-                              (and query
-                                   (string= expected-query
-                                            (string-trim '(#\Space #\│)
-                                                         query)))))))
-                     (%append-octets raw output)))))
+  (dolist (input inputs)
+    (let* ((expected-query
+             (and tree-focus
+                  (string= input tree-query)
+                  tree-query))
+           (setup-section (getf subcase :fixture-setup-section))
+           (expected-section
+             (and setup-section
+                  (string= input (princ-to-string setup-section))
+                  setup-section)))
+      (pty-send-input session (%route-octets input)
+                      :timeout-seconds timeout)
+      (multiple-value-bind (output)
+          (%route-read-through-quiet-period
+           session
+           :quiet-seconds *route-frame-quiet-seconds*
+           :timeout-seconds timeout
+           :initial-quiet-seconds (* *route-first-frame-factor*
+                                     (/ rate 1000d0))
+           :completion-predicate
+           (when (or expected-query expected-section)
+             (lambda (input-output)
+               (let ((grid
+                       (%route-grid-after-output
+                        raw input-output rows columns)))
+                 (or
+                  (and expected-query
+                       (multiple-value-bind (query)
+                           (%route-observer-prompt-state grid)
+                         (and query
+                              (string= expected-query
+                                       (string-trim '(#\Space #\│) query)))))
+                  (and expected-section
+                       (nth-value 0
+                         (%route-help-section-number grid expected-section))))))))
+        (%append-octets raw output)))))
              (process-rows ()
                (%route-observer-process-rows (%route-grid raw rows columns)))
              (process-row-name-p (text name)
@@ -304,7 +299,10 @@
          :timeout-seconds timeout)
         (multiple-value-bind (output)
             (%route-read-through-quiet-period
-             session *route-frame-quiet-seconds* timeout
+             session
+             :quiet-seconds *route-frame-quiet-seconds*
+             :timeout-seconds timeout
+             :initial-quiet-seconds
              (* *route-first-frame-factor* (/ rate 1000d0)))
           (%append-octets raw output)))
       (%route-fixture-stage-progress route subcase :action-ready)
@@ -467,7 +465,10 @@
         (pty-send-input session (%route-octets input) :timeout-seconds timeout)
         (multiple-value-bind (output)
             (%route-read-through-quiet-period
-             session *route-frame-quiet-seconds* timeout
+             session
+             :quiet-seconds *route-frame-quiet-seconds*
+             :timeout-seconds timeout
+             :initial-quiet-seconds
              (* *route-first-frame-factor* (/ rate 1000d0)))
           (%append-octets raw output)))
       (when (and route subcase)
