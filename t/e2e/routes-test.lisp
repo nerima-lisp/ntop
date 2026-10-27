@@ -92,11 +92,11 @@
            (lambda (entry) (getf (cdr entry) :applicability))
            metadata))
         (b-ids
-          '("key-16-003" "key-17-003" "key-20-008" "key-21-007"
-            "key-21-008" "key-34-001" "key-36-004" "key-48-001"
-            "key-48-002" "mouse-69-004" "mouse-78-001" "flag-98-002"
-            "flag-99-001" "sleep-child-001" "key-15-002" "flag-113-001"
-            "search-field-155-001" "mouse-69-001" "mouse-70-001"))
+          (list "key-16-003" "key-17-003" "key-20-008" "key-21-007"
+                "key-21-008" "key-34-001" "key-36-004" "key-48-001"
+                "key-48-002" "mouse-69-004" "mouse-78-001" "flag-98-002"
+                "flag-99-001" "sleep-child-001" "key-15-002" "flag-113-001"
+                "search-field-155-001"))
         (mouse
           (remove-if-not
            (lambda (entry) (search "mouse-79-" (car entry)))
@@ -124,7 +124,7 @@
                 (count app applicable
                        :key (lambda (entry)
                               (getf (cdr entry) :applicability)))))
-    :to-equal (list 422 139 130 9 (list 5 2 1 1)))
+    :to-equal (list 422 152 143 9 (list 5 2 1 1)))
    (cl-weave:expect
     (every
      (lambda (entry)
@@ -144,14 +144,21 @@
      metadata)
     :to-be t)
    (cl-weave:expect
-    (every
-     (lambda (id)
+    (and
+     (every (lambda (id)
        (let ((entry (assoc id cases :test #'string=)))
          (and entry
               (not
                (some (lambda (key) (getf (cdr entry) key))
-                     (list :fixture :probe :applicability))))))
-     b-ids)
+                     (list :fixture :probe :applicability)))))) b-ids)
+     (every
+      (lambda (id)
+        (let ((entry (assoc id cases :test (function string=))))
+          (and entry
+               (eq (getf (cdr entry) :fixture) :graph)
+               (eq (getf (cdr entry) :probe) :graph)
+               (null (getf (cdr entry) :applicability)))))
+      (list "mouse-69-001" "mouse-70-001")))
     :to-be t)
    (cl-weave:expect
     (mapcar #'car mouse)

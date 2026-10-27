@@ -283,25 +283,40 @@
         (when sections
           (cons (apply (function min) sections)
                 (apply (function max) sections))))))
+  (defun %route-observer-help-content-section-number (grid)
+    (when (and grid
+               (not (search "Scroll to browse or press the number key"
+                            (%route-grid-text grid))))
+      (nth-value 0 (%route-help-section-number grid))))
   (defun %route-observer-help-navigation-p (route subcase before after)
     (let* ((action (route-action route))
            (old (%route-observer-help-section-range before))
            (new (%route-observer-help-section-range after)))
       (and old new
            (cond
-             ((string= action "Select help section")
-              (%route-help-section-transition-p subcase before after))
-             ((string= action "Go to first row") (= (car new) 1))
-             ((string= action "Go to last row") (= (cdr new) 9))
-             ((member action (quote ("Move to previous row" "Page up"
-                                     "Half-page up"))
-                      :test (function string=))
-              (< (car new) (car old)))
-             ((member action (quote ("Move to next row" "Page down"
-                                     "Half-page down"))
-                      :test (function string=))
-              (> (cdr new) (cdr old)))
-             (t nil)))))
+            ((string= action "Select help section")
+             (let* ((input (getf subcase :input))
+                    (target (and (stringp input)
+                                 (= (length input) 1)
+                                 (digit-char-p (char input 0))))
+                    (setup-state (getf subcase :fixture-setup-help-state)))
+               (and target setup-state
+                    (not (eql setup-state target))
+                    (eql (%route-observer-help-content-section-number before)
+                         (if (eq setup-state :chooser) nil setup-state))
+                    (eql (%route-observer-help-content-section-number after)
+                         target))))
+            ((string= action "Go to first row") (= (car new) 1))
+            ((string= action "Go to last row") (= (cdr new) 9))
+            ((member action (quote ("Move to previous row" "Page up"
+                                    "Half-page up"))
+                     :test (function string=))
+             (< (car new) (car old)))
+            ((member action (quote ("Move to next row" "Page down"
+                                    "Half-page down"))
+                     :test (function string=))
+             (> (cdr new) (cdr old)))
+            (t nil)))))
 )
 (progn
   (defun %route-observer-table-sort-target (action)

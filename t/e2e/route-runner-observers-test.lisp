@@ -338,3 +338,84 @@
               (observe route subcase before unrelated)
               :to-be
               nil)))))
+
+(cl-weave:describe
+ "help content section observation"
+ (cl-weave:it
+  "does not interpret the chooser list as the active help section"
+  (let ((grid (ntop.e2e:make-terminal-grid :rows 4 :cols 80)))
+    (criterion-test-write grid 1 0 "0" "│Scroll to browse or press the number key")
+    (criterion-test-write grid 2 0 "0" "│1 - General")
+    (criterion-test-write grid 3 0 "0" "│2 - CPU widget")
+    (cl-weave:expect
+     (ntop.e2e::%route-observer-help-content-section-number grid)
+     :to-equal
+     nil)))
+ (cl-weave:it
+  "completes only after the chooser transitions to the requested section"
+  (let ((chooser (ntop.e2e:make-terminal-grid :rows 4 :cols 80))
+        (content (ntop.e2e:make-terminal-grid :rows 4 :cols 80))
+        (subcase (list :input "2" :fixture-setup-help-state :chooser)))
+    (criterion-test-write chooser 1 0 "0"
+                          "│Scroll to browse or press the number key")
+    (criterion-test-write chooser 2 0 "0" "│1 - General")
+    (criterion-test-write chooser 3 0 "0" "│2 - CPU widget")
+    (criterion-test-write content 1 0 "0" "│2 - CPU widget")
+    (cl-weave:expect
+     (ntop.e2e::%route-observer-completion-p
+      :help-content-section subcase chooser content)
+     :to-be
+     t)
+    (cl-weave:expect
+     (ntop.e2e::%route-observer-completion-p
+      :help-content-section subcase chooser chooser)
+     :to-be
+     nil))))
+(cl-weave:describe
+ "graph wheel observer dispatch"
+ (cl-weave:it
+  "accepts wheel gestures as graph window transitions"
+  (let* ((route
+          (find "mouse-69"
+                (ntop.e2e::route-catalog)
+                :key (function ntop.e2e::route-id)
+                :test (function string=)))
+         (subcase (first (ntop.e2e::%route-subcases-expanded route)))
+         (before (criterion-test-grid 12 40 ""))
+         (after (criterion-test-grid 12 40 "")))
+    (criterion-test-write before 0 0 "0" "CPU 60s 0s 60s")
+    (criterion-test-write after 0 0 "0" "CPU 45s 0s 60s")
+    (multiple-value-bind (passed actual cause)
+        (ntop.e2e::%route-observer-state-p
+         route "btm-self" subcase
+         (list :initial-grid before :grid after)
+         :reference)
+      (cl-weave:expect (getf subcase :probe) :to-equal :graph)
+      (cl-weave:expect (ntop.e2e::route-action route)
+                       :to-equal "Scroll up")
+      (cl-weave:expect passed :to-be t)
+      (cl-weave:expect actual :to-equal "Scroll up")
+      (cl-weave:expect cause :to-equal nil))))
+ (cl-weave:it
+ "accepts a wheel-down transition as graph zoom out"
+ (let* ((route
+         (find "mouse-70"
+               (ntop.e2e::route-catalog)
+               :key (function ntop.e2e::route-id)
+               :test (function string=)))
+        (subcase (first (ntop.e2e::%route-subcases-expanded route)))
+        (before (criterion-test-grid 12 40 ""))
+        (after (criterion-test-grid 12 40 "")))
+   (criterion-test-write before 0 0 "0" "CPU 45s 0s 60s")
+   (criterion-test-write after 0 0 "0" "CPU 60s 0s 60s")
+   (multiple-value-bind (passed actual cause)
+       (ntop.e2e::%route-observer-state-p
+        route "btm-self" subcase
+        (list :initial-grid before :grid after)
+        :reference)
+     (cl-weave:expect (getf subcase :probe) :to-equal :graph)
+     (cl-weave:expect (ntop.e2e::route-action route)
+                      :to-equal "Scroll down")
+     (cl-weave:expect passed :to-be t)
+     (cl-weave:expect actual :to-equal "Scroll down")
+     (cl-weave:expect cause :to-equal nil)))))

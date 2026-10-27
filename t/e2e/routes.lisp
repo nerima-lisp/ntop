@@ -262,7 +262,8 @@
                    :action action
                    :entry nil
                    :expected expected
-                   :subcases (%route-subcases-with-metadata id action (list (list :context nil :input input)))
+                   :subcases (%route-subcases-with-metadata
+                             id action (list (list :context nil :input input)))
                    :classification classification
                    :manual-reason reason
                    :comparable-p comparable-p))

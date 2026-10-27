@@ -14,6 +14,18 @@
      (%route-expanded-widget-restored-p grid initial))
     (:help-section-transition
      (%route-help-section-transition-p subcase initial grid))
+    (:help-content-section
+     (let* ((input (getf subcase :input))
+            (target (and (stringp input)
+                         (= (length input) 1)
+                         (digit-char-p (char input 0))))
+            (setup-state (getf subcase :fixture-setup-help-state)))
+       (and target setup-state
+            (not (eql setup-state target))
+            (eql (%route-observer-help-content-section-number initial)
+                 (if (eq setup-state :chooser) nil setup-state))
+            (eql (%route-observer-help-content-section-number grid)
+                 target))))
     (:graph-window-transition
      (%route-graph-window-transition-p subcase initial grid))
     (otherwise
@@ -345,7 +357,7 @@
                   ((and (string-equal context "graphs")
                         (member action (quote ("Scroll up" "Scroll down"))
                                 :test (function equal)))
-                   (%route-graph-window-transition-p route initial grid))
+                   (%route-graph-window-transition-p subcase initial grid))
                   ((member action
                            (quote ("Focus widget" "Move basic-mode widget"))
                            :test (function string=))
@@ -383,9 +395,9 @@
               (passed
                (cond
                 ((member action
-                         '("Zoom graph in" "Zoom graph out" "Reset graph zoom")
-                         :test
-                         #'equal) (%route-graph-window-transition-p route initial grid))
+                         '("Zoom graph in" "Zoom graph out"
+                           "Reset graph zoom" "Scroll up" "Scroll down")
+                         :test #'equal) (%route-graph-window-transition-p subcase initial grid))
                 ((equal action "Reset collection")
                  (and text
                       (search "CPU" text :test #'char-equal)

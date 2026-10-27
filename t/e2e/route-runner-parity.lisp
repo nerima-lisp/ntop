@@ -319,35 +319,6 @@
       (unless point (error "Could not locate safe route target ~s in the initial frame." marker))
       (format nil "~c[<0;~d;~dM" #\Escape (1+ (first point))
               (1+ (second point))))))
-(defun %route-manual-result (route subcase directory
-                               &optional reason prefix procedure)
-  (let* ((id (route-id route))
-         (input (%route-input-description route subcase))
-         (context (or (getf subcase :context) "default"))
-         (reason (or reason (route-manual-reason route) input))
-         (path (merge-pathnames
-                 (format nil "~a-manual.md" (or prefix id))
-                 directory))
-         (procedure (or procedure
-                        (%route-manual-procedure route subcase input context)))
-         (expected
-           (cond
-             ((string= id "basic-mode")
-              "RAM, RX/TX totals, Disks and Temperature are visible; no process table.")
-             ((string= id "sleep-child")
-              "Only the selected disposable child exits after SIGTERM.")
-             (t (format nil "~a; expected: ~a" input (route-expected route))))))
-    (%write-text path
-                 (format nil
-                         "# ~a~%~%Input: ~a~%~%Procedure: ~a~%~%Expected: ~a~%~%Reason: ~a~%~%"
-                         id input procedure expected reason))
-    (list :status :manual
-          :passed nil
-          :input input
-          :expected expected
-          :actual "Not executed in this BTM self run; manual verification is required."
-          :cause reason
-          :evidence (list (namestring path)))))
 (defun %route-wait-owned-child (process timeout-seconds)
   (let ((deadline (+ (%now) (%seconds-to-ticks timeout-seconds))))
     (loop while (sb-ext:process-alive-p process)
