@@ -140,16 +140,22 @@ while True:
             (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
            (setf output
-                 (ntop.e2e::%route-read-through-quiet-period
-                  session
-                  :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0
-                  :initial-quiet-seconds 0.08d0
-                  :completion-predicate (lambda (octets)
-                    (search
-                     "RESIZE_FRAME_COMPLETE"
-                     (ntop.e2e::%octets-to-text octets)))
-                  :stability-seconds 0.08d0))
+                 (let ((ntop.e2e::*route-frame-capture-not-before-at*
+                         (+ (ntop.e2e::%now)
+                            (ntop.e2e::%seconds-to-ticks 0.08d0))))
+                   (ntop.e2e::%route-capture-frame
+                    session
+                    (ntop.e2e::e2e-session-output session)
+                    24 80
+                    :timeout-seconds 2d0
+                    :stability-seconds 0.08d0
+                    :completion-predicate
+                    (lambda (grid)
+                      (declare (ignore grid))
+                      (search
+                       "RESIZE_FRAME_COMPLETE"
+                       (ntop.e2e::%octets-to-text
+                        ntop.e2e::*route-frame-capture-current-octets*))))))
            (let ((text (ntop.e2e::%octets-to-text output)))
              (cl-weave:expect
               (not (null (search "INITIAL_FRAME" text)))
@@ -192,10 +198,15 @@ while True:
             :to-be t)
            (setf started (ntop.e2e::%now))
            (setf output
-                 (ntop.e2e::%route-read-through-quiet-period session
-                  :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0
-                  :stability-seconds 0.08d0))
+                 (let ((ntop.e2e::*route-frame-capture-not-before-at*
+                         (+ (ntop.e2e::%now)
+                            (ntop.e2e::%seconds-to-ticks 0.05d0))))
+                   (ntop.e2e::%route-capture-frame
+                    session
+                    (ntop.e2e::e2e-session-output session)
+                    24 80
+                    :timeout-seconds 2d0
+                    :stability-seconds 0.08d0)))
            (let* ((text (ntop.e2e::%octets-to-text output))
                   (result
                    (ntop.e2e:parse-ansi
@@ -234,10 +245,15 @@ while True:
             (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
            (setf output
-                 (ntop.e2e::%route-read-through-quiet-period session
-                  :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0
-                  :stability-seconds 0.08d0))
+                 (let ((ntop.e2e::*route-frame-capture-not-before-at*
+                         (+ (ntop.e2e::%now)
+                            (ntop.e2e::%seconds-to-ticks 0.05d0))))
+                   (ntop.e2e::%route-capture-frame
+                    session
+                    (ntop.e2e::e2e-session-output session)
+                    24 80
+                    :timeout-seconds 2d0
+                    :stability-seconds 0.08d0)))
            (cl-weave:expect
             (ntop.e2e::%octets-to-text output)
             :to-equal
@@ -265,10 +281,15 @@ while True:
             (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
            (setf output
-                 (ntop.e2e::%route-read-through-quiet-period session
-                  :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0
-                  :stability-seconds 0.08d0))
+                 (let ((ntop.e2e::*route-frame-capture-not-before-at*
+                         (+ (ntop.e2e::%now)
+                            (ntop.e2e::%seconds-to-ticks 0.05d0))))
+                   (ntop.e2e::%route-capture-frame
+                    session
+                    (ntop.e2e::e2e-session-output session)
+                    24 80
+                    :timeout-seconds 2d0
+                    :stability-seconds 0.08d0)))
            (cl-weave:expect
             (ntop.e2e::%octets-to-text output)
             :to-equal (format nil "~c" (code-char #x00db)))

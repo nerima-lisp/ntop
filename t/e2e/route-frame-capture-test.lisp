@@ -11,14 +11,17 @@
     (unwind-protect
          (progn
            (handler-case
-               (ntop.e2e::%route-read-through-quiet-period
-                session
-                :quiet-seconds 0.05d0
-                :timeout-seconds 0.5d0
-                :initial-quiet-seconds 0.08d0
-                :side :candidate
-                :stage :initial-frame-required
-                :stability-seconds 0.08d0)
+               (let ((ntop.e2e::*route-frame-capture-not-before-at*
+                         (+ (ntop.e2e::%now)
+                            (ntop.e2e::%seconds-to-ticks 0.08d0))))
+                   (ntop.e2e::%route-capture-frame
+                    session
+                    (route-frame-capture-test-empty-octets)
+                    24 80
+                    :side :candidate
+                    :stage :initial-frame-required
+                    :timeout-seconds 0.5d0
+                    :stability-seconds 0.08d0))
              (ntop.e2e::route-frame-capture-timeout (condition)
                (setf caught condition)))
            (cl-weave:expect
@@ -73,16 +76,21 @@
             :to-be t)
            (setf started (ntop.e2e::%now))
            (setf output
-                 (ntop.e2e::%route-read-through-quiet-period
-                  session
-                  :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0
-                  :initial-quiet-seconds 0.05d0
-                  :completion-predicate
-                  (lambda (octets)
-                    (search "READY" (ntop.e2e::%octets-to-text octets)))
-                  :completion-samples-required 2
-                  :stability-seconds 0.25d0))
+                 (let ((ntop.e2e::*route-frame-capture-not-before-at*
+                         (+ (ntop.e2e::%now)
+                            (ntop.e2e::%seconds-to-ticks 0.05d0))))
+                   (ntop.e2e::%route-capture-frame
+                    session
+                    (route-frame-capture-test-empty-octets)
+                    2 12
+                    :timeout-seconds 2d0
+                    :stability-seconds 0.25d0
+                    :completion-predicate
+                    (lambda (grid)
+                      (char=
+                       (ntop.e2e:cell-character
+                        (ntop.e2e:grid-cell-at grid 0 11))
+                       #\|)))))
            (let ((grid (ntop.e2e::%route-grid output 2 12)))
              (cl-weave:expect
               (char-code
@@ -117,16 +125,21 @@
             :to-be t)
            (setf started (ntop.e2e::%now))
            (setf output
-                 (ntop.e2e::%route-read-through-quiet-period
-                  session
-                  :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0
-                  :initial-quiet-seconds 0.40d0
-                  :completion-predicate
-                  (lambda (octets)
-                    (search "READY" (ntop.e2e::%octets-to-text octets)))
-                  :completion-samples-required 1
-                  :stability-seconds 0.10d0))
+                 (let ((ntop.e2e::*route-frame-capture-not-before-at*
+                         (+ (ntop.e2e::%now)
+                            (ntop.e2e::%seconds-to-ticks 0.40d0))))
+                   (ntop.e2e::%route-capture-frame
+                    session
+                    (route-frame-capture-test-empty-octets)
+                    2 12
+                    :timeout-seconds 2d0
+                    :stability-seconds 0.10d0
+                    :completion-predicate
+                    (lambda (grid)
+                      (char=
+                       (ntop.e2e:cell-character
+                        (ntop.e2e:grid-cell-at grid 0 0))
+                       #\R)))))
            (let ((grid (ntop.e2e::%route-grid output 2 12)))
              (cl-weave:expect
               (char-code
@@ -248,26 +261,34 @@
               session (route-frame-capture-test-empty-octets) 3 12
               :side :candidate :stage :pre-action
               :timeout-seconds 1.5d0 :stability-seconds 0.08d0)
-           (declare (ignore prefix))
            (let ((started-at (ntop.e2e::%now)))
-             (multiple-value-bind (after-prefix last-output-at elapsed)
-                 (ntop.e2e::%route-read-through-quiet-period
-                  session :quiet-seconds 0.08d0
-                  :initial-quiet-seconds 0.2d0 :timeout-seconds 0.8d0)
-               (declare (ignore last-output-at elapsed))
-               (cl-weave:expect (length after-prefix) :to-equal 0)
-               (cl-weave:expect
-                (ntop.e2e:cell-character
-                 (ntop.e2e:grid-cell-at before-grid 0 0))
-                :to-equal #\Space)
-               (cl-weave:expect
-                (getf before-metadata :stable-signature)
-                :to-be-truthy)
-               (cl-weave:expect
-                (>= (ntop.e2e::%ticks-to-seconds
-                     (- (ntop.e2e::%now) started-at))
-                    0.15d0)
-                :to-equal t))))
+             (let ((ntop.e2e::*route-frame-capture-not-before-at*
+                     (+ (ntop.e2e::%now)
+                        (ntop.e2e::%seconds-to-ticks 0.20d0))))
+               (multiple-value-bind (after-prefix after-grid after-metadata)
+                   (ntop.e2e::%route-capture-frame
+                    session prefix 3 12
+                    :side :candidate :stage :post-action
+                    :timeout-seconds 0.8d0 :stability-seconds 0.08d0
+                    :allow-unchanged-p t)
+                 (declare (ignore after-metadata))
+                 (cl-weave:expect (equalp after-prefix prefix) :to-be t)
+                 (cl-weave:expect
+                  (ntop.e2e:cell-character
+                   (ntop.e2e:grid-cell-at before-grid 0 0))
+                  :to-equal #\Space)
+                 (cl-weave:expect
+                  (ntop.e2e:cell-character
+                   (ntop.e2e:grid-cell-at after-grid 0 0))
+                  :to-equal #\Space)
+                 (cl-weave:expect
+                  (getf before-metadata :stable-signature)
+                  :to-be-truthy)
+                 (cl-weave:expect
+                  (>= (ntop.e2e::%ticks-to-seconds
+                       (- (ntop.e2e::%now) started-at))
+                      0.15d0)
+                  :to-equal t)))))
       (ntop.e2e::close-e2e-session session))))
  (cl-weave:it
   "uses one deadline and reports capture diagnostics while output continues"

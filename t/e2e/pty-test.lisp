@@ -23,13 +23,13 @@
            (ntop.e2e::pty-resize-session
             session 36 120 :timeout-seconds 2d0)
            (multiple-value-bind (output)
-               (ntop.e2e::%route-read-through-quiet-period
-                session
-                :quiet-seconds 0.3d0
-                :timeout-seconds 2d0
-                :initial-quiet-seconds 0.75d0
-                :stability-seconds 0.08d0
-                :allow-unchanged-p nil)
+               (let ((ntop.e2e::*route-frame-capture-not-before-at*
+                       (+ (ntop.e2e::%now)
+                          (ntop.e2e::%seconds-to-ticks 0.75d0))))
+                 (ntop.e2e::%route-capture-frame
+                  session (ntop.e2e::e2e-session-output session) 36 120
+                  :timeout-seconds 2d0 :stability-seconds 0.08d0
+                  :allow-unchanged-p nil))
              (cl-weave:expect
               (not (null (search "RESIZE=120x36"
                                  (ntop.e2e::%octets-to-text output))))
