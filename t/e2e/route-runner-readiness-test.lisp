@@ -115,7 +115,9 @@
                   (lambda ()
                     (ntop.e2e::%route-run-sleep-child-pair
                      route subcase "owned child readiness" "btm-self"
-                     "btm" "ntop" "reference" "candidate"
+                     "btm" "ntop"
+                     (namestring (merge-pathnames "reference" directory))
+                     (namestring (merge-pathnames "candidate" directory))
                      24 80 250 1 nil directory))))
            (cl-weave:expect (getf result :classification)
                             :to-equal :candidate-error)
@@ -137,7 +139,9 @@
                   (lambda ()
                     (ntop.e2e::%route-run-sleep-child-pair
                      route subcase "owned child probe limit" "btm-self"
-                     "btm" "ntop" "reference" "candidate"
+                     "btm" "ntop"
+                     (namestring (merge-pathnames "reference" directory))
+                     (namestring (merge-pathnames "candidate" directory))
                      24 80 250 1 nil directory))))
            (let ((route-status
                    (ntop.e2e::%route-result-status route (list result))))
@@ -295,3 +299,189 @@
   (cl-weave:expect
    (fboundp (quote ntop.e2e::%route-read-widget-state))
    :to-be-truthy)))
+
+(cl-weave:describe
+ "owned child PID markers and safe cancellation"
+ (cl-weave:it
+  "requires the PID-specific marker on the owned process row"
+  (let* ((pid 12345)
+         (matching
+           (criterion-test-grid
+            12 80 (format nil "~d ntop-owned-~d" pid pid)))
+         (generic-marker
+           (criterion-test-grid 12 80 (format nil "~d ntop-owned" pid)))
+         (different-marker
+           (criterion-test-grid
+            12 80 (format nil "~d ntop-owned-54321" pid))))
+    (cl-weave:expect
+     (ntop.e2e::%route-owned-marker-row-p matching pid)
+     :to-be t)
+    (cl-weave:expect
+     (ntop.e2e::%route-owned-marker-row-p generic-marker pid)
+     :to-be nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-owned-marker-row-p different-marker pid)
+     :to-be nil)))
+ (cl-weave:it
+  "only sends a safe cancellation input for an owned dialog"
+  (let* ((pid 12345)
+         (cancel-grid (ntop.e2e:make-terminal-grid :rows 12 :cols 80))
+         (simple-grid (ntop.e2e:make-terminal-grid :rows 12 :cols 80))
+         (unsafe-grid (ntop.e2e:make-terminal-grid :rows 12 :cols 80))
+         (wrong-pid-grid (ntop.e2e:make-terminal-grid :rows 12 :cols 80))
+         (simple-input nil)
+         (unsafe-error nil)
+         (wrong-pid-error nil))
+    (dolist (grid (list cancel-grid simple-grid unsafe-grid))
+      (criterion-test-write
+       grid 2 2 "38;5;7;49"
+       (format nil "Kill process ~s with PID ~d?" "sleep" pid))
+      (criterion-test-write grid 4 2 "38;5;7;49" "Confirm Kill Process"))
+    (criterion-test-write cancel-grid 6 2 "38;5;7;49" "0: Cancel")
+    (criterion-test-write
+     wrong-pid-grid 2 2 "38;5;7;49"
+     (format nil "Kill process ~s with PID ~d?" "sleep" 54321))
+    (cl-weave:expect
+     (ntop.e2e::%route-owned-dialog-pid-matches-p cancel-grid pid)
+     :to-be t)
+    (cl-weave:expect
+     (ntop.e2e::%route-owned-dialog-pid-matches-p wrong-pid-grid pid)
+     :to-be nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-owned-dialog-safe-cancel-input cancel-grid pid)
+     :to-equal (ntop.e2e::%route-safe-dialog-click-input cancel-grid))
+    (criterion-test-write simple-grid 6 2 "38;5;7;49"
+                          "Press ENTER to confirm")
+    (cl-weave:expect
+     (ntop.e2e::%route-simple-kill-confirmation-p simple-grid pid)
+     :to-be t)
+    (setf simple-input
+          (ntop.e2e::%route-owned-dialog-safe-cancel-input simple-grid pid))
+    (cl-weave:expect
+     simple-input
+     :to-equal (ntop.e2e::%route-key-input "Escape"))
+    (cl-weave:expect
+     (ntop.e2e::%route-simple-kill-confirmation-p wrong-pid-grid pid)
+     :to-be nil)
+    (handler-case
+        (ntop.e2e::%route-owned-dialog-safe-cancel-input wrong-pid-grid pid)
+      (error (condition)
+        (setf wrong-pid-error condition)))
+    (cl-weave:expect (not (null wrong-pid-error)) :to-be t)
+    (criterion-test-write unsafe-grid 6 2 "38;5;7;49" "1: Yes")
+    (handler-case
+        (ntop.e2e::%route-owned-dialog-safe-cancel-input unsafe-grid pid)
+      (error (condition)
+        (setf unsafe-error condition)))
+    (cl-weave:expect (not (null unsafe-error)) :to-be t))))
+
+(cl-weave:describe
+ "owned child readiness"
+ (cl-weave:it
+  "accepts an already visible owned PID marker without extending the deadline"
+  (let* ((pid 12345)
+         (deadline
+           (+ (ntop.e2e::%now)
+              (ntop.e2e::%seconds-to-ticks 30d0)))
+         (session
+           (ntop.e2e::%make-e2e-session nil nil nil nil 0 deadline 30d0))
+         (raw
+           (ntop.e2e::%route-octets
+            (format nil "~c[1;1H~d ntop-owned-~d" #\Escape pid pid))))
+    (multiple-value-bind (result diagnostic)
+        (ntop.e2e::%route-wait-owned-marker-row session raw 12 80 pid)
+      (cl-weave:expect result :to-equal :ready)
+      (cl-weave:expect (string= diagnostic "Owned PID 12345 marker row is visible.") :to-be t)
+      (cl-weave:expect
+       (ntop.e2e::e2e-session-deadline session)
+       :to-equal deadline))))
+ (cl-weave:it
+  "returns marker-row and owned-dialog timeouts at the readiness deadline"
+  (let* ((ntop.e2e::*route-process-readiness-timeout-seconds* 0d0)
+         (pid 12345)
+         (session
+           (ntop.e2e::%make-e2e-session nil nil nil nil 0
+                                        (ntop.e2e::%now) 0d0))
+         (raw
+           (make-array 0 :element-type '(unsigned-byte 8)
+                       :adjustable t :fill-pointer 0)))
+    (multiple-value-bind (result diagnostic)
+        (ntop.e2e::%route-wait-owned-marker-row session raw 12 80 pid)
+      (cl-weave:expect result :to-equal :timeout)
+      (cl-weave:expect
+       (string= diagnostic
+                "Owned PID 12345 marker row not ready before timeout.")
+       :to-be t)
+      (cl-weave:expect
+       (search "marker row not ready before timeout" diagnostic)
+       :to-satisfy (function plusp)))
+    (multiple-value-bind (result diagnostic)
+        (ntop.e2e::%route-wait-owned-dialog session raw 12 80 pid)
+      (cl-weave:expect result :to-equal :timeout)
+      (cl-weave:expect
+       (string= diagnostic
+                "Owned PID 12345 kill dialog not ready before timeout.")
+       :to-be t))))
+ (cl-weave:it
+  "waits for an exact PID dialog after marker selection"
+  (let* ((pid 12345)
+         (marker (format nil "~d ntop-owned-~d" pid pid))
+         (grid (criterion-test-grid 12 80 marker))
+         (session
+           (ntop.e2e::%make-e2e-session
+            nil nil nil nil 0
+            (+ (ntop.e2e::%now) (ntop.e2e::%seconds-to-ticks 30d0))
+            30d0))
+         (raw
+           (make-array 0 :element-type '(unsigned-byte 8)
+                       :adjustable t :fill-pointer 0))
+         (frames
+           (list
+            (ntop.e2e::%route-octets
+             (format nil "~c[3;3HKill process sleep with PID 54321?"
+                     #\Escape))
+            (ntop.e2e::%route-octets
+             (format nil "~c[3;3HKill process sleep with PID ~d?"
+                     #\Escape pid))))
+         (read-count 0)
+         (read-symbol (find-symbol "%ROUTE-READ-INTERVAL" "NTOP.E2E"))
+         (original-read-interval (symbol-function read-symbol)))
+    (criterion-test-write grid 10 2 "38;5;0;48;5;12" marker)
+    (cl-weave:expect
+     (ntop.e2e::%route-owned-marker-selected-p grid pid)
+     :to-be t)
+    (criterion-test-write grid 10 2 "38;5;7;49" marker)
+    (cl-weave:expect
+     (ntop.e2e::%route-owned-marker-selected-p grid pid)
+     :to-be nil)
+    (unwind-protect
+         (progn
+           (setf (symbol-function read-symbol)
+                 (lambda (ignored-session target ignored-seconds)
+                   (declare (ignore ignored-session ignored-seconds))
+                   (incf read-count)
+                   (ntop.e2e::%append-octets target (pop frames))))
+           (multiple-value-bind (result diagnostic)
+               (ntop.e2e::%route-wait-owned-dialog
+                session raw 12 80 pid)
+             (cl-weave:expect result :to-equal :ready)
+             (cl-weave:expect
+              diagnostic
+              :to-equal "Owned PID 12345 kill dialog is visible.")
+             (cl-weave:expect read-count :to-equal 2)
+             (cl-weave:expect
+              (ntop.e2e::%route-owned-dialog-pid-matches-p
+               (ntop.e2e::%route-grid raw 12 80) pid)
+              :to-be t)))
+      (setf (symbol-function read-symbol) original-read-interval))))
+ (cl-weave:it
+  "reports observed child and dialog state after confirmation input"
+  (progn
+   (cl-weave:expect
+    (ntop.e2e::%route-sleep-child-action-actual 62070 t t)
+    :to-equal
+    "owned PID 62070 after confirmation input; child alive yes; exact-PID dialog open")
+   (cl-weave:expect
+    (ntop.e2e::%route-sleep-child-action-actual 62070 nil nil)
+    :to-equal
+    "owned PID 62070 after confirmation input; child alive no; exact-PID dialog closed"))))
