@@ -183,18 +183,31 @@
             finally (return (values :timeout readiness-diagnostic)))))
   (progn
   (defun %route-process-data-required-p (route subcase)
-    (let ((context (or (getf subcase :context) "")))
-      (or (eq (route-kind route) :column)
-          (string= (route-id route) "sleep-child")
-          (string-equal context "normal process table")
-          (equal (%route-widget-type context) "proc")
-          (member (route-action route)
-                  '("Select process row"
-                    "Delete selected process"
-                    "Open process kill dialog"
-                    "read_only"
-                    "disable_advanced_kill")
-                  :test (function string=)))))
+    (let* ((context (or (getf subcase :context) ""))
+           (action (route-action route))
+           (gesture (getf subcase :gesture)))
+      (not
+       (null
+        (or (eq (route-kind route) :column)
+            (string= (route-id route) "sleep-child")
+            (and (eq (route-kind route) :mouse)
+                 (string-equal context "graphs")
+                 (member action (quote ("Scroll up" "Scroll down"))
+                         :test (function string=))
+                 (member gesture (quote ("wheel-up" "wheel-down"))
+                         :test (function string=)))
+            (and (eq (route-kind route) :key)
+                 (string-equal context "expanded widget")
+                 (string= action "Close current modal"))
+            (string-equal context "normal process table")
+            (equal (%route-widget-type context) "proc")
+            (member action
+                    (quote ("Select process row"
+                            "Delete selected process"
+                            "Open process kill dialog"
+                            "read_only"
+                            "disable_advanced_kill"))
+                    :test (function string=)))))))
   (defun %route-process-startup-timeout (route subcase timeout)
     (if (%route-process-data-required-p route subcase)
         (max timeout *route-process-readiness-timeout-seconds*)

@@ -12,6 +12,76 @@
     (cl-weave:expect diagnostic :to-equal
                      "Expected process heading Name(n); observed Name(n).")))
  (cl-weave:it
+  "waits for process data before graph scroll and expanded-widget checks"
+  (let* ((graph-up-route
+           (ntop.e2e::make-route-case
+            :id "graph-scroll-up" :kind :mouse :action "Scroll up"))
+         (graph-down-route
+           (ntop.e2e::make-route-case
+            :id "graph-scroll-down" :kind :mouse :action "Scroll down"))
+         (expanded-route
+           (ntop.e2e::make-route-case
+            :id "expanded-widget-close" :kind :key
+            :action "Close current modal"))
+         (cases
+           (list (cons graph-up-route
+                       (list :context "graphs" :gesture "wheel-up"))
+                 (cons graph-down-route
+                       (list :context "graphs" :gesture "wheel-down"))
+                 (cons expanded-route
+                       (list :context "expanded widget")))))
+    (dolist (entry cases)
+      (cl-weave:expect
+       (ntop.e2e::%route-process-data-required-p
+        (car entry) (cdr entry))
+       :to-be t)
+      (cl-weave:expect
+       (ntop.e2e::%route-process-startup-timeout
+        (car entry) (cdr entry) 30d0)
+       :to-equal ntop.e2e::*route-process-readiness-timeout-seconds*))
+    (cl-weave:expect
+     (ntop.e2e::%route-process-data-required-p
+      (ntop.e2e::make-route-case
+       :id "graph-scroll-without-graph-context"
+       :kind :mouse :action "Scroll down")
+      (list :context "help" :gesture "wheel-down"))
+     :to-be nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-process-data-required-p
+      (ntop.e2e::make-route-case
+       :id "graph-scroll-wrong-kind"
+       :kind :key :action "Scroll down")
+      (list :context "graphs" :gesture "wheel-down"))
+     :to-be nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-process-data-required-p
+      (ntop.e2e::make-route-case
+       :id "graph-scroll-wrong-gesture"
+       :kind :mouse :action "Scroll down")
+      (list :context "graphs" :gesture "left-button-down"))
+     :to-be nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-process-data-required-p
+      (ntop.e2e::make-route-case
+       :id "expanded-widget-nonmodal-action"
+       :kind :key :action "Select CPU series")
+      (list :context "expanded widget"))
+     :to-be nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-process-data-required-p
+      (ntop.e2e::make-route-case
+       :id "expanded-widget-wrong-kind"
+       :kind :mouse :action "Close current modal")
+      (list :context "expanded widget"))
+     :to-be nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-process-startup-timeout
+      (ntop.e2e::make-route-case
+       :id "help-scroll" :kind :mouse :action "Scroll down")
+      (list :context "help" :gesture "wheel-down")
+      30d0)
+     :to-equal 30d0)))
+ (cl-weave:it
   "recognizes Command(n) when --process-command was launched"
   (multiple-value-bind (ready-p observed-heading diagnostic)
       (ntop.e2e::%route-process-widget-ready-p
