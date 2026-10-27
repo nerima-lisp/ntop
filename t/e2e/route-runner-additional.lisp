@@ -73,18 +73,19 @@
                  (%route-incomplete-escape-suffix-p octets)
                  (%route-incomplete-utf8-suffix-p octets)))))
       (%append-octets raw initial)
-      (when (%route-process-data-required-p route subcase)
-        (multiple-value-bind (readiness-result readiness-diagnostic)
-            (%route-wait-process-data session raw rows columns arguments)
-          (when (eq :timeout readiness-result)
-            (let* ((grid (%route-grid raw rows columns))
-                   (projection (project-criterion-grid grid))
-                   (ansi-path
-                    (merge-pathnames (format nil "~a.ansi" evidence-prefix))))
-              (return-from %route-read-initial-and-action
-                           (values grid projection (%route-write-ansi ansi-path raw)
-                                   projection projection grid nil :manual readiness-result
-                                   readiness-diagnostic)))))
+      (progn
+        (when (%route-process-data-required-p route subcase)
+          (multiple-value-bind (readiness-result readiness-diagnostic)
+              (%route-wait-process-data session raw rows columns arguments)
+            (when (eq :timeout readiness-result)
+              (let* ((grid (%route-grid raw rows columns))
+                     (projection (project-criterion-grid grid))
+                     (ansi-path
+                      (merge-pathnames (format nil "~a.ansi" evidence-prefix))))
+                (return-from %route-read-initial-and-action
+                  (values grid projection (%route-write-ansi ansi-path raw)
+                          projection projection grid nil :manual readiness-result
+                          readiness-diagnostic))))))
         (setf initial-grid (%route-grid raw rows columns)
               initial-projection (project-criterion-grid initial-grid))))
     (when (plusp (length context-text))

@@ -438,7 +438,7 @@
                              session output query-scan-index deadline)
                           (setf query-scan-index next-index
                                 quiet-deadline
-                                (+ (%now) (%ticks-to-seconds quiet-seconds))))
+                                (+ (%now) (%seconds-to-ticks quiet-seconds))))
                         (if (and completion-predicate
                                  (not (%route-incomplete-escape-suffix-p output))
                                  (not (%route-incomplete-utf8-suffix-p output))

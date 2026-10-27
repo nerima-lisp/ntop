@@ -209,28 +209,32 @@ while True:
          (session
            (ntop.e2e::launch-e2e-process
             "python3" (list "-c" script) 24 80 :timeout-seconds 3d0))
+         (started nil)
          (output nil))
     (unwind-protect
          (progn
            (cl-weave:expect
             (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
+           (setf started (ntop.e2e::%now))
            (setf output
                  (ntop.e2e::%route-read-through-quiet-period session
                   :quiet-seconds 0.05d0
                   :timeout-seconds 2d0))
            (let* ((text (ntop.e2e::%octets-to-text output))
                   (result
-                    (ntop.e2e:parse-ansi
-                     text
-                     (ntop.e2e:make-terminal-grid :rows 24 :cols 80)
-                     (lambda (grid) (declare (ignore grid)) :accepted)
-                     (lambda (condition)
-                       (declare (ignore condition))
-                       :rejected))))
+                   (ntop.e2e:parse-ansi
+                    text
+                    (ntop.e2e:make-terminal-grid :rows 24 :cols 80)
+                    (lambda (grid) (declare (ignore grid)) :accepted)
+                    (lambda (condition) (declare (ignore condition)) :rejected))))
+             (cl-weave:expect text :to-equal (format nil "~c[31mX" (code-char 27)))
+             (cl-weave:expect result :to-be :accepted)
              (cl-weave:expect
-              text :to-equal (format nil "~c[31mX" (code-char 27)))
-             (cl-weave:expect result :to-be :accepted)))
+              (>= (ntop.e2e::%ticks-to-seconds
+                   (- (ntop.e2e::%now) started))
+                  0.18d0)
+              :to-be t)))
       (ntop.e2e::close-e2e-session session))))
  (cl-weave:it
   "keeps reading a UTF-8 code point split across the quiet period"
