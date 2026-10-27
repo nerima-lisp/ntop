@@ -75,4 +75,3 @@
         (cl-weave:expect (search "Search: GPU" search-row) :to-be 0)
         (cl-weave:expect (char bottom 0) :to-equal #\└)
         (cl-weave:expect (char bottom 79) :to-equal #\┘)))))
-

@@ -251,4 +251,3 @@
                           :selected-widget :process :scroll-offset start)))
               (cl-weave:expect (offset (move input kind value page-size))
                                :to-equal expected)))))))))
-
