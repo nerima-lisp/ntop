@@ -171,3 +171,61 @@
                        (and (vectorp cells) (plusp (length cells)))
                        :to-be
                        t))))
+(cl-weave:describe
+ "FR-001 condition A live-grid comparison"
+ (cl-weave:it
+  "separates frame geometry and border, title, and process-header SGR at 40x12"
+  (let* ((reference (criterion-test-grid 12 40 "live process"))
+         (same (ntop.e2e::copy-terminal-grid reference))
+         (border-style (ntop.e2e::copy-terminal-grid reference))
+         (title-style (ntop.e2e::copy-terminal-grid reference))
+         (header-style (ntop.e2e::copy-terminal-grid reference))
+         (shifted-frame (ntop.e2e::copy-terminal-grid reference)))
+    (cl-weave:expect
+     (ntop.e2e::condition-a-difference-kinds reference same)
+     :to-equal nil)
+    (setf (ntop.e2e:cell-foreground
+           (ntop.e2e:grid-cell-at border-style 0 0))
+          '(:indexed . 1))
+    (cl-weave:expect
+     (ntop.e2e::condition-a-difference-kinds reference border-style)
+     :to-equal '(:border-sgr))
+    (setf (ntop.e2e:cell-foreground
+           (ntop.e2e:grid-cell-at title-style 0 3))
+          '(:indexed . 4))
+    (cl-weave:expect
+     (ntop.e2e::condition-a-difference-kinds reference title-style)
+     :to-equal '(:title-sgr))
+    (setf (ntop.e2e:cell-background
+           (ntop.e2e:grid-cell-at header-style 9 2))
+          '(:indexed . 5))
+    (cl-weave:expect
+     (ntop.e2e::condition-a-difference-kinds reference header-style)
+     :to-equal '(:process-header-sgr))
+    (setf (ntop.e2e:cell-character
+           (ntop.e2e:grid-cell-at shifted-frame 0 39))
+          #\Space)
+    (setf (ntop.e2e:cell-character
+           (ntop.e2e:grid-cell-at shifted-frame 0 38))
+          #\┐)
+    (cl-weave:expect (not (null (member :frame-geometry
+                                        (ntop.e2e::condition-a-difference-kinds
+                                         reference shifted-frame))))
+                     :to-be t)))
+ (cl-weave:it
+  "parses accumulated raw bytes with an incomplete UTF-8 suffix"
+  (let* ((complete-output
+          (sb-ext:string-to-octets
+           (format nil "~c[2J~c[HA" #\Escape #\Escape)
+           :external-format :utf-8))
+         (partial-output
+          (concatenate '(vector (unsigned-byte 8))
+                       complete-output
+                       (vector #xe2 #x94)))
+         (grid (ntop.e2e::%condition-a-live-grid partial-output 12 40)))
+    (cl-weave:expect
+     (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 0))
+     :to-equal #\A)
+    (cl-weave:expect
+     (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 1))
+     :to-equal #\Space))))

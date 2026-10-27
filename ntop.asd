@@ -396,6 +396,7 @@
    (:file "t/e2e/measure-terminal")
    (:file "t/e2e/measure-terminal-n6")
    (:file "t/e2e/measurements")
+   (:file "t/e2e/criterion-a")
    (:file "t/e2e/n7")
    (:file "t/e2e/domain-parity-export")
    (:file "t/e2e/routes")

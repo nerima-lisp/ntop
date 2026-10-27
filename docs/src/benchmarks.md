@@ -4,6 +4,18 @@ WP15b is the local run label for these WP15 nonfunctional and difference accepta
 
 N3–N6 are carried over from an earlier local measurement run. Their JSON and manifest files do not record a collection date, executable digest, source commit, or harness revision, so the exact date and executable and harness versions cannot be identified. The current harness sources for reproducing those measurements are `t/e2e/wp15b_measure.py`, `t/e2e/wp15b_measure_terminal.py`, `t/e2e/wp15b_measure_support.py`, and `t/e2e/wp15b_n6.py`; their current contents do not establish which revisions produced the earlier records. D1 and D11 were rerun with a native executable rebuilt from the current workspace and revised local measurement harnesses; no ntop collector code changed for those reruns. The evidence paths below identify the reruns.
 
+## FR-001 condition A live-grid comparison
+
+Build the `ntop` executable and make the pinned Lisp dependencies available to SBCL. Use btm 0.14.9, then run the comparison from the worktree:
+
+```sh
+sbcl --script scripts/compare-condition-a.lisp ./ntop "$(command -v btm)" /tmp/ntop-fr001-condition-a.tsv
+```
+
+The optional positional arguments are the ntop executable, btm executable, output table, sampling interval in milliseconds, and per-process timeout in seconds. The defaults are `ntop`, `btm`, `/tmp/ntop-fr001-condition-a.tsv`, 700 ms, and 90 seconds. The command compares every dimension returned by `golden-dimensions`, writes one TSV row per dimension, and exits nonzero if any comparison differs. Captured PTY bytes are saved beside the table in `ntop-fr001-condition-a-raw/` (or the corresponding output-stem directory for a custom table path).
+
+The runner creates the §3.4 btm configuration, uses an isolated HOME and XDG configuration directory with `TERM=xterm-256color`, and captures btm and ntop sequentially. It waits for the first-frame threshold and repeated stable criterion projections using PTY output, without a fixed sleep. The ANSI bytes are parsed into terminal grids by ntop's parser. The comparison records widget frame geometry, border cells, fixed title cells, process-header cells, and each category's foreground, background, and bold SGR attributes. CPU load numbers in the CPU title are excluded. The TSV includes a first-difference description for mismatches; raw captures are retained for inspection.
+
 ## FR-002 CPU frequency comparison
 
 On macOS, run this from the ntop worktree:
