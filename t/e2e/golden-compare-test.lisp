@@ -213,6 +213,22 @@
                                          reference shifted-frame))))
                      :to-be t)))
  (cl-weave:it
+  "keeps first difference detail on one line when pretty printing is enabled"
+  (let* ((reference (criterion-test-grid 12 40 "live process"))
+         (candidate (ntop.e2e::copy-terminal-grid reference)))
+    (setf (ntop.e2e:cell-character
+           (ntop.e2e:grid-cell-at candidate 9 2))
+          #\X)
+    (let* ((*print-pretty* t)
+           (*print-right-margin* 12)
+           (difference-kinds
+             (ntop.e2e::condition-a-difference-kinds reference candidate))
+           (detail
+             (ntop.e2e::%condition-a-first-difference
+              reference candidate difference-kinds)))
+      (cl-weave:expect difference-kinds :to-equal '(:process-header-cells))
+      (cl-weave:expect (find #\Newline detail) :to-be nil))))
+ (cl-weave:it
   "parses accumulated raw bytes with incomplete UTF-8 and CSI suffixes"
   (let* ((complete-output
           (sb-ext:string-to-octets

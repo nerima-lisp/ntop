@@ -45,30 +45,31 @@
 
 (defun %condition-a-first-difference
     (reference-grid candidate-grid difference-kinds)
-  (let ((reference-frames (criterion-projection-frames reference-grid))
-        (candidate-frames (criterion-projection-frames candidate-grid)))
-    (when (member :frame-geometry difference-kinds)
-      (return-from %condition-a-first-difference
-                   (format nil "frame-geometry reference=~s candidate=~s"
-                           reference-frames candidate-frames))))
-  (let ((reference (project-criterion-grid reference-grid))
-        (candidate (project-criterion-grid candidate-grid)))
-    (dolist (category *condition-a-categories*)
-      (destructuring-bind (name cells-kind style-kind) category
-        (when (or (member cells-kind difference-kinds)
-                  (member style-kind difference-kinds))
-          (let ((left (%condition-a-category-entries reference name))
-                (right (%condition-a-category-entries candidate name)))
-            (loop for index below (max (length left) (length right))
-                  for left-entry = (nth index left)
-                  for right-entry = (nth index right)
-                  unless (equalp left-entry right-entry)
-                  do (return-from %condition-a-first-difference
-                                  (format nil "~a reference=~s candidate=~s"
-                                          name left-entry right-entry)))))))
-    (if difference-kinds
-        (string-downcase (symbol-name (first difference-kinds)))
-      "none")))
+  (let ((*print-pretty* nil))
+    (let ((reference-frames (criterion-projection-frames reference-grid))
+          (candidate-frames (criterion-projection-frames candidate-grid)))
+      (when (member :frame-geometry difference-kinds)
+        (return-from %condition-a-first-difference
+          (format nil "frame-geometry reference=~s candidate=~s"
+                  reference-frames candidate-frames))))
+    (let ((reference (project-criterion-grid reference-grid))
+          (candidate (project-criterion-grid candidate-grid)))
+      (dolist (category *condition-a-categories*)
+        (destructuring-bind (name cells-kind style-kind) category
+          (when (or (member cells-kind difference-kinds)
+                    (member style-kind difference-kinds))
+            (let ((left (%condition-a-category-entries reference name))
+                  (right (%condition-a-category-entries candidate name)))
+              (loop for index below (max (length left) (length right))
+                    for left-entry = (nth index left)
+                    for right-entry = (nth index right)
+                    unless (equalp left-entry right-entry)
+                    do (return-from %condition-a-first-difference
+                         (format nil "~a reference=~s candidate=~s"
+                                 name left-entry right-entry)))))))
+      (if difference-kinds
+          (string-downcase (symbol-name (first difference-kinds)))
+          "none"))))
 (defun %condition-a-live-grid (octets rows columns)
   (let ((complete-prefix-length
          (loop for prefix-length downfrom (length octets)
