@@ -361,6 +361,45 @@
     (cl-weave:expect
      (ntop.platform.darwin::%darwin-procargs2-executable-path octets)
      :to-be-null)))
+ (cl-weave:it
+ "covers empty executable paths and records without Darwin flags"
+ (let ((bsd (%f8a-darwin-test-octets 136))
+       (kinfo (%f8a-darwin-test-octets 648))
+       (thread-info (%f8a-darwin-test-octets 112))
+       (short-header (%f8a-darwin-test-octets 3))
+       (empty-path (%f8a-darwin-test-octets 4)))
+   (cl-weave:expect
+    (ntop.platform.darwin::%darwin-process-path-basename nil)
+    :to-be-null)
+   (cl-weave:expect
+    (ntop.platform.darwin::%darwin-process-path-basename "/")
+    :to-be-null)
+   (cl-weave:expect
+    (ntop.platform.darwin::%darwin-procargs2-executable-path short-header)
+    :to-be-null)
+   (%f8a-darwin-test-write-integer empty-path 0 4 0)
+   (cl-weave:expect
+    (ntop.platform.darwin::%darwin-procargs2-executable-path empty-path)
+    :to-be-null)
+   (%f8a-darwin-test-write-string bsd 48 16 "short-name")
+   (let ((row (ntop.platform.darwin::decode-darwin-proc-bsdinfo bsd)))
+     (cl-weave:expect (getf row :name) :to-equal "short-name")
+     (cl-weave:expect (getf row :kernel-thread-p) :to-be nil)
+     (cl-weave:expect (getf row :state) :to-be-null))
+   (%f8a-darwin-test-write-integer kinfo 36 1 99)
+   (let ((row (ntop.platform.darwin::decode-darwin-kinfo-proc kinfo)))
+     (cl-weave:expect (getf row :kernel-thread-p) :to-be nil)
+     (cl-weave:expect (getf row :state) :to-be-null))
+   (let ((row
+           (ntop.platform.darwin::decode-darwin-proc-threadinfo
+            thread-info 3 0 1)))
+     (cl-weave:expect (getf row :name) :to-be-null)
+     (cl-weave:expect (getf row :cpu-time-ns) :to-be-null)
+     (cl-weave:expect (getf row :state) :to-be-null))
+   (cl-weave:expect
+    (lambda ()
+      (ntop.platform.darwin::decode-darwin-proc-threadinfo thread-info 0))
+    :to-throw 'type-error)))
  #+darwin
  (cl-weave:it
   "falls back from KERN_PROCARGS2 to proc_pidpath and metadata"

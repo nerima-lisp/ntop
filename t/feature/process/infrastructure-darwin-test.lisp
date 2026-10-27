@@ -493,7 +493,7 @@
       (cl-weave:expect (getf (gethash 41 values) :cpu) :to-be 2.5d0)
       (cl-weave:expect (getf (gethash 41 values) :priority) :to-be 7)
       (cl-weave:expect (getf (gethash 41 values) :command) :to-be-null)))))
-)
+ )
 
 )
 

@@ -257,6 +257,7 @@
    (:file "t/feature/process/domain-types-test")
    (:file "t/feature/process/domain-constructor-slot-types-test")
    (:file "t/feature/process/infrastructure-darwin-test")
+   (:file "t/feature/process/infrastructure-darwin-adapter-test")
    (:file "t/feature/process/infrastructure-linux-test")
    (:file "t/feature/process/infrastructure-linux-failure-paths-test")
    (:file "t/platform/darwin/infrastructure-libproc-test")
