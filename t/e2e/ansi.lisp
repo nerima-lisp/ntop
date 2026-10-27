@@ -175,3 +175,6 @@
            (parse-fail text position "invalid RGB color"))
          (values (cons :rgb (list red green blue)) (+ index 5))))
       (otherwise (parse-fail text position "invalid extended color mode")))))
+
+(defun %octets-to-text (octets)
+  (sb-ext:octets-to-string octets :external-format :utf-8))

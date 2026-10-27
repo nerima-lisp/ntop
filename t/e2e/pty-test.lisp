@@ -19,7 +19,7 @@
     (unwind-protect
          (progn
            (ntop.e2e::pty-read-until-idle
-            session :quiet-seconds 0.05d0 :timeout-seconds 2d0)
+              session :quiet-seconds 0.05d0 :timeout-seconds 2d0)
            (ntop.e2e::pty-resize-session
             session 36 120 :timeout-seconds 2d0)
            (multiple-value-bind (output)
@@ -27,7 +27,9 @@
                 session
                 :quiet-seconds 0.3d0
                 :timeout-seconds 2d0
-                :initial-quiet-seconds 0.75d0)
+                :initial-quiet-seconds 0.75d0
+                :stability-seconds 0.08d0
+                :allow-unchanged-p nil)
              (cl-weave:expect
               (not (null (search "RESIZE=120x36"
                                  (ntop.e2e::%octets-to-text output))))
@@ -308,7 +310,7 @@
                           (progn
                             (multiple-value-bind (frame)
                                 (ntop.e2e::pty-read-until-idle
-                                 session :quiet-seconds 0.1d0 :timeout-seconds 3d0)
+                                   session :quiet-seconds 0.1d0 :timeout-seconds 3d0)
                               (setf output frame))
                             (cl-weave:expect
                              (ntop.e2e::%route-wait-for-exit session 3d0)
@@ -344,7 +346,7 @@
          (progn
            (multiple-value-bind (frame)
                (ntop.e2e::pty-read-until-idle
-                session :quiet-seconds 0.05d0 :timeout-seconds 2d0)
+                  session :quiet-seconds 0.05d0 :timeout-seconds 2d0)
              (setf ready-output frame))
            (cl-weave:expect
             (not (null
@@ -420,10 +422,10 @@
         (progn
           (multiple-value-bind (frame last)
               (ntop.e2e::pty-read-until-idle
-               session
-               :quiet-seconds 0.1d0
-               :first-frame-not-before 0.2d0
-               :timeout-seconds 2d0)
+                 session
+                 :quiet-seconds 0.1d0
+                 :first-frame-not-before 0.2d0
+                 :timeout-seconds 2d0)
             (setf output frame last-output-at last))
           (cl-weave:expect
            (ntop.e2e::%pty-visible-screen-output-p output)
@@ -445,7 +447,8 @@
            "sleep" (list "30") 24 80 :timeout-seconds 3d0))
         (output
           (map (quote (vector (unsigned-byte 8)))
-               (function char-code) "PARTIAL_ROUTE_OUTPUT"))
+               (function char-code)
+               (format nil "PARTIAL_ROUTE_OUTPUT~c[" (code-char 27))))
         (delivered-p nil)
         (original-wait (symbol-function (quote cl-tty-kit:fd-wait)))
         (original-read (symbol-function (quote cl-tty-kit:fd-read-octets)))
@@ -472,7 +475,7 @@
                              (length output)))))
                  (handler-case
                      (ntop.e2e::pty-read-until-idle
-                      session :quiet-seconds 1d0 :timeout-seconds 0.5d0)
+                        session :quiet-seconds 1d0 :timeout-seconds 0.5d0)
                    (ntop.e2e::e2e-timeout () (setf timed-out t)))
                  (setf captured-text
                        (ntop.e2e::%octets-to-text

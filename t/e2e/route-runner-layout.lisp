@@ -166,13 +166,6 @@
            (%route-widget-no-data-p grid "Battery")))
       (t nil))))
 
-(defun %route-grid (octets rows columns)
-  (let ((grid (make-terminal-grid :rows rows :cols columns)))
-    (parse-ansi (%octets-to-text octets)
-                grid
-                (lambda (value) value)
-                (lambda (condition) (error condition)))))
-
 (defun %route-grid-after-output (raw output rows columns)
   (%route-grid (concatenate '(vector (unsigned-byte 8)) raw output)
                rows columns))

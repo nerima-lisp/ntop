@@ -351,126 +351,56 @@
                  :test #'string=)
          (format nil "~a~a" token (if (string= token "pid") " 0" ">=0")))
         (t token)))
-(defun %route-incomplete-utf8-suffix-p (octets)
-  (let ((end (length octets)))
-    (loop for start from (max 0 (- end 3)) below end
-          for lead = (aref octets start)
-          for expected = (cond ((<= #xc2 lead #xdf) 2)
-                               ((<= #xe0 lead #xef) 3)
-                               ((<= #xf0 lead #xf4) 4))
-          for available = (- end start)
-          when (and expected
-                    (< available expected)
-                    (loop for index from (1+ start) below end
-                          for byte = (aref octets index)
-                          always
-                          (and (<= #x80 byte #xbf)
-                               (or (/= index (1+ start))
-                                   (cond ((= lead #xe0) (<= #xa0 byte #xbf))
-                                         ((= lead #xed) (<= #x80 byte #x9f))
-                                         ((= lead #xf0) (<= #x90 byte #xbf))
-                                         ((= lead #xf4) (<= #x80 byte #x8f))
-                                         (t t))))))
-            do (return t)
-          finally (return nil))))
-(defun %route-utf8-continuation-byte-p (octets position)
-  (let ((end (length octets)))
-    (loop for start from (max 0 (- position 3)) below position
-          for lead = (aref octets start)
-          for expected = (cond ((<= #xc2 lead #xdf) 2)
-                               ((<= #xe0 lead #xef) 3)
-                               ((<= #xf0 lead #xf4) 4))
-          when (and expected
-                    (< (- position start) expected)
-                    (<= (+ start expected) end)
-                    (loop for index from (1+ start) below (+ start expected)
-                          for byte = (aref octets index)
-                          always
-                          (and (<= #x80 byte #xbf)
-                               (or (/= index (1+ start))
-                                   (cond ((= lead #xe0) (<= #xa0 byte #xbf))
-                                         ((= lead #xed) (<= #x80 byte #x9f))
-                                         ((= lead #xf0) (<= #x90 byte #xbf))
-                                         ((= lead #xf4) (<= #x80 byte #x8f))
-                                         (t t))))))
-            do (return t)
-          finally (return nil))))
 
 (defun %route-read-through-quiet-period
     (session &key quiet-seconds timeout-seconds
              (initial-quiet-seconds quiet-seconds)
              completion-predicate
-             (completion-samples-required 2))
+             (completion-samples-required 2)
+             side stage stability-seconds (allow-unchanged-p t))
   (%validate-seconds quiet-seconds "QUIET-SECONDS")
   (%validate-seconds initial-quiet-seconds "INITIAL-QUIET-SECONDS")
-  (multiple-value-bind (deadline deadline-seconds)
-      (%deadline-for-call session "read" timeout-seconds)
-    (let ((quiet-deadline (+ (%now) (%seconds-to-ticks initial-quiet-seconds)))
-          (buffer (make-array 4096 :element-type (quote (unsigned-byte 8))))
-          (output (make-array 0 :element-type (quote (unsigned-byte 8))
-                              :adjustable t :fill-pointer 0))
-          (query-scan-index 0)
-          (completion-samples 0))
-      (loop for now = (%now)
-            do (when (>= now deadline)
-                 (%signal-timeout "read" deadline-seconds))
-               (when (>= now quiet-deadline)
-                 (if (or (%route-incomplete-escape-suffix-p output)
-                         (%route-incomplete-utf8-suffix-p output)
-                         (and completion-predicate
-                              (not (funcall completion-predicate output))))
-                     (setf quiet-deadline deadline)
-                     (return (values output (%elapsed-seconds session now)))))
-               (let ((wait-until (min deadline quiet-deadline)))
-                 (when (cl-tty-kit:fd-wait
-                        (e2e-session-fd session) :input
-                        (%ticks-to-seconds (- wait-until now)))
-                   (let ((count
-                           (cl-tty-kit:fd-read-octets
-                            (e2e-session-fd session) buffer)))
-                     (cond
-                       ((zerop count)
-                        (error "PTY closed before the quiet period completed."))
-                       (t
-                        (loop for index below count
-                              do (vector-push-extend (aref buffer index) output))
-                        (%e2e-session-record-output session (subseq buffer 0 count))
-                        (multiple-value-bind (next-index)
-                            (%pty-answer-cursor-query
-                             session output query-scan-index deadline)
-                          (setf query-scan-index next-index
-                                quiet-deadline
-                                (+ (%now) (%seconds-to-ticks quiet-seconds))))
-                        (if (and completion-predicate
-                                 (not (%route-incomplete-escape-suffix-p output))
-                                 (not (%route-incomplete-utf8-suffix-p output))
-                                 (funcall completion-predicate output))
-                            (when (= completion-samples-required
-                                     (incf completion-samples))
-                              (return
-                                (values output
-                                        (%elapsed-seconds session (%now)))))
-                            (setf completion-samples 0)))))))))))
-
-(defun %route-incomplete-escape-suffix-p (octets)
-  (let* ((end (length octets))
-         (escape-position (position #x1b octets :from-end t))
-         (csi-position (position #x9b octets :from-end t)))
-    (labels ((csi-state (start)
-               (loop for index from start below end
-                     for byte = (aref octets index)
-                     do (cond
-                          ((<= #x40 byte #x7e) (return :complete))
-                          ((<= #x20 byte #x3f))
-                          (t (return :invalid)))
-                     finally (return :incomplete))))
-      (or (and escape-position (= (1+ escape-position) end))
-          (and escape-position
-               (< (1+ escape-position) end)
-               (= (aref octets (1+ escape-position)) #x5b)
-               (eq (csi-state (+ escape-position 2)) :incomplete))
-          (and csi-position
-               (not (%route-utf8-continuation-byte-p octets csi-position))
-               (or (null escape-position)
-                   (> csi-position escape-position))
-               (eq (csi-state (1+ csi-position)) :incomplete))))))
+  (let* ((prefix (copy-seq (e2e-session-output session)))
+         (prefix-length (length prefix))
+         (rows (e2e-session-rows session))
+         (columns (e2e-session-columns session))
+         (completion-samples 0)
+         (last-completion-gap-count
+           (length (e2e-session-output-gaps-seconds session)))
+         (*route-frame-capture-not-before-at*
+           (unless completion-predicate
+             (+ (%now) (%seconds-to-ticks initial-quiet-seconds)))))
+    (unless (and rows columns)
+      (error "PTY session has no recorded frame dimensions."))
+    (multiple-value-bind (cumulative grid metadata)
+        (%route-capture-frame
+         session prefix rows columns
+         :side (or side *route-frame-capture-side* :unknown)
+         :stage (or stage :route-read-through-quiet-period)
+         :timeout-seconds timeout-seconds
+         :stability-seconds
+         (if completion-predicate
+             0d0
+           (or stability-seconds *route-frame-stability-seconds*
+               quiet-seconds))
+         :allow-unchanged-p
+         (and allow-unchanged-p (null completion-predicate))
+         :completion-predicate
+         (when completion-predicate
+           (lambda (grid)
+             (declare (ignore grid))
+             (let* ((output *route-frame-capture-current-octets*)
+                    (new-output (subseq output prefix-length))
+                    (gap-count
+                      (length
+                       (e2e-session-output-gaps-seconds session))))
+               (when (> (- gap-count last-completion-gap-count) 1)
+                 (setf completion-samples 0))
+               (setf last-completion-gap-count gap-count)
+               (if (funcall completion-predicate new-output)
+                   (incf completion-samples)
+                 (setf completion-samples 0))
+               (>= completion-samples completion-samples-required)))))
+      (declare (ignore grid metadata))
+      (values (subseq cumulative prefix-length)
+              (%elapsed-seconds session (%now))))))

@@ -113,9 +113,6 @@
     (vector-push-extend octet destination))
   destination)
 
-(defun %octets-to-text (octets)
-  (sb-ext:octets-to-string octets :external-format :utf-8))
-
 (defun %ensure-btm (target)
   (unless (string= target "btm")
     (if (string= target "ntop")

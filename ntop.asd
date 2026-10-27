@@ -379,7 +379,9 @@
    (:file "t/e2e/ansi")
    (:file "t/e2e/ansi-parser")
    (:file "t/e2e/pty")
-   (:file "t/e2e/pty-cleanup")))
+   (:file "t/e2e/pty-cleanup")
+   (:file "t/e2e/criterion")
+   (:file "t/e2e/route-frame-capture")))
 (asdf:defsystem "ntop/e2e"
   :description "End-to-end capture and measurement harness for btm."
   :author "ntop contributors"
@@ -390,7 +392,6 @@
   :serial t
   :components
   ((:file "t/e2e/btm-config")
-   (:file "t/e2e/criterion")
    (:file "t/e2e/golden-compare")
    (:file "t/e2e/golden")
    (:file "t/e2e/measurement-data")
@@ -443,7 +444,8 @@
    (:file "t/e2e/measurements-test")
    (:file "t/e2e/n7-test")
    (:file "t/e2e/pty-test")
-   (:file "t/e2e/pty-route-test"))
+   (:file "t/e2e/pty-route-test")
+   (:file "t/e2e/route-frame-capture-test"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (unless (uiop:symbol-call "CL-WEAVE" "RUN-ALL"

@@ -65,8 +65,9 @@ while True:
     (unwind-protect
          (progn
            (multiple-value-bind (initial)
-               (ntop.e2e::pty-read-until-idle
-                session :quiet-seconds 0.05d0 :timeout-seconds 2d0)
+               (let ((ntop.e2e::*route-frame-stability-seconds* 0.08d0))
+                 (ntop.e2e::pty-read-until-idle
+                  session :quiet-seconds 0.05d0 :timeout-seconds 2d0))
              (cl-weave:expect
               (not (null
                     (search "SHUTDOWN_READY"
@@ -119,34 +120,6 @@ while True:
 (cl-weave:describe
  "route input quiet reads and help search state"
  (cl-weave:it
-  "returns after the no-output observation window"
-  (let* ((session
-           (ntop.e2e::launch-e2e-process
-            "python3" (list "-c" "import time; time.sleep(30)") 24 80
-            :timeout-seconds 3d0))
-         (started (ntop.e2e::%now))
-         (output nil))
-    (unwind-protect
-         (progn
-           (setf output
-                 (ntop.e2e::%route-read-through-quiet-period
-                  session
-                  :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0
-                  :initial-quiet-seconds 0.08d0))
-           (cl-weave:expect (length output) :to-equal 0)
-           (cl-weave:expect
-            (< (ntop.e2e::%ticks-to-seconds
-                (- (ntop.e2e::%now) started))
-               1d0)
-            :to-be
-            t)
-           (cl-weave:expect
-            (sb-ext:process-alive-p (ntop.e2e::e2e-session-process session))
-            :to-be
-            t))
-      (ntop.e2e::close-e2e-session session))))
- (cl-weave:it
   "waits for a complete resize frame after the initial quiet window"
   (let* ((script
            (format nil
@@ -175,7 +148,8 @@ while True:
                   :completion-predicate (lambda (octets)
                     (search
                      "RESIZE_FRAME_COMPLETE"
-                     (ntop.e2e::%octets-to-text octets)))))
+                     (ntop.e2e::%octets-to-text octets)))
+                  :stability-seconds 0.08d0))
            (let ((text (ntop.e2e::%octets-to-text output)))
              (cl-weave:expect
               (not (null (search "INITIAL_FRAME" text)))
@@ -220,7 +194,8 @@ while True:
            (setf output
                  (ntop.e2e::%route-read-through-quiet-period session
                   :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0))
+                  :timeout-seconds 2d0
+                  :stability-seconds 0.08d0))
            (let* ((text (ntop.e2e::%octets-to-text output))
                   (result
                    (ntop.e2e:parse-ansi
@@ -261,7 +236,8 @@ while True:
            (setf output
                  (ntop.e2e::%route-read-through-quiet-period session
                   :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0))
+                  :timeout-seconds 2d0
+                  :stability-seconds 0.08d0))
            (cl-weave:expect
             (ntop.e2e::%octets-to-text output)
             :to-equal
@@ -291,7 +267,8 @@ while True:
            (setf output
                  (ntop.e2e::%route-read-through-quiet-period session
                   :quiet-seconds 0.05d0
-                  :timeout-seconds 2d0))
+                  :timeout-seconds 2d0
+                  :stability-seconds 0.08d0))
            (cl-weave:expect
             (ntop.e2e::%octets-to-text output)
             :to-equal (format nil "~c" (code-char #x00db)))
@@ -450,13 +427,14 @@ while True:
             (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
            (setf output
-                 (ntop.e2e::pty-read-until-idle
-                  session :quiet-seconds 0.05d0 :timeout-seconds 2d0
-                  :completion-predicate
-                  (lambda (octets)
-                    (not (or
-                          (ntop.e2e::%route-incomplete-escape-suffix-p octets)
-                          (ntop.e2e::%route-incomplete-utf8-suffix-p octets))))))
+                 (let ((ntop.e2e::*route-frame-stability-seconds* 0.08d0))
+                   (ntop.e2e::pty-read-until-idle
+                    session :quiet-seconds 0.05d0 :timeout-seconds 2d0
+                    :completion-predicate
+                    (lambda (octets)
+                      (not (or
+                            (ntop.e2e::%route-incomplete-escape-suffix-p octets)
+                            (ntop.e2e::%route-incomplete-utf8-suffix-p octets)))))))
            (cl-weave:expect
             (ntop.e2e::%octets-to-text output)
             :to-equal
@@ -479,13 +457,14 @@ while True:
             (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
            (handler-case
-               (ntop.e2e::pty-read-until-idle
-                session :quiet-seconds 0.05d0 :timeout-seconds 0.25d0
-                :completion-predicate
-                (lambda (octets)
-                  (not (or
-                        (ntop.e2e::%route-incomplete-escape-suffix-p octets)
-                        (ntop.e2e::%route-incomplete-utf8-suffix-p octets)))))
+               (let ((ntop.e2e::*route-frame-stability-seconds* 0.08d0))
+                 (ntop.e2e::pty-read-until-idle
+                  session :quiet-seconds 0.05d0 :timeout-seconds 0.25d0
+                  :completion-predicate
+                  (lambda (octets)
+                    (not (or
+                          (ntop.e2e::%route-incomplete-escape-suffix-p octets)
+                          (ntop.e2e::%route-incomplete-utf8-suffix-p octets))))))
              (ntop.e2e::e2e-timeout (condition)
                (setf caught condition)))
            (cl-weave:expect
@@ -494,6 +473,6 @@ while True:
            (cl-weave:expect
             (ntop.e2e::e2e-timeout-operation caught)
             :to-equal
-            "read"))
+            "route frame capture"))
       (ntop.e2e::close-e2e-session session))))
 )
