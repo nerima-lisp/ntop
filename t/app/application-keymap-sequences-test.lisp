@@ -365,7 +365,7 @@
                     (2 "2 - CPU widget")
                     (3 "3 - Process widget")
                     (4 "4 - Process search widget")
-                    (5 "5 - Process sort widget")
+                    (5 "5 - Sort widget")
                     (6 "6 - Temperature widget")
                     (7 "7 - Disk widget")
                     (8 "8 - Battery widget")
@@ -378,7 +378,7 @@
                (next (ntop.app.presentation::help-state-transition
                       state action :page-size 25))
                (lines (ntop.app.presentation::%help-visible-lines next))
-               (position (position heading lines :test #'string=))
+               (position (position heading lines :test #'string= :from-end t))
                (last-offset (max 0 (- (length lines) 25)))
                (expected-offset (and position (min position last-offset)))
                (offset (ntop.app.presentation::help-state-scroll-offset next))
@@ -409,7 +409,7 @@
            (/= (ntop.app.presentation::help-state-scroll-offset away) offset)
            :to-be t))))))
  (cl-weave:it
-  "rejects invalid section values and keeps search contextual"
+  "rejects invalid values and retains matching BTM section headers"
   (dolist (value '((:help-section "0")
                    (:help-section "10")
                    (:help-section "x")
@@ -445,7 +445,7 @@
      (position "2 - CPU widget"
                (ntop.app.presentation::%help-visible-lines search-state)
                :test #'string=)
-     :to-be nil)
+     :to-be 0)
     (cl-weave:expect
      (ntop.app.presentation::help-state-query invalid-state) :to-equal "CPU")
     (cl-weave:expect

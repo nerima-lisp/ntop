@@ -122,50 +122,53 @@
          (setf (gethash widget target-views) view))
        source-views)
       target))
-  (defun %update-help-state (composition state action)
-    (let* ((states (ntop.app.domain:app-state-widget-v-states state))
-           (active-p (%help-dialog-p state))
-           (help-state (gethash :help states))
-           (kind (ntop.app.domain:app-action-kind action))
-           (value (ntop.app.domain:app-action-value action)))
-      (when (and active-p (null help-state))
-        (setf help-state
-              (ntop.app.presentation:make-help-state
-               :selected-widget
-               (ntop.app.domain:app-state-selected-widget state)
-               :sectioned-p t)))
-      (when
-          (and help-state
-               (or (and (eq kind :dialog)
-                        (consp value)
-                        (eq (first value) :close)
-                        (eq (second value) :help-search))
-                   (and active-p
-                        (or (eq kind :help)
-                            (and (eq kind :dialog)
-                                 (eq value :help))))))
+(defun %update-help-state (composition state action)
+  (let* ((states (ntop.app.domain:app-state-widget-v-states state))
+         (active-p (%help-dialog-p state))
+         (help-state (gethash :help states))
+         (kind (ntop.app.domain:app-action-kind action))
+         (value (ntop.app.domain:app-action-value action)))
+    (when (and active-p (null help-state))
+      (setf help-state
+            (ntop.app.presentation:make-help-state
+             :selected-widget (ntop.app.domain:app-state-selected-widget state)
+             :sectioned-p t)))
+    (when
+        (and help-state
+             (or (and (eq kind :dialog)
+                      (consp value)
+                      (eq (first value) :close)
+                      (eq (second value) :help-search))
+                 (and active-p
+                      (or (eq kind :help)
+                          (and (eq kind :dialog)
+                               (eq value :help))))))
+      (setf help-state
+            (ntop.app.presentation:help-state-transition
+             help-state
+             (ntop.app.domain:make-app-action :kind :search :value :submit)))
+      (setf (gethash :help states) help-state))
+    (when (and active-p help-state (%help-action-p action))
+      (let* ((columns
+              (or (application-composition-screen-columns composition) 80))
+             (rows (or (application-composition-screen-rows composition) 24))
+             (search-row-p
+              (and
+               (ntop.app.presentation:help-state-search-active-p help-state)
+               (> rows 2)))
+             (page-size
+              (max 1 (- (min rows 27) 2 (if search-row-p 1 0))))
+             (line-width (max 1 (- (min columns 96) 3))))
         (setf help-state
               (ntop.app.presentation:help-state-transition
-               help-state
-               (ntop.app.domain:make-app-action :kind :search :value :submit)))
-        (setf (gethash :help states) help-state))
-      (when (and active-p help-state (%help-action-p action))
-        (let* ((rows (or (application-composition-screen-rows composition) 24))
-               (search-row-p
-                 (and
-                  (ntop.app.presentation:help-state-search-active-p help-state)
-                  (> rows 2)))
-               (page-size (max 1 (- (min rows 27) 2 (if search-row-p 1 0)))))
-          (setf help-state
-                (ntop.app.presentation:help-state-transition
-                 help-state action :page-size page-size))
-          (when
-              (and (eq kind :search)
-                   (eq value :submit)
-                   (eq (ntop.app.domain:app-state-active-dialog state) :help-search))
-            (setf (ntop.app.domain:app-state-active-dialog state) :help))
-          (setf (gethash :help states) help-state)
-          t))))
+               help-state action :page-size page-size :line-width line-width))
+        (when
+            (and (eq kind :search)
+                 (eq value :submit)
+                 (eq (ntop.app.domain:app-state-active-dialog state) :help-search))
+          (setf (ntop.app.domain:app-state-active-dialog state) :help))
+        (setf (gethash :help states) help-state)
+        t))))
   (defun %help-dialog-rectangle (columns rows)
     (let* ((width (min columns 96))
            (height (min rows 27)))
@@ -174,78 +177,22 @@
        :y (floor (- rows height) 2)
        :width width
        :height height)))
-  (defun %draw-help-overlay (screen state config columns rows)
-    (when (%help-dialog-p state)
-      (let* ((states (ntop.app.domain:app-state-widget-v-states state))
-             (help-state
-               (or (gethash :help states)
-                   (ntop.app.presentation:make-help-state
-                    :selected-widget
-                    (ntop.app.domain:app-state-selected-widget state)
-                    :sectioned-p t)))
-             (rectangle (%help-dialog-rectangle columns rows))
-             (search-row-p
-               (ntop.app.presentation:help-state-search-active-p help-state))
-             (content-rectangle
-               (if search-row-p
-                   (ntop.ui:make-rectangle
-                    :x (ntop.ui:rectangle-x rectangle)
-                    :y (ntop.ui:rectangle-y rectangle)
-                    :width (ntop.ui:rectangle-width rectangle)
-                    :height (max 0 (1- (ntop.ui:rectangle-height rectangle))))
-                   rectangle))
-             (content-state
-               (if search-row-p
-                   (ntop.app.presentation:make-help-state
-                    :selected-widget
-                    (ntop.app.presentation:help-state-selected-widget help-state)
-                    :query (ntop.app.presentation:help-state-query help-state)
-                    :search-active-p nil
-                    :scroll-offset
-                    (ntop.app.presentation:help-state-scroll-offset help-state)
-                    :sectioned-p
-                    (ntop.app.presentation:help-state-sectioned-p help-state))
-                   help-state))
-             (theme (ntop.shared.application:application-config-theme config))
-             (x (ntop.ui:rectangle-x rectangle))
-             (y (ntop.ui:rectangle-y rectangle))
-             (width (ntop.ui:rectangle-width rectangle))
-             (height (ntop.ui:rectangle-height rectangle))
-             (border-style (ntop.app.presentation::%screen-style theme :border))
-             (title-style (ntop.app.presentation::%screen-style theme :widget-title))
-             (text-style (ntop.app.presentation::%screen-style theme :text))
-             (selected-style
-               (ntop.app.presentation::%screen-style theme :selected-text))
-             (left-title " Help ")
-             (right-title " Esc to close "))
-        (setf (gethash :help states) help-state)
-        (ntop.ui:draw-widget :help screen content-rectangle content-state config nil)
-        (when (plusp (ntop.ui:rectangle-height content-rectangle))
-          (cl-tty-kit:screen-write-string
-           screen x y
-           (ntop.app.presentation::%help-border-line width #\┌ #\┐)
-           :style border-style)
-          (when (> width 4)
-            (cl-tty-kit:screen-write-string
-             screen (+ x 1) y left-title :style title-style)
-            (when (>= width (+ 3 (length left-title) (length right-title)))
-              (cl-tty-kit:screen-write-string
-               screen (- (+ x width) 1 (length right-title)) y right-title
-               :style title-style))))
-        (when search-row-p
-          (ntop.app.presentation::%help-write-line
-           screen (1+ x) (+ y height -1) (max 0 (- width 2))
-           (ntop.app.presentation::%help-search-prompt help-state)
-           text-style (ntop.app.presentation:help-state-query help-state)
-           selected-style))
-        (progn
-          (when (and (> height 2)
-                     (> (length
-                         (ntop.app.presentation::%help-visible-lines content-state))
-                        (max 0 (- (ntop.ui:rectangle-height content-rectangle) 2))))
-            (cl-tty-kit:screen-write-string
-             screen (+ x width -2) (+ y height -2) "▼" :style text-style))
-          nil))))
+(defun %draw-help-overlay (screen state config columns rows)
+  (when (%help-dialog-p state)
+    (let* ((states (ntop.app.domain:app-state-widget-v-states state))
+           (help-state
+            (or (gethash :help states)
+                (ntop.app.presentation:make-help-state
+                 :selected-widget
+                 (ntop.app.domain:app-state-selected-widget state)
+                 :sectioned-p t)))
+           (rectangle (%help-dialog-rectangle columns rows))
+           (theme (ntop.shared.application:application-config-theme config)))
+      (setf (gethash :help states) help-state)
+      (cl-tty-kit:screen-fill-rect
+       screen 0 0 columns rows (code-char 32)
+       :style (ntop.app.presentation::%screen-style theme :general-widget))
+      (ntop.ui:draw-widget :help screen rectangle help-state config nil))))
   (defun %new-composition-screen (composition columns rows)
     (unless
         (and (eql columns (application-composition-screen-columns composition))
@@ -270,51 +217,48 @@
   (check-type rows (integer 1 *))
   (let* ((selected-groups (%history-groups-for-state state))
          (selected-width
-           (and selected-groups
-                (%composition-history-window-width composition
-                                                   (first selected-groups)))))
+          (and selected-groups
+               (%composition-history-window-width composition
+                                                  (first selected-groups)))))
     (setf (ntop.app.domain:app-state-zoom-seconds state)
           (or selected-width
               (application-composition-initial-zoom-seconds composition))))
   (let* ((snapshot
-           (if (application-composition-paused-p composition)
-               (%composition-current-snapshot composition)
-               snapshot))
+          (if (application-composition-paused-p composition)
+              (%composition-current-snapshot composition)
+            snapshot))
          (screen (%new-composition-screen composition columns rows))
          (help-active-p (%help-dialog-p state))
          (ntop.app.presentation::*screen-selection-active-p*
           (application-composition-selection-active-p composition))
          (widget-areas
-           (when (or (not help-active-p)
-                     (eq (application-composition-draw-screen composition)
-                         (function ntop.app.presentation:draw-application-screen)))
-             (let ((ntop.app.presentation::*screen-background-only-p* help-active-p))
-               (apply (application-composition-draw-screen composition)
-                      (append
-                       (list screen
-                             state
-                             config
-                             snapshot
-                             columns
-                             rows
-                             unavailability-reasons
-                             (%composition-series-by-widget
-                              composition snapshot unavailability-reasons state))
-                       (when
-                           (and current-time-unix-seconds
-                                (eq (application-composition-draw-screen composition)
-                                    (function
-                                     ntop.app.presentation:draw-application-screen)))
-                         (list current-time-unix-seconds)))))))
+          (let ((ntop.app.presentation::*screen-background-only-p* help-active-p))
+            (apply (application-composition-draw-screen composition)
+                   (append
+                    (list screen
+                          state
+                          config
+                          snapshot
+                          columns
+                          rows
+                          unavailability-reasons
+                          (%composition-series-by-widget
+                           composition snapshot unavailability-reasons state))
+                    (when
+                        (and current-time-unix-seconds
+                             (eq (application-composition-draw-screen composition)
+                                 (function
+                                  ntop.app.presentation:draw-application-screen)))
+                      (list current-time-unix-seconds))))))
          (areas
-           (append (unless help-active-p widget-areas)
-                   (%draw-help-overlay screen state config columns rows))))
+          (append (unless help-active-p widget-areas)
+                  (%draw-help-overlay screen state config columns rows))))
     (setf (application-composition-clickable-areas composition) areas)
     (let ((diff
-            (with-output-to-string (output)
-              (cl-tty-kit:render-diff
-               screen (application-composition-previous-screen composition)
-               output))))
+           (with-output-to-string (output)
+             (cl-tty-kit:render-diff
+              screen (application-composition-previous-screen composition)
+              output))))
       (loop for index from 0 below (length diff)
             for character = (char diff index)
             do (when (and (char= character #\Newline)

@@ -151,6 +151,7 @@
    (:file "src/app/infrastructure-terminal")
    (:file "src/app/application-compose-actions")
    (:file "src/app/application-compose-history")
+   (:file "src/app/presentation-help-content")
    (:file "src/app/presentation-help")
    (:file "src/app/presentation-process-screen")
    (:file "src/app/presentation-screen-basic")
