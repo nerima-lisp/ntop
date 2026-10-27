@@ -18,22 +18,31 @@ import tempfile
 import time
 from pathlib import Path
 
+from wp15b_n6_terminal import (
+    CURSOR_POSITION_QUERY as CURSOR_QUERY,
+    CURSOR_QUERY_HELPER,
+    MODE_25_QUERY as QUERY,
+    MODE_STATUS_NAMES,
+    N6Terminal,
+    cursor_probe_record,
+    has_dsr_6n_exchange,
+    write_replies,
+)
+from wp15b_n6_protocol import query_mode_25_exchange
+from wp15b_n6_environment import source_registry_environment
 
 READY = b"__NTOP_N6_EXCEPTION_READY__"
-QUERY = b"\x1b[?25$p"
-CURSOR_QUERY = b"\x1b[6n"
-CURSOR_REPLY = b"\x1b[1;1R"
 BEFORE_BEGIN = b"__NTOP_N6_BEFORE_BEGIN__"
 BEFORE_END = b"__NTOP_N6_BEFORE_END__"
 AFTER_BEGIN = b"__NTOP_N6_AFTER_BEGIN__"
 AFTER_END = b"__NTOP_N6_AFTER_END__"
 TARGET_PID = b"__NTOP_N6_TARGET_PID__"
 TARGET_EXIT = b"__NTOP_N6_TARGET_EXIT__"
-REPLY_MARKER = b"__NTOP_N6_QUERY_REPLY__"
+CURSOR_REPLY_MARKER = b"__NTOP_N6_CURSOR_REPLY__"
+TERMIOS_READY = b"__NTOP_N6_TERMIOS_READY__"
 OUTPUT_LIMIT = 16 * 1024 * 1024
 READINESS_TIMEOUT = 120.0
 EXIT_TIMEOUT = 15.0
-QUERY_TIMEOUT = 3.0
 
 LISP_CHILD = """(require :asdf)
 (asdf:load-asd (truename "ntop.asd"))
@@ -62,8 +71,12 @@ printf '\n%s%s\n' '__NTOP_N6_TARGET_EXIT__' "$target_status"
 printf '%s\n' '__NTOP_N6_AFTER_BEGIN__'
 stty -a </dev/tty
 printf '%s\n' '__NTOP_N6_AFTER_END__'
+printf '%s\n' '__NTOP_N6_TERMIOS_READY__'
 saved=$(stty -g </dev/tty) || exit 125
 stty raw -echo </dev/tty || exit 125
+cursor_reply=$("$NTOP_N6_PYTHON" "$NTOP_N6_CURSOR_QUERY_SCRIPT")
+cursor_status=$?
+printf '%s%s:%s\n' '__NTOP_N6_CURSOR_REPLY__' "$cursor_status" "$cursor_reply"
 printf '\033[?25$p'
 reply=$(dd bs=1 count=9 </dev/tty 2>/dev/null | od -An -tx1 | tr -d ' \n')
 stty "$saved" </dev/tty || exit 125
@@ -86,7 +99,13 @@ def _raw_mode(fd: int) -> bool:
     return not (flags & termios.ECHO) and not (flags & termios.ICANON)
 
 
-def _read_once(master: int, output: bytearray, wait: float) -> bool:
+def _read_once(
+    master: int,
+    output: bytearray,
+    wait: float,
+    terminal: N6Terminal,
+    terminal_exchanges: list[dict[str, object]],
+) -> bool:
     ready, _, _ = select.select([master], [], [], wait)
     if not ready:
         return False
@@ -99,6 +118,7 @@ def _read_once(master: int, output: bytearray, wait: float) -> bool:
     if not chunk:
         return False
     output.extend(chunk)
+    terminal_exchanges.extend(write_replies(master, terminal.feed(chunk)))
     if len(output) > OUTPUT_LIMIT:
         raise RuntimeError("PTY output exceeded the 16 MiB evidence limit.")
     return True
@@ -121,101 +141,42 @@ def _marked_section(output: bytes, start_marker: bytes,
     return output[start:end].strip(b" \t\r\n")
 
 
-def _private_mode_events(output: bytes) -> list[dict[str, object]]:
-    events = []
-    for match in re.finditer(rb"\x1b\[\?([0-9;]+)([hl])", output):
-        for value in match.group(1).split(b";"):
-            events.append(
-                {"mode": int(value),
-                 "action": "set" if match.group(2) == b"h" else "reset"}
-            )
-    return events
-
-
-def _cursor_status(events: list[dict[str, object]]) -> int:
-    status = 1
-    for event in events:
-        if event["mode"] == 25:
-            status = 1 if event["action"] == "set" else 2
-    return status
-
-
 def _wait_for_ready(process: subprocess.Popen[bytes], slave: int,
                     master: int, output: bytearray,
-                    probes: list[dict[str, object]]) -> int:
+                    terminal: N6Terminal,
+                    terminal_exchanges: list[dict[str, object]]) -> int:
     deadline = time.monotonic() + READINESS_TIMEOUT
-    query_offset = 0
-    replied = False
-    post_reply_output = 0
     last_activity = time.monotonic()
     while True:
-        while True:
-            query_position = bytes(output).find(CURSOR_QUERY, query_offset)
-            if query_position < 0:
-                break
-            os.write(master, CURSOR_REPLY)
-            probes.append(
-                {"query_hex": CURSOR_QUERY.hex(" "),
-                 "reply_hex": CURSOR_REPLY.hex(" ")}
-            )
-            query_offset = query_position + len(CURSOR_QUERY)
-            replied = True
-            post_reply_output = len(output)
         target_pid = _marker_integer(bytes(output), TARGET_PID)
-        response_seen = not replied or len(output) > post_reply_output
+        cursor_queries = output.count(CURSOR_QUERY)
+        cursor_replies = sum(
+            exchange.get("query_hex") == CURSOR_QUERY.hex(" ")
+            for exchange in terminal_exchanges
+        )
         if (READY in output and target_pid is not None and _raw_mode(slave) and
-                response_seen and time.monotonic() - last_activity >= 0.1):
+                cursor_queries <= cursor_replies and
+                time.monotonic() - last_activity >= 0.1):
             return target_pid
         if process.poll() is not None:
             raise RuntimeError("PTY wrapper exited before the exception seam was ready.")
         if time.monotonic() >= deadline:
             raise TimeoutError("Timed out waiting for raw-mode exception readiness.")
-        if _read_once(master, output, 0.05):
+        if _read_once(master, output, 0.05, terminal, terminal_exchanges):
             last_activity = time.monotonic()
 
 
 def _wait_for_marker(process: subprocess.Popen[bytes], master: int,
-                     output: bytearray, marker: bytes, timeout: float) -> None:
+                     output: bytearray, marker: bytes, timeout: float,
+                     terminal: N6Terminal,
+                     terminal_exchanges: list[dict[str, object]]) -> None:
     deadline = time.monotonic() + timeout
     while marker not in output:
         if process.poll() is not None:
             raise RuntimeError("PTY wrapper exited before its after-stty marker.")
         if time.monotonic() >= deadline:
             raise TimeoutError("Timed out waiting for the after-stty marker.")
-        _read_once(master, output, 0.05)
-
-
-def _query_exchange(master: int, output: bytearray,
-                    status: int) -> tuple[list[int] | None, int | None]:
-    query_position = bytes(output).rfind(QUERY)
-    if query_position < 0:
-        query_position = len(output)
-        deadline = time.monotonic() + QUERY_TIMEOUT
-        while QUERY not in output[query_position:]:
-            if time.monotonic() >= deadline:
-                raise TimeoutError("DECRQM query was not visible on the PTY master.")
-            _read_once(master, output, 0.05)
-        query_position = output.find(QUERY, query_position)
-    reply = f"\x1b[?25;{status}$y".encode("ascii")
-    os.write(master, reply)
-    deadline = time.monotonic() + QUERY_TIMEOUT
-    while (REPLY_MARKER not in output[query_position:] or
-           output.find(b"\n", output.find(REPLY_MARKER, query_position)) < 0):
-        if time.monotonic() >= deadline:
-            raise TimeoutError("DECRQM reply was not recorded by the PTY wrapper.")
-        _read_once(master, output, 0.05)
-    marker_offset = output.find(REPLY_MARKER, query_position) + len(REPLY_MARKER)
-    line_end = output.find(b"\n", marker_offset)
-    if line_end < 0:
-        raise RuntimeError("DECRQM reply marker was incomplete.")
-    try:
-        received = bytes.fromhex(
-            output[marker_offset:line_end].decode("ascii").strip()
-        )
-    except ValueError:
-        return None, None
-    match = re.fullmatch(rb"\x1b\[\?25;([0-4])\$y", received)
-    return list(received), int(match.group(1)) if match else None
+        _read_once(master, output, 0.05, terminal, terminal_exchanges)
 
 
 def _pid_alive(pid: int, process: subprocess.Popen[bytes] | None = None) -> bool:
@@ -272,7 +233,10 @@ def _save_case(directory: Path, raw: bytes,
 
 
 def run_exception_case(directory: Path, root: Path,
-                       sbcl: str) -> dict[str, object]:
+                       sbcl: str,
+                       source_registry: dict[str, str] | None = None
+                       ) -> dict[str, object]:
+    source_registry = source_registry or source_registry_environment(root)
     child_path = directory / "ntop-n6-exception-child.lisp"
     child_path.write_text(LISP_CHILD, encoding="utf-8")
     command = [
@@ -294,9 +258,12 @@ def run_exception_case(directory: Path, root: Path,
     after: bytes | None = None
     reply_octets: list[int] | None = None
     reply_status: int | None = None
+    cursor_probe: dict[str, object] | None = None
+    query_response_matches_peer = False
     failure: str | None = None
     cleanup_actions: list[dict[str, object]] = []
-    terminal_probes: list[dict[str, object]] = []
+    terminal = N6Terminal(rows=48, columns=160)
+    terminal_exchanges: list[dict[str, object]] = []
     shell_stderr = directory / "ntop-source-lisp-exception.shell-job-control.stderr"
     metadata: dict[str, object] = {
         "target": "ntop-source-runtime",
@@ -310,8 +277,7 @@ def run_exception_case(directory: Path, root: Path,
         "window": {"rows": 48, "columns": 160},
         "stty_command": ["stty", "-a"],
         "query_hex": QUERY.hex(" "),
-        "query_provider": "harness model from observed DEC private-mode events",
-        "initial_cursor_status": 1,
+        "query_provider": "pyte terminal emulator peer",
         "raw_output": "ntop-source-lisp-exception.raw",
         "temporary_lisp_script": child_path.name,
         "shell_job_control_stderr": shell_stderr.name,
@@ -320,8 +286,13 @@ def run_exception_case(directory: Path, root: Path,
         master, slave = pty.openpty()
         _set_window_size(slave, 48, 160)
         environment = os.environ.copy()
+        environment.update(source_registry)
         environment["TERM"] = "xterm-256color"
         environment["NTOP_N6_SHELL_STDERR"] = str(shell_stderr)
+        cursor_script = directory / "ntop-source-cursor-query.py"
+        cursor_script.write_text(CURSOR_QUERY_HELPER, encoding="utf-8")
+        environment["NTOP_N6_PYTHON"] = sys.executable
+        environment["NTOP_N6_CURSOR_QUERY_SCRIPT"] = str(cursor_script)
         process = subprocess.Popen(
             ["/bin/sh", "-c", WRAPPER, "ntop-wp15b-n6-exception", *command],
             stdin=slave,
@@ -334,7 +305,7 @@ def run_exception_case(directory: Path, root: Path,
         )
         metadata["wrapper_pid"] = process.pid
         target_pid = _wait_for_ready(
-            process, slave, master, output, terminal_probes
+            process, slave, master, output, terminal, terminal_exchanges
         )
         metadata["target_pid"] = target_pid
         metadata["raw_mode_at_ready"] = True
@@ -345,18 +316,23 @@ def run_exception_case(directory: Path, root: Path,
                 raise RuntimeError("PTY wrapper exited before recording exception status.")
             if time.monotonic() >= deadline:
                 raise TimeoutError("Timed out waiting for Lisp exception exit.")
-            _read_once(master, output, 0.05)
+            _read_once(master, output, 0.05, terminal, terminal_exchanges)
         target_exit = _marker_integer(bytes(output), TARGET_EXIT)
         if target_exit is None:
             raise RuntimeError("Target exit marker did not contain an integer status.")
-        _wait_for_marker(process, master, output, AFTER_END, EXIT_TIMEOUT)
+        _wait_for_marker(
+            process, master, output, AFTER_END, EXIT_TIMEOUT,
+            terminal, terminal_exchanges,
+        )
         before = _marked_section(bytes(output), BEFORE_BEGIN, BEFORE_END)
         after = _marked_section(bytes(output), AFTER_BEGIN, AFTER_END)
-        events = _private_mode_events(bytes(output))
-        reply_octets, reply_status = _query_exchange(
-            master, output, _cursor_status(events)
+        reply_octets, reply_status, query_response_matches_peer = query_mode_25_exchange(
+            master, output, terminal, terminal_exchanges, _read_once
         )
         process.wait(timeout=EXIT_TIMEOUT)
+        cursor_probe = cursor_probe_record(
+            bytes(output), terminal_exchanges, CURSOR_REPLY_MARKER, TERMIOS_READY
+        )
     except Exception as error:
         failure = f"{type(error).__name__}: {error}"
         if process is not None:
@@ -378,7 +354,6 @@ def run_exception_case(directory: Path, root: Path,
             os.close(master)
 
     raw = bytes(output)
-    events = _private_mode_events(raw)
     wrapper_code = process.returncode if process is not None else None
     checks = {
         "ready_marker_inside_raw_session": READY in raw and metadata.get(
@@ -391,7 +366,16 @@ def run_exception_case(directory: Path, root: Path,
         "query_seen": QUERY in raw,
         "recognized_query_reply": reply_status in (1, 2, 3, 4),
         "cursor_visible_after_run": reply_status == 1,
-        "dec_mode_reset_seen": any(e["action"] == "reset" for e in events),
+        "query_response_matches_peer": query_response_matches_peer,
+        "cursor_status_reply_matches_peer": (
+            cursor_probe is not None
+            and cursor_probe["helper_exit_code"] == 0
+            and cursor_probe["query_matches_pty"] is True
+            and cursor_probe["response_matches_peer"] is True
+        ),
+        "dsr_6n_query_answered_by_pyte_peer": has_dsr_6n_exchange(
+            terminal_exchanges
+        ),
         "target_pid_recorded": target_pid is not None,
         "harness_completed": process is not None and wrapper_code is not None,
         "no_runner_error": failure is None,
@@ -406,11 +390,19 @@ def run_exception_case(directory: Path, root: Path,
             "wrapper_returncode": wrapper_code,
             "stty_before": before.decode("utf-8", errors="replace") if before else None,
             "stty_after": after.decode("utf-8", errors="replace") if after else None,
-            "private_mode_events": events,
-            "terminal_probe_exchanges": terminal_probes,
-            "cursor_status_before_reply": _cursor_status(events),
+            "terminal_query_exchanges": terminal_exchanges,
             "reply_octets": reply_octets,
+            "reply_hex": (
+                bytes(reply_octets).hex(" ") if reply_octets is not None else None
+            ),
             "reply_status": reply_status,
+            "terminal_mode_25_reply_status": reply_status,
+            "terminal_mode_25_state": (
+                MODE_STATUS_NAMES.get(reply_status)
+                if reply_status is not None else None
+            ),
+            "query_response_matches_peer": query_response_matches_peer,
+            "cursor_status_probe": cursor_probe,
             "checks": checks,
             "cleanup_actions": cleanup_actions,
             "shell_job_control_stderr_bytes": (
