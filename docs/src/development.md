@@ -9,8 +9,43 @@ columns per line. Every `NTOP.*` package must have exactly `COMMON-LISP` in its
 `:use` list. The check also tests that a timed-out command and its children are
 terminated, and limits the SBCL package check to 60 seconds.
 
-The macOS test, executable, and coverage commands are documented in
-[Getting started](getting-started.md).
+The macOS executable build command is documented in
+[Getting started](getting-started.md). The test and coverage commands for this
+reconciliation are below.
+
+## WP test and coverage reconciliation
+
+Obtain the active implementation specification supplied for the release task;
+it is not versioned in this repository. Use its ownership tables as the source
+of truth for mapping production files and test files to work packages. Reconcile
+each owned `src/**/*.lisp` file separately: expressions and branches must each
+reach 90%. A file with no branch sites has no branch percentage to compare.
+Global totals do not replace the per-file check.
+
+Run the Linux checks with `nix flake check --print-build-logs` on the Linux
+builder used by CI. Run the Darwin suite and coverage from the repository root:
+
+```sh
+python3 scripts/darwin-workflow.py test
+python3 scripts/darwin-workflow.py coverage \
+  --coverage-dir /tmp/ntop-coverage-darwin
+```
+
+Both coverage commands print one `COVERAGE_FILE` row per measured `src/**/*.lisp`
+file. The pipe-separated fields are path, expression covered, expression total,
+expression percentage, branch covered, branch total, and branch percentage. A
+file with no branch sites reports `N/A` for its branch percentage. The command
+fails if any file has expression coverage below 90%, or branch coverage below
+90% when the file has branch sites. Join the rows from each platform to the
+specification's file ownership; record unavailable platform-specific values
+explicitly rather than filling them from the global percentage. The Darwin
+command also writes an `sb-cover` HTML report for the whole `src/` tree.
+
+Count each registered `cl-weave` case once for its owning work package. Count
+each row in a literal `it-each` table as a case; do not count property-test
+iterations or assertions as additional cases. Use the runner's results to
+separate passed, skipped, and failed cases. The specification's per-work-package
+minimum is about executed cases, so skipped registrations do not satisfy it.
 
 ## Route harness
 
@@ -95,10 +130,9 @@ contains four edges. Test systems are reported separately.
 
 ## Continuous integration
 
-CI runs `nix flake check --print-build-logs path:/src` in the
-`nixos/nix:2.35.3` container on Linux amd64. The workflow mounts the repository
-at `/src`. The job has a 40 minute limit, and the Nix container runs for at
-most 30 minutes. The flake checks build the executable, run tests and coverage,
-report dependency depth, and run `scripts/check-local.py` with the pinned SBCL
-binary and a 300-second timeout.
+CI runs on GitHub Actions `ubuntu-latest` with a 40-minute job limit. The
+workflow builds the N7 check, runs `nix flake check --print-build-logs`, and
+checks diff hygiene. The flake checks build the executable, run tests and
+coverage, report dependency depth, and run `scripts/check-local.py` with the
+pinned SBCL binary and a 300-second timeout.
 
