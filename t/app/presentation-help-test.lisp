@@ -61,9 +61,15 @@
          (member "M                       Sort by GPU memory usage, press again to reverse"
                  lines :test #'string=)))
        :to-be t)))
-  (cl-weave:it "filters matching BTM sections and wraps to the requested width"
+    (cl-weave:it "filters matching BTM sections and wraps to the requested width"
     (let* ((state (ntop.app.presentation::make-help-state :query "gPu"))
            (matches (ntop.app.presentation::%help-visible-lines state))
+           (trimmed
+             (ntop.app.presentation::%help-visible-lines
+              (ntop.app.presentation::make-help-state :query "  gPu  ")))
+           (whitespace-only
+             (ntop.app.presentation::%help-visible-lines
+              (ntop.app.presentation::make-help-state :query "   ")))
            (all-lines
              (ntop.app.presentation::%help-visible-lines
               (ntop.app.presentation::make-help-state)))
@@ -81,6 +87,8 @@
                          ""
                          "4 - Process search widget"
                          "gpu%                    ex: gpu% < 4.2"))
+      (cl-weave:expect trimmed :to-equal matches)
+      (cl-weave:expect whitespace-only :to-equal all-lines)
       (cl-weave:expect empty :to-equal nil)
       (cl-weave:expect (> (length wrapped) (length all-lines)) :to-be t)
       (cl-weave:expect
@@ -167,7 +175,7 @@
 
 
 (cl-weave:describe "application help presentation boundary behavior"
-  (cl-weave:it "handles query editing and search mode transitions"
+    (cl-weave:it "handles query editing and search mode transitions"
     (flet ((transition (state value)
              (ntop.app.presentation::help-state-transition
               state (%wp12b-app-action :search value)))
@@ -184,6 +192,14 @@
              (empty-delete
                (transition (ntop.app.presentation::make-help-state :scroll-offset 7)
                            :delete-backward))
+             (whitespace-deleted
+               (transition
+                (ntop.app.presentation::make-help-state :query "   ")
+                :delete-word-backward))
+             (word-deleted
+               (transition
+                (ntop.app.presentation::make-help-state :query "gpu")
+                :delete-word-backward))
              (unchanged (transition state :unknown))
              (opened
                (transition (ntop.app.presentation::make-help-state :scroll-offset 6)
@@ -200,28 +216,29 @@
         (cl-weave:expect (query cleared) :to-equal "")
         (cl-weave:expect (query empty-delete) :to-equal "")
         (cl-weave:expect (offset empty-delete) :to-equal 7)
+        (cl-weave:expect (query whitespace-deleted) :to-equal "")
+        (cl-weave:expect (query word-deleted) :to-equal "")
         (cl-weave:expect (query unchanged) :to-equal query-text)
         (cl-weave:expect (offset unchanged) :to-equal 9)
         (cl-weave:expect (offset opened) :to-equal 0)
         (cl-weave:expect (active-p opened) :to-be t)
         (cl-weave:expect (query submitted) :to-equal "cpu")
-        (progn
-          (cl-weave:expect (active-p submitted) :to-be nil)
-          (let* ((search-state
-                   (ntop.app.presentation::make-help-state :search-active-p t))
-                 (lines (ntop.app.presentation::%help-visible-lines search-state))
-                 (last-offset (max 0 (- (length lines) 22)))
-                 (before
-                   (ntop.app.presentation::make-help-state
-                    :search-active-p t :scroll-offset last-offset))
-                 (next
-                   (ntop.app.presentation::help-state-transition
-                    before (%wp12b-app-action :navigation :down) :page-size 21)))
-            (cl-weave:expect (length lines) :to-equal 143)
-            (cl-weave:expect
-             (ntop.app.presentation::help-state-scroll-offset next)
-             :to-equal last-offset)))))
-  (cl-weave:it "applies navigation actions at their scroll boundaries"
+        (cl-weave:expect (active-p submitted) :to-be nil)
+        (let* ((search-state
+                 (ntop.app.presentation::make-help-state :search-active-p t))
+               (lines (ntop.app.presentation::%help-visible-lines search-state))
+               (last-offset (max 0 (- (length lines) 22)))
+               (before
+                 (ntop.app.presentation::make-help-state
+                  :search-active-p t :scroll-offset last-offset))
+               (next
+                 (ntop.app.presentation::help-state-transition
+                  before (%wp12b-app-action :navigation :down) :page-size 21)))
+          (cl-weave:expect (length lines) :to-equal 143)
+          (cl-weave:expect
+           (ntop.app.presentation::help-state-scroll-offset next)
+           :to-equal last-offset)))))
+   (cl-weave:it "applies navigation actions at their scroll boundaries"
     (flet ((move (state kind value page-size)
              (ntop.app.presentation::help-state-transition
               state (%wp12b-app-action kind value) :page-size page-size))
@@ -250,4 +267,85 @@
             (let ((input (ntop.app.presentation::make-help-state
                           :selected-widget :process :scroll-offset start)))
               (cl-weave:expect (offset (move input kind value page-size))
-                               :to-equal expected)))))))))
+                               :to-equal expected))))
+        (let ((invalid-section
+                (move (ntop.app.presentation::make-help-state :scroll-offset 7)
+                      :navigation '(:not-help-section "1") 2)))
+          (cl-weave:expect (offset invalid-section) :to-equal 7)
+          (cl-weave:expect
+           (ntop.app.presentation::help-state-sectioned-p invalid-section)
+           :to-be nil)))))
+     (cl-weave:it "renders help viewport boundaries and end scrolling"
+    (let* ((config (ntop.shared.application:make-application-config))
+           (search-screen (cl-tty-kit:make-screen 60 3))
+           (zero-width-search-screen (cl-tty-kit:make-screen 8 1))
+           (short-screen (cl-tty-kit:make-screen 22 2))
+           (narrow-screen (cl-tty-kit:make-screen 3 5))
+           (zero-width-screen (cl-tty-kit:make-screen 8 5))
+           (zero-height-screen (cl-tty-kit:make-screen 8 5))
+           (end-screen (cl-tty-kit:make-screen 60 8))
+           (end-state (ntop.app.presentation::make-help-state :scroll-offset :end))
+           (end-lines
+             (ntop.app.presentation::%help-visible-lines end-state :width 57)))
+      (ntop.app.presentation::%help-draw-search-line
+       zero-width-search-screen 0 0 0
+       (ntop.app.presentation::make-help-state :search-active-p t)
+       nil nil nil)
+      (cl-weave:expect
+       (cl-tty-kit:screen-row-string zero-width-search-screen 0)
+       :to-equal (make-string 8 :initial-element (code-char 32)))
+      (ntop.ui:draw-widget
+       :help search-screen
+       (ntop.ui:make-rectangle :x 0 :y 0 :width 60 :height 3)
+       (ntop.app.presentation::make-help-state :search-active-p t)
+       config nil)
+      (cl-weave:expect
+       (search "Type to search" (cl-tty-kit:screen-row-string search-screen 2))
+       :to-be 10)
+      (ntop.ui:draw-widget
+       :help short-screen
+       (ntop.ui:make-rectangle :x 0 :y 0 :width 22 :height 2)
+       (ntop.app.presentation::make-help-state :query "x" :search-active-p t)
+       config nil)
+      (cl-weave:expect
+       (search "Esc to close" (cl-tty-kit:screen-row-string short-screen 0))
+       :to-be nil)
+      (cl-weave:expect
+       (search "Search:" (cl-tty-kit:screen-row-string short-screen 1))
+       :to-be nil)
+      (ntop.ui:draw-widget
+       :help narrow-screen
+       (ntop.ui:make-rectangle :x 0 :y 0 :width 3 :height 5)
+       (ntop.app.presentation::make-help-state)
+       config nil)
+      (cl-weave:expect
+       (search "▲" (cl-tty-kit:screen-row-string narrow-screen 1))
+       :to-be 1)
+      (ntop.ui:draw-widget
+       :help zero-width-screen
+       (ntop.ui:make-rectangle :x 0 :y 0 :width 0 :height 5)
+       (ntop.app.presentation::make-help-state)
+       config nil)
+      (cl-weave:expect
+       (cl-tty-kit:screen-row-string zero-width-screen 0)
+       :to-equal (make-string 8 :initial-element (code-char 32)))
+      (ntop.ui:draw-widget
+       :help zero-height-screen
+       (ntop.ui:make-rectangle :x 0 :y 0 :width 8 :height 0)
+       (ntop.app.presentation::make-help-state)
+       config nil)
+      (cl-weave:expect
+       (cl-tty-kit:screen-row-string zero-height-screen 0)
+       :to-equal (make-string 8 :initial-element (code-char 32)))
+      (ntop.ui:draw-widget
+       :help end-screen
+       (ntop.ui:make-rectangle :x 0 :y 0 :width 60 :height 8)
+       end-state config nil)
+      (cl-weave:expect
+       (search (first (last end-lines))
+               (cl-tty-kit:screen-row-string end-screen 6))
+       :to-be 1)))
+ (cl-weave:it "keeps a wide help character when it exceeds the wrap width"
+    (cl-weave:expect
+     (ntop.app.presentation::%help-wrap-line "界x" 1)
+     :to-equal (list "界" "x"))))
