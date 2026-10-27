@@ -124,11 +124,15 @@ def main() -> int:
         type=Path,
         default=ROOT / "coverage" / "mac",
     )
+    parser.add_argument("--emit-environment-json", action="store_true")
     arguments = parser.parse_args()
     workflow = arguments.workflow
 
     env, source_count = resolve_source_registry()
     if workflow == "resolve":
+        if arguments.emit_environment_json:
+            print(json.dumps({"CL_SOURCE_REGISTRY": env["CL_SOURCE_REGISTRY"]}))
+            return 0
         print(f"Resolved {source_count} pinned ASDF dependency source trees.")
         return 0
     if workflow == "dependencies":
