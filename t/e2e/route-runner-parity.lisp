@@ -12,7 +12,7 @@
   (and text
        (not
         (null
-         (or (search "Type to search, Esc to close" text :test #'char-equal)
+         (or (search "Search:   Type to search, Esc to close" text :test #'char-equal)
              (search "Search: |" text))))))
 
 (defun %route-extension-state-p (route subcase candidate)

@@ -301,7 +301,20 @@
   "loads the widget state reader used by route actions"
   (cl-weave:expect
    (fboundp (quote ntop.e2e::%route-read-widget-state))
-   :to-be-truthy)))
+   :to-be-truthy))
+ (cl-weave:it
+  "distinguishes the search prompt from regular help guidance"
+  (cl-weave:expect
+   (ntop.e2e::%route-help-search-open-state-p
+    "│Type to search, Esc to close")
+   :to-be nil)
+  (cl-weave:expect
+   (ntop.e2e::%route-help-search-open-state-p
+    "Search:   Type to search, Esc to close")
+   :to-be t)
+  (cl-weave:expect
+   (ntop.e2e::%route-help-search-open-state-p "Search: |")
+   :to-be t)))
 (cl-weave:describe
  "owned child PID markers and safe cancellation"
  (cl-weave:it
