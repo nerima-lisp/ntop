@@ -45,7 +45,7 @@
 )
 
 (defun %route-fixture-prepare
-    (state route subcase session raw rows columns rate timeout evidence-prefix)
+    (state route subcase session raw rows columns timeout evidence-prefix)
   (let* ((path (and evidence-prefix
                     (pathname (format nil "~a.fixture.txt" evidence-prefix))))
          (context (or (getf subcase :context) ""))
@@ -91,39 +91,33 @@
                                          setup-state)))
                               (pty-send-input session (%route-octets input)
                                               :timeout-seconds timeout)
-                              (multiple-value-bind (output)
-                                  (%route-read-through-quiet-period
-                                   session
-                                   :quiet-seconds *route-frame-quiet-seconds*
-                                   :timeout-seconds timeout
-                                   :initial-quiet-seconds (* *route-first-frame-factor*
-                                                             (/ rate 1000d0))
-                                   :completion-predicate
-                                   (when (or expected-query expected-section)
-                                     (lambda (input-output)
-                                       (let* ((before-grid
-                                               (%route-grid raw rows columns))
-                                              (after-grid
-                                               (%route-grid-after-output
-                                                raw input-output rows columns)))
-                                         (or
-                                          (and expected-query
-                                               (multiple-value-bind (query)
-                                                   (%route-observer-prompt-state after-grid)
-                                                 (and query
-                                                      (string= expected-query
-                                                               (string-trim '(#\Space #\│)
-                                                       query)))))
-                                          (and expected-section
-                                               (not (eql
-                                                     (%route-observer-help-content-section-number
-                                                        before-grid)
-                                                     expected-section))
-                                               (eql
-                                                (%route-observer-help-content-section-number
-                                                        after-grid)
-                                                expected-section)))))))
-                                (%append-octets raw output)))))
+                              (multiple-value-setq (raw)
+                                (%route-capture-frame
+                                 session raw rows columns
+                                 :side (or *route-frame-capture-side* :interactive)
+                                 :stage :fixture-setup
+                                 :completion-predicate
+                                 (when (or expected-query expected-section)
+                                   (lambda (after-grid)
+                                     (let ((before-grid (%route-grid raw rows columns)))
+                                       (or
+                                        (and expected-query
+                                             (multiple-value-bind (query)
+                                                 (%route-observer-prompt-state after-grid)
+                                               (and query
+                                                    (string= expected-query
+                                                             (string-trim '(#\Space #\│)
+                                                                          query)))))
+                                        (and expected-section
+                                             (not (eql
+                                                   (%route-observer-help-content-section-number
+                                                    before-grid)
+                                                   expected-section))
+                                             (eql
+                                              (%route-observer-help-content-section-number
+                                               after-grid)
+                                              expected-section))))))
+                                 :allow-unchanged-p t)))))
              (process-rows ()
                            (%route-observer-process-rows (%route-grid raw rows columns)))
              (process-row-name-p (text name)
@@ -308,14 +302,12 @@
           (concatenate 'string (%route-key-input "Ctrl+U") "abcd"
                        (%route-key-input "Left") (%route-key-input "Left")))
          :timeout-seconds timeout)
-        (multiple-value-bind (output)
-            (%route-read-through-quiet-period
-             session
-             :quiet-seconds *route-frame-quiet-seconds*
-             :timeout-seconds timeout
-             :initial-quiet-seconds
-             (* *route-first-frame-factor* (/ rate 1000d0)))
-          (%append-octets raw output)))
+        (multiple-value-setq (raw)
+          (%route-capture-frame
+           session raw rows columns
+           :side (or *route-frame-capture-side* :interactive)
+           :stage :fixture-search-cursor
+           :allow-unchanged-p t)))
       (%route-fixture-stage-progress route subcase :action-ready)
       (values raw state (and path (namestring path))))))
 
@@ -467,21 +459,21 @@
 
 (defun %route-fixture-after-action
     (state session raw rows columns rate timeout)
+  (declare (ignore rate))
   (let ((route (getf state :route))
         (subcase (getf state :subcase)))
     (when (and route subcase)
       (%route-fixture-stage-progress route subcase :after-action-start))
-    (let ((input (getf state :after-action-input)))
+    (let ((input (getf state :after-action-input))
+          (captured-grid nil))
       (when input
         (pty-send-input session (%route-octets input) :timeout-seconds timeout)
-        (multiple-value-bind (output)
-            (%route-read-through-quiet-period
-             session
-             :quiet-seconds *route-frame-quiet-seconds*
-             :timeout-seconds timeout
-             :initial-quiet-seconds
-             (* *route-first-frame-factor* (/ rate 1000d0)))
-          (%append-octets raw output)))
+        (multiple-value-setq (raw captured-grid)
+          (%route-capture-frame
+           session raw rows columns
+           :side (or *route-frame-capture-side* :interactive)
+           :stage :after-action
+           :allow-unchanged-p t)))
       (when (and route subcase)
         (%route-fixture-stage-progress route subcase :after-action-complete))
-      (values raw (and input (%route-grid raw rows columns))))))
+      (values raw captured-grid))))
