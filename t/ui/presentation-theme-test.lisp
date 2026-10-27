@@ -320,14 +320,22 @@
        (simple-error () :signaled))
      :to-be :signaled))
 
-  (cl-weave:it "signals simple-error for an unknown theme role"
+  (cl-weave:it "removes styles in no-color mode and rejects unknown roles"
+  (let* ((palette (ntop.ui::presentation-theme :default))
+         (expected-color-count (length (getf palette :gpu-colors)))
+         (ntop.ui::*presentation-no-color-p* t)
+         (gpu-colors (ntop.ui::presentation-theme-style :default :gpu-colors))
+         (text-style (ntop.ui::presentation-theme-style :default :text)))
+    (cl-weave:expect (length gpu-colors) :to-be expected-color-count)
+    (cl-weave:expect (every #'null gpu-colors) :to-be t)
+    (cl-weave:expect text-style :to-be nil)
     (cl-weave:expect
      (handler-case
          (progn
            (ntop.ui::presentation-theme-style :default :unknown)
            :returned)
        (simple-error () :signaled))
-     :to-be :signaled))
+     :to-be :signaled)))
 
   (cl-weave:it "maps every declared role to a direct cl-tty-kit style value"
     (dolist (theme-name '("default" "default-light" "gruvbox"

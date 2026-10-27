@@ -68,17 +68,28 @@
                                   (cl-weave:expect reasons :to-equal '(:read-failed))
                                   (cl-weave:expect returned-values :to-equal '()))))
 (cl-weave:describe "collector unavailability reasons"
-  (cl-weave:it "accepts the six shared reason keywords and rejects unknown ones"
-    (let ((reasons (list :not-present :disabled :permission-denied
-                         :unsupported-platform :private-api-unavailable
-                         :read-failed)))
-      (cl-weave:expect
-       (every (lambda (reason)
-                (typep reason
-                       (quote ntop.shared.application:collector-unavailability-reason)))
-              reasons)
-       :to-be t)
-      (cl-weave:expect
-       (typep :fixture-reason
-              (quote ntop.shared.application:collector-unavailability-reason))
-       :to-be nil))))
+  (cl-weave:it "normalizes valid reasons and falls back for invalid reasons"
+  (let ((reasons (list :not-present :disabled :permission-denied
+                       :unsupported-platform :private-api-unavailable
+                       :read-failed)))
+    (cl-weave:expect
+     (every (lambda (reason)
+              (typep reason
+                     (quote ntop.shared.application:collector-unavailability-reason)))
+            reasons)
+     :to-be t)
+    (cl-weave:expect
+     (typep :fixture-reason
+            (quote ntop.shared.application:collector-unavailability-reason))
+     :to-be nil)
+    (cl-weave:expect
+     (mapcar #'ntop.shared.application::normalize-collector-unavailability-reason
+             reasons)
+     :to-equal reasons)
+    (cl-weave:expect
+     (ntop.shared.application::normalize-collector-unavailability-reason
+      :fixture-reason)
+     :to-be :read-failed)
+    (cl-weave:expect
+     (ntop.shared.application::normalize-collector-unavailability-reason nil)
+     :to-be :read-failed))))

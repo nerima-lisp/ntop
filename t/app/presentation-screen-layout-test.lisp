@@ -332,4 +332,34 @@
        (ntop.ui:table-config-show-scroll-position-p table-config)
        :to-be
        t))))
+
+  (cl-weave:it "draws basic table arrows only when their text fits the pane"
+    (let ((config (ntop.shared.application:make-application-config)))
+      (let* ((screen (cl-tty-kit:make-screen 40 1))
+             (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 40 :height 1)))
+        (ntop.ui:draw-widget :basic-table-arrows screen rectangle nil config nil)
+        (let ((row (cl-tty-kit:screen-row-string screen 0)))
+          (cl-weave:expect (not (null (search "◄ Disks" row))) :to-be t)
+          (cl-weave:expect (not (null (search "Temperature ►" row))) :to-be t)))
+      (let* ((screen (cl-tty-kit:make-screen 2 1))
+             (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 2 :height 1)))
+        (ntop.ui:draw-widget :basic-table-arrows screen rectangle nil config nil)
+        (progn
+          (cl-weave:expect (cl-tty-kit:screen-row-string screen 0)
+                           :to-equal "  ")
+          (dolist (pane (list (list 0 2) (list 8 0)))
+            (let* ((screen (cl-tty-kit:make-screen 8 2))
+                   (rectangle
+                     (ntop.ui:make-rectangle :x 0 :y 0
+                                             :width (first pane)
+                                             :height (second pane))))
+              (cl-tty-kit:screen-write-string screen 0 0 "original")
+              (cl-tty-kit:screen-write-string screen 0 1 "sentinel")
+              (let ((before (list (cl-tty-kit:screen-row-string screen 0)
+                                  (cl-tty-kit:screen-row-string screen 1))))
+                (ntop.ui:draw-widget :basic-table-arrows screen rectangle nil config nil)
+                (cl-weave:expect
+                 (list (cl-tty-kit:screen-row-string screen 0)
+                       (cl-tty-kit:screen-row-string screen 1))
+                 :to-equal before))))))))
  )

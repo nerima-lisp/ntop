@@ -45,10 +45,31 @@
     (cl-weave:expect
      (ntop.app.domain:app-state-selected-widget state)
      :to-be :memory)
-    (cl-weave:expect
-     (gethash :screen-selection-id
+    (progn
+     (cl-weave:expect
+      (gethash :screen-selection-id
+               (ntop.app.domain:app-state-widget-v-states state))
+      :to-be :memory)
+     (setf areas (list memory-area)
+           (ntop.app.domain:app-state-selected-widget state) :process)
+     (remhash :screen-selection-id
               (ntop.app.domain:app-state-widget-v-states state))
-     :to-be :memory)
+     (%render-composition-test-instance composition state nil nil 4)
+     (dolist (coordinates (list (list 3 1) (list 2 2)))
+       (destructuring-bind (x y) coordinates
+         (funcall on-action
+                  state
+                  (ntop.app.domain:make-app-action
+                   :kind :select
+                   :value (list :widget x y)))
+         (cl-weave:expect
+          (ntop.app.domain:app-state-selected-widget state)
+          :to-be :process)
+         (cl-weave:expect
+          (gethash :screen-selection-id
+                   (ntop.app.domain:app-state-widget-v-states state))
+          :to-be nil)))
+     (setf forwarded nil areas (list row-area legend-area memory-area)))
     (setf (ntop.app.domain:app-state-selected-widget state) :cpu
           (gethash :cpu (ntop.app.domain:app-state-widget-v-states state))
           (ntop.ui:make-table-state :selected-index 1))
@@ -73,15 +94,18 @@
       composition)
      :to-be t)
     (cl-weave:expect forwarded :to-be nil)
-    (setf areas (list row-area cpu-area memory-area)
+    (setf areas (list row-area legend-area memory-area)
+          (ntop.app.domain:app-state-selected-widget state) :memory
           (ntop.ui:table-state-selected-index
            (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
           1)
+    (remhash :screen-selection-id
+             (ntop.app.domain:app-state-widget-v-states state))
     (%render-composition-test-instance composition state nil nil 4)
     (funcall on-action
              state
              (ntop.app.domain:make-app-action
-              :kind :select :value (list :cpu-series 11 2)))
+              :kind :select :value (list :widget 11 2)))
     (cl-weave:expect
      (ntop.app.domain:app-state-selected-widget state)
      :to-be :cpu)
@@ -92,12 +116,43 @@
     (cl-weave:expect
      (ntop.ui:table-state-selected-index
       (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
-     :to-be 0)
+     :to-be 1)
     (cl-weave:expect
      (ntop.app.application::application-composition-selection-active-p
       composition)
      :to-be t)
     (cl-weave:expect forwarded :to-be nil)
+    (setf row-area
+          (ntop.ui:make-clickable-area
+           :rectangle (ntop.ui:make-rectangle :x 11 :y 2 :width 4 :height 1)
+           :action :select-row
+           :value :header)
+          areas (list row-area cpu-area memory-area)
+          (ntop.ui:table-state-selected-index
+           (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
+          1
+          (gethash :screen-selection-id
+                   (ntop.app.domain:app-state-widget-v-states state))
+          :cpu)
+    (%render-composition-test-instance composition state nil nil 4)
+    (let ((unhandled-action
+            (ntop.app.domain:make-app-action
+             :kind :select :value (list :cpu-series 11 2))))
+      (funcall on-action state unhandled-action)
+      (cl-weave:expect
+       (ntop.ui:table-state-selected-index
+        (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
+       :to-be 1)
+      (cl-weave:expect
+       (gethash :screen-selection-id
+                (ntop.app.domain:app-state-widget-v-states state))
+       :to-be :cpu)
+      (cl-weave:expect
+       (and forwarded
+            (equal
+             (ntop.app.domain:app-action-value (second (first forwarded)))
+             '(:cpu-series 11 2)))
+       :to-be t))
     (let* ((actual-config (%wp12b-screen-default-config))
            (actual-composition
              (ntop.app.application:make-application-composition actual-config))

@@ -91,16 +91,60 @@
  (cl-weave:expect
   (every #'parity-entry-well-formed-p *btm-parity-catalog-fixture*)
   :to-be t))
- (cl-weave:it
-  "records the mouse condition and its evidence as fields"
-  (let ((mouse (first (parity-rows :mouse))))
-    (cl-weave:expect (ntop.app.domain:parity-mouse-condition mouse)
-                     :to-equal "--disable_click disables mouse capture")
-    (cl-weave:expect (not (null
-      (member "src/lib.rs:363-369"
-              (ntop.app.domain:parity-mouse-source mouse)
-              :test #'string=)))
-                     :to-be t)))
+ (cl-weave:it "preserves representative fields in each parity table"
+  (let ((mouse (first (parity-rows :mouse)))
+        (key (first (parity-rows :key)))
+        (flag (first (parity-rows :flag)))
+        (column (first (parity-rows :column)))
+        (search-field (first (parity-rows :search-field)))
+        (extension (first (parity-rows :extension))))
+    (cl-weave:expect
+     (list (ntop.app.domain:parity-mouse-action mouse)
+           (ntop.app.domain:parity-mouse-gesture mouse)
+           (ntop.app.domain:parity-mouse-contexts mouse)
+           (ntop.app.domain:parity-mouse-condition mouse))
+     :to-equal
+     (list "Scroll up" "wheel-up" '("graphs" "tables" "help" "kill dialog")
+           "--disable_click disables mouse capture"))
+    (cl-weave:expect
+     (member "src/event.rs:31-34"
+             (ntop.app.domain:parity-mouse-source mouse)
+             :test #'string=)
+     :to-be-truthy)
+    (cl-weave:expect
+     (list (ntop.app.domain:parity-key-action key)
+           (ntop.app.domain:parity-key-keys key)
+           (ntop.app.domain:parity-key-contexts key))
+     :to-equal
+     (list "Quit" '("q" "Q") '("normal")))
+    (cl-weave:expect
+     (list (ntop.app.domain:parity-flag-snake-case flag)
+           (ntop.app.domain:parity-flag-kebab-case flag)
+           (ntop.app.domain:parity-flag-short flag)
+           (ntop.app.domain:parity-flag-value-type flag)
+           (ntop.app.domain:parity-flag-values flag))
+     :to-equal
+     (list "autohide_time" "autohide-time" "" "boolean" nil))
+    (cl-weave:expect
+     (list (ntop.app.domain:parity-column-header column)
+           (ntop.app.domain:parity-column-field column)
+           (ntop.app.domain:parity-column-aliases column)
+           (ntop.app.domain:parity-column-default column))
+     :to-equal
+     (list "CPU%(c)" "CpuPercent" '("cpu%") "yes"))
+    (cl-weave:expect
+     (list (ntop.app.domain:parity-search-field-field search-field)
+           (ntop.app.domain:parity-search-field-tokens search-field)
+           (ntop.app.domain:parity-search-field-implicit search-field))
+     :to-equal
+     (list "PID" '("pid") "no"))
+    (cl-weave:expect
+     (list (ntop.app.domain:parity-extension-action extension)
+           (ntop.app.domain:parity-extension-key extension)
+           (ntop.app.domain:parity-extension-relation extension))
+     :to-equal
+     (list "Cycle selected widget view" "v"
+           "Spec addition absent from btm keys."))))
  (cl-weave:it-property
   "derives kebab-case from each flag's snake-case name"
   ((index (cl-weave:gen-integer :min 0 :max 51)))

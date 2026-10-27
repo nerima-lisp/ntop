@@ -16,7 +16,20 @@
                               (ntop.app.domain::app-state-widget-v-states state)))
                        :to-equal
                        '(:process nil nil nil 15 0 nil t))))
-                   (cl-weave:it "stores input context and action values"
+                   (cl-weave:it "retains a caller-supplied widget state table"
+    (let* ((states (make-hash-table :test (function eq)))
+           (state (ntop.app.domain::make-app-state
+                   :selected-widget :cpu
+                   :widget-v-states states)))
+      (setf (gethash :cpu
+                     (ntop.app.domain::app-state-widget-v-states state))
+            :graph)
+      (cl-weave:expect
+       (eq (ntop.app.domain::app-state-widget-v-states state) states)
+       :to-be t)
+      (cl-weave:expect (gethash :cpu states) :to-be :graph)))
+
+  (cl-weave:it "stores input context and action values"
                                 (let ((context
                                        (ntop.app.domain::make-input-context
                                         :selected-widget

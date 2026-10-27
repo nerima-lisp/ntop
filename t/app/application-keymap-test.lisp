@@ -251,7 +251,14 @@
                                                :help
                                                nil))))
                        :to-be
-                       t))))
+                       t)
+                      (let ((rows
+                              (list (list "Action" nil :quit nil)
+                                    (list "Other action" "normal" :help nil))))
+                        (eval
+                         (macroexpand-1
+                          (list macro-symbol name (first rows) (second rows))))
+                        (cl-weave:expect (symbol-value name) :to-equal rows)))))
 
 (cl-weave:describe "keymap context routing and search text"
                    (cl-weave:it

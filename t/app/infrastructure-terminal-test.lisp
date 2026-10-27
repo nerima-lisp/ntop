@@ -304,8 +304,87 @@
           (cl-weave:expect
            (list installed-signals defaults-restored)
            :to-equal
-           (list expected-signals t)))
+           (list expected-signals t))
+          (let ((pending-events nil)
+                (pending-result nil))
+            (setf pending-result
+                  (sb-ext:without-package-locks
+                    (cl-weave:with-mocked-functions
+                        (((symbol-function
+                           (find-symbol "%INSTALL-TERMINAL-SIGNAL-HANDLERS"
+                                        "NTOP.APP.INFRASTRUCTURE"))
+                          (lambda (signals)
+                            (declare (ignore signals))))
+                         ((symbol-function
+                           (find-symbol "%PENDING-TERMINATION-SIGNAL"
+                                        "NTOP.APP.INFRASTRUCTURE"))
+                          (lambda (signals)
+                            (declare (ignore signals))
+                            (push :pending-check pending-events)
+                            sb-posix:sigterm))
+                         ((symbol-function
+                           (find-symbol "%RESTORE-DEFAULT-SIGNAL-HANDLERS"
+                                        "NTOP.APP.INFRASTRUCTURE"))
+                          (lambda (signals)
+                            (declare (ignore signals))
+                            (push :restore-defaults pending-events)))
+                         ((symbol-function 'sb-sys:enable-interrupt)
+                          (lambda (signal handler)
+                            (push (list :enable signal handler) pending-events)))
+                         ((symbol-function 'sb-posix:kill)
+                          (lambda (pid signal)
+                            (push (list :kill pid signal) pending-events)
+                            0)))
+                      (ntop.app.infrastructure:call-with-terminal-session
+                       (lambda (poll-terminal-event)
+                         (declare (ignore poll-terminal-event))
+                         (push :callback-returned pending-events)
+                         :pending-session-result)
+                       :output-stream
+                       (make-string-output-stream)
+                       :fd
+                       (cl-tty-kit:pty-fd pty)))
+                  ))
+            (cl-weave:expect pending-result :to-equal :pending-session-result)
+            (cl-weave:expect
+             (reverse pending-events)
+             :to-equal
+             (list :callback-returned
+                   :pending-check
+                   (list :enable sb-posix:sigterm :default)
+                   (list :kill (sb-posix:getpid) sb-posix:sigterm)
+                   :restore-defaults))))
       (cl-tty-kit:close-pty pty))))
+  (cl-weave:it "rejects invalid terminal input poller settings"
+    (cl-weave:signals simple-error
+      (ntop.app.infrastructure::%make-terminal-input-poller
+       (make-string-output-stream)))
+    (cl-weave:signals simple-error
+      (ntop.app.infrastructure::%make-terminal-input-poller
+       (make-string-input-stream "") :now nil))
+    (cl-weave:signals simple-error
+      (ntop.app.infrastructure::%make-terminal-input-poller
+       (make-string-input-stream "") :escape-timeout-seconds -0.01d0))
+    (cl-weave:signals simple-error
+      (ntop.app.infrastructure::%make-terminal-input-poller
+       (make-string-input-stream "") :escape-timeout-seconds "invalid")))
+
+  (cl-weave:it "decodes ordinary keyboard input from the terminal stream"
+    (let* ((poll-input
+             (ntop.app.infrastructure::%make-terminal-input-poller
+              (make-string-input-stream "q")
+              :now (lambda () 0d0)))
+           (events (funcall poll-input nil 0d0)))
+      (cl-weave:expect (length events) :to-be 1)
+      (cl-weave:expect
+       (cl-tty-kit:key-event-type (first events))
+       :to-be
+       :character)
+      (cl-weave:expect
+       (cl-tty-kit:key-event-code (first events))
+       :to-be
+       #\q)))
+
   (cl-weave:it "emits a standalone Escape after the input ambiguity timeout"
   (let* ((current-time 0d0)
          (poll-input

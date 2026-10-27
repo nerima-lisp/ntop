@@ -125,7 +125,7 @@
         (cl-weave:expect
          (ntop.app.domain:app-state-zoom-seconds state)
          :to-be 60d0))))
-  (cl-weave:it "routes help search submission and classifies actions"
+  (cl-weave:it "routes help actions, process row hits, and active process search"
     (let* ((composition (%make-composition-test-instance))
            (state (ntop.app.domain:make-app-state :selected-widget :cpu))
            (on-action
@@ -135,7 +135,8 @@
                         (ntop.app.domain:make-app-action :kind kind :value value))))
         (act :search :help)
         (act :search :submit)
-        (cl-weave:expect (ntop.app.domain:app-state-active-dialog state) :to-be :help)
+        (cl-weave:expect (ntop.app.domain:app-state-active-dialog state)
+                         :to-be :help)
         (loop for (kind value expected)
                 in '((:search "term" t) (:search :submit t)
                      (:search :invalid nil) (:navigation :page-down t)
@@ -144,6 +145,46 @@
               do (cl-weave:expect
                   (not (null
                         (ntop.app.application::%help-action-p
-                         (ntop.app.domain:make-app-action :kind kind :value value))))
-                  :to-be expected))))))
+                         (ntop.app.domain:make-app-action
+                          :kind kind :value value))))
+                  :to-be expected)))
+      (let* ((screen-area
+               (ntop.ui:make-clickable-area
+                :rectangle (ntop.ui:make-rectangle :x 2 :y 3 :width 1 :height 1)
+                :action :screen-widget :value :process))
+             (row-area
+               (ntop.ui:make-clickable-area
+                :rectangle (ntop.ui:make-rectangle :x 2 :y 3 :width 1 :height 1)
+                :action :select-row :value 1))
+             (row-state (ntop.app.domain:make-app-state :selected-widget :process))
+             (states (ntop.app.domain:app-state-widget-v-states row-state)))
+        (setf (ntop.app.application::application-composition-clickable-areas
+               composition)
+              (list screen-area row-area))
+        (funcall on-action
+                 row-state
+                 (ntop.app.domain:make-app-action
+                  :kind :select :value '(:pointer :process-row 2 3)))
+        (cl-weave:expect
+         (ntop.app.domain:app-state-selected-widget row-state) :to-be :process)
+        (cl-weave:expect
+         (ntop.ui:table-state-selected-index (gethash :process states)) :to-be 1)
+        (cl-weave:expect
+         (nth-value 1 (gethash :screen-selection-id states)) :to-be nil))
+      (let ((widget-states (make-hash-table :test (function eq))))
+        (setf (gethash :process-sort-background-p widget-states) t)
+        (multiple-value-bind (next-state forwarded history)
+            (ntop.app.application::transition-application-state
+             (ntop.app.domain:make-app-state
+              :active-dialog :process-search :widget-v-states widget-states)
+             (ntop.app.domain:make-app-action :kind :search :value :process))
+          (cl-weave:expect
+           (ntop.app.domain:app-state-active-dialog next-state)
+           :to-be :process-search)
+          (cl-weave:expect
+           (gethash :process-sort-background-p
+                    (ntop.app.domain:app-state-widget-v-states next-state))
+           :to-be t)
+          (cl-weave:expect forwarded :to-be nil)
+          (cl-weave:expect history :to-be nil))))))
 

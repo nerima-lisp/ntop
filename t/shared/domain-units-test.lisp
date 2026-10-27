@@ -35,17 +35,39 @@
                       (cl-weave:expect (ntop.shared.domain:quantity-unit converted)
                                        :to-be
                                        target-unit)))
-                   (cl-weave:it "rejects conversion between different dimensions"
-                                (cl-weave:expect
-                                 (handler-case (progn
-                                                 (ntop.shared.domain:convert-quantity
-                                                  (ntop.shared.domain:make-quantity 1 :byte)
-                                                  :second)
-                                                 :returned)
-                                   (error ()
-                                     :signaled))
-                                 :to-be
-                                 :signaled))
+                   (cl-weave:it "rejects incompatible units and unknown unit prefixes"
+  (cl-weave:expect
+   (handler-case (progn
+                   (ntop.shared.domain:convert-quantity
+                    (ntop.shared.domain:make-quantity 1 :byte)
+                    :second)
+                   :returned)
+     (error () :signaled))
+   :to-be :signaled)
+  (cl-weave:expect
+   (handler-case (progn
+                   (ntop.shared.domain:unit-definition :fixture-unit)
+                   :returned)
+     (error () :signaled))
+   :to-be :signaled)
+  (cl-weave:expect
+   (handler-case (progn
+                   (ntop.shared.domain:scale-quantity
+                    (ntop.shared.domain:make-quantity 1 :byte)
+                    :decimal
+                    :fixture-prefix)
+                   :returned)
+     (error () :signaled))
+   :to-be :signaled)
+  (cl-weave:expect
+   (handler-case (progn
+                   (ntop.shared.domain:scale-quantity
+                    (ntop.shared.domain:make-quantity 1 :byte)
+                    :fixture-system
+                    :none)
+                   :returned)
+     (error () :signaled))
+   :to-be :signaled))
                    (cl-weave:it-each
                     ((:decimal :kilo 2500 5/2 "kB")
                      (:decimal :mega 2000000 2 "MB")

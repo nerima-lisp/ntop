@@ -31,13 +31,12 @@
                                                                           (%wp12b-app-action
                                                                            :search
                                                                            "gpu")))
-                           (scrolled
-                            (ntop.app.presentation::help-state-transition opened
-                                                                          (%wp12b-app-action
-                                                                           :navigation
-                                                                           :down)
-                                                                          :page-size
-                                                                          1))
+                           (invalid-section
+                            (ntop.app.presentation::help-state-transition
+                             opened
+                             (%wp12b-app-action
+                              :navigation
+                              (list :help-section "1" :extra))))
                            (deleted
                             (ntop.app.presentation::help-state-transition typed
                                                                           (%wp12b-app-action
@@ -66,10 +65,11 @@
                        :to-equal
                        "gpu")
                       (cl-weave:expect
-                       (ntop.app.presentation::help-state-scroll-offset
-                        scrolled)
+                       (list
+                        (ntop.app.presentation::help-state-scroll-offset invalid-section)
+                        (ntop.app.presentation::help-state-sectioned-p invalid-section))
                        :to-equal
-                       1)
+                       (list 0 nil))
                       (cl-weave:expect
                        (ntop.app.presentation::help-state-query deleted)
                        :to-equal
@@ -448,7 +448,8 @@
                        :selected-widget :unknown))
          (no-match-screen (cl-tty-kit:make-screen 50 4))
          (no-match-state (ntop.app.presentation::make-help-state
-                          :selected-widget :unknown :query "cpu")))
+                          :selected-widget :unknown
+                          :query "not-present")))
     (ntop.ui:draw-widget :help empty-screen rectangle empty-state config nil)
     (ntop.ui:draw-widget :help no-match-screen rectangle no-match-state config nil)
     (cl-weave:expect
@@ -457,7 +458,12 @@
     (cl-weave:expect (search "No matching key bindings."
                              (cl-tty-kit:screen-row-string no-match-screen 1))
                      :to-be 1)
-    (dolist (height '(1 2))
+    (setf (ntop.app.presentation::help-state-sectioned-p no-match-state) t)
+    (ntop.ui:draw-widget :help no-match-screen rectangle no-match-state config nil)
+    (cl-weave:expect (search "No matching key bindings."
+                             (cl-tty-kit:screen-row-string no-match-screen 1))
+                     :to-be 1)
+    (dolist (height (list 1 2))
       (let* ((screen (cl-tty-kit:make-screen 20 height))
              (short-rectangle
                (ntop.ui:make-rectangle :x 0 :y 0 :width 20 :height height)))

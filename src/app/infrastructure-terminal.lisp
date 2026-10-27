@@ -126,8 +126,10 @@
                     (%restore-terminal-settings fd original-termios))
                 (let ((signal (%pending-termination-signal signals)))
                   (when signal
-                    (sb-sys:enable-interrupt signal :default)
-                    (sb-posix:kill (sb-posix:getpid) signal)))))
+                    (funcall (symbol-function 'sb-sys:enable-interrupt)
+                             signal :default)
+                    (funcall (symbol-function 'sb-posix:kill)
+                             (sb-posix:getpid) signal)))))
           (%restore-default-signal-handlers signals))
       (%release-terminal-settings original-termios))))
 

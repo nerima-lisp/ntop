@@ -19,7 +19,59 @@
                                 :key (function first)
                                 :test (function eq))))
                        :to-be
-                       t)))
+                       t)
+                      (let* ((*wp12b-screen-widget-calls* nil)
+                             (*wp12b-screen-recording-p* t)
+                             (state (ntop.app.domain:make-app-state))
+                             (baseline-config (%wp12b-screen-config))
+                             (expanded-config (%wp12b-screen-config))
+                             (snapshot (%wp12b-screen-fixture-snapshot))
+                             (baseline-screen (cl-tty-kit:make-screen 80 24))
+                             (expanded-screen (cl-tty-kit:make-screen 80 24)))
+                        (setf
+                         (ntop.shared.application:application-config-basic-p
+                          baseline-config)
+                         t
+                         (ntop.shared.application:application-config-hide-average-cpu-p
+                          baseline-config)
+                         t
+                         (ntop.shared.application:application-config-network-show-packets-p
+                          baseline-config)
+                         nil
+                         (ntop.shared.application:application-config-basic-p
+                          expanded-config)
+                         t
+                         (ntop.shared.application:application-config-hide-average-cpu-p
+                          expanded-config)
+                         nil
+                         (ntop.shared.application:application-config-network-show-packets-p
+                          expanded-config)
+                         t)
+                        (ntop.app.presentation:draw-application-screen
+                         baseline-screen state baseline-config snapshot 80 24 nil)
+                        (let ((baseline-memory
+                                (find :memory *wp12b-screen-widget-calls*
+                                      :key (function first) :test (function eq)))
+                              (baseline-cpu
+                                (find :cpu *wp12b-screen-widget-calls*
+                                      :key (function first) :test (function eq))))
+                          (setf *wp12b-screen-widget-calls* nil)
+                          (ntop.app.presentation:draw-application-screen
+                           expanded-screen state expanded-config snapshot 80 24 nil)
+                          (let ((expanded-memory
+                                  (find :memory *wp12b-screen-widget-calls*
+                                        :key (function first) :test (function eq)))
+                                (expanded-cpu
+                                  (find :cpu *wp12b-screen-widget-calls*
+                                        :key (function first) :test (function eq))))
+                            (cl-weave:expect
+                             (> (ntop.ui:rectangle-height (second expanded-memory))
+                                (ntop.ui:rectangle-height (second baseline-memory)))
+                             :to-be t)
+                            (cl-weave:expect
+                             (> (ntop.ui:rectangle-height (second expanded-cpu))
+                                (ntop.ui:rectangle-height (second baseline-cpu)))
+                             :to-be t))))))
                    (cl-weave:it
                     "selects alternate GPU, temperature, battery and disk graph views"
                     (dolist (case '((:memory :gpu :gpu :memory)

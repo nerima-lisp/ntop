@@ -382,7 +382,7 @@
           :to-be
           nil)))
     (cl-weave:it
-      "reports monotonic clock failures without catching callbacks"
+      "reports clock failures without catching callbacks"
       (let ((time nil)
             (reason nil)
             (unavailable-called-p nil))
@@ -417,10 +417,25 @@
                              (setf
                                unavailable-called-p
                                t))))
-        (cl-weave:expect
-          unavailable-called-p
-          :to-be
-          nil)))
+        (progn
+          (cl-weave:expect unavailable-called-p :to-be nil)
+          (let ((on-time-count 0)
+                (unavailable-count 0)
+                (unavailable-reason nil))
+            (ntop.app.infrastructure::%report-unix-time
+             (lambda () (error "synthetic Unix clock failure"))
+             (lambda (time)
+               (declare (ignore time))
+               (incf on-time-count))
+             (lambda (condition)
+               (incf unavailable-count)
+               (setf unavailable-reason condition)))
+            (cl-weave:expect
+             (list on-time-count unavailable-count)
+             :to-equal (list 0 1))
+            (cl-weave:expect
+             (not (null unavailable-reason))
+             :to-be t)))))
     (cl-weave:it
       "raises on unavailable clock readings"
       (let ((clock

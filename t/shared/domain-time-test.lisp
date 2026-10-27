@@ -45,9 +45,34 @@
       (cl-weave:expect (%test-fixture-clock-unix-time-reads clock)
                        :to-be 1)))
 
-  (cl-weave:it "delivers an unavailable wall-clock reason to its failure continuation"
+  (cl-weave:it "routes wall-clock failures and reports live system clock values once"
+  (let ((failure-reason nil))
     (ntop.shared.domain:read-unix-time
      (make-instance '%test-fixture-clock :time 0d0 :failure :clock-unavailable)
      (lambda (value) (declare (ignore value)))
-     (lambda (reason) (setf *clock-result* reason)))
-    (cl-weave:expect *clock-result* :to-be :clock-unavailable)))
+     (lambda (reason) (setf failure-reason reason)))
+    (cl-weave:expect failure-reason :to-be :clock-unavailable))
+  (let ((calls 0)
+        (value nil)
+        (reason nil))
+    (ntop.shared.domain:read-monotonic-time
+     (ntop.app.infrastructure:make-system-clock)
+     (lambda (time) (incf calls) (setf value time))
+     (lambda (unavailable-reason)
+       (incf calls)
+       (setf reason unavailable-reason)))
+    (cl-weave:expect calls :to-be 1)
+    (cl-weave:expect (and (realp value) (plusp value)) :to-be t)
+    (cl-weave:expect reason :to-be nil))
+  (let ((calls 0)
+        (value nil)
+        (reason nil))
+    (ntop.shared.domain:read-unix-time
+     (ntop.app.infrastructure:make-system-clock)
+     (lambda (time) (incf calls) (setf value time))
+     (lambda (unavailable-reason)
+       (incf calls)
+       (setf reason unavailable-reason)))
+    (cl-weave:expect calls :to-be 1)
+    (cl-weave:expect (and (integerp value) (plusp value)) :to-be t)
+    (cl-weave:expect reason :to-be nil))))
