@@ -91,7 +91,7 @@
      (%f8a-darwin-ps-user-start (pid)
        (with-input-from-string
            (stream (%f8a-darwin-ps-output
-                    (list "-o" "ruser=,lstart=" "-p"
+                    (list "-o" "user=,lstart=" "-p"
                           (write-to-string pid))))
          (let* ((line (read-line stream nil nil))
                 (fields (and line (%f8a-darwin-fields line))))
@@ -228,7 +228,7 @@
        :to-be nil)))
    #+darwin
    (cl-weave:it
-    "overlaps ps process IDs and matches WindowServer real user and start time"
+    "matches WindowServer ps user and start time"
     (let* ((windowserver-pid (%f8a-darwin-windowserver-pid))
            (before-pids (%f8a-darwin-process-pids))
            (before-identity (%f8a-darwin-ps-user-start windowserver-pid)))
@@ -462,9 +462,13 @@
          (when fail-lookup
            (error "mock passwd lookup failure"))
          nil)))
-     (cl-weave:expect
-      (ntop.process.infrastructure::%darwin-user-name 4242)
-      :to-equal "4242")
+     (let ((record (ntop.process.infrastructure::%darwin-process-record
+                    (list :pid 41 :uid 4242 :ruid 1000) nil)))
+       (cl-weave:expect
+        (list (ntop.process.infrastructure::%darwin-user-name 4242)
+              (ntop.process.domain:process-record-uid record)
+              (ntop.process.domain:process-record-user-name record))
+        :to-equal (list "4242" 4242 "4242")))
      (setf fail-lookup t)
      (cl-weave:expect
       (ntop.process.infrastructure::%darwin-user-name 4242)

@@ -115,7 +115,7 @@
           (write-to-string uid))))
 
 (defun %darwin-process-record (row ps-values)
-  (let* ((ruid (getf row :ruid))
+  (let* ((uid (getf row :uid))
          (pid (getf row :pid))
          (process-ps-values (and (hash-table-p ps-values)
                                  (gethash pid ps-values))))
@@ -129,8 +129,8 @@
      :virtual-memory-bytes (getf row :virtual-memory-bytes)
      :read-bytes (getf row :read-bytes)
      :write-bytes (getf row :write-bytes)
-     :uid ruid
-     :user-name (%darwin-user-name ruid)
+     :uid uid
+     :user-name (%darwin-user-name uid)
      :state (getf row :state)
      :start-time-unix-seconds (getf row :start-time-unix-seconds)
      :priority (or (getf row :priority) (getf process-ps-values :priority))
