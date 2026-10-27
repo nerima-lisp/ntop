@@ -347,6 +347,8 @@
 
    ;; WP13: CLI parity parser and configuration tests.
    (:file "t/cli/presentation-cli-test")
+   ;; D11: compare CLI flag runs against the fixed screen fixture.
+   (:file "t/cli/presentation-screen-cli-test")
 
    ;; WP13: CLI config conversion coverage.
    (:file "t/cli/presentation-cli-config-test")
