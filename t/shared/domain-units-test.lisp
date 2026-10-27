@@ -42,13 +42,13 @@
                     (ntop.shared.domain:make-quantity 1 :byte)
                     :second)
                    :returned)
-     (error () :signaled))
+     (simple-error () :signaled))
    :to-be :signaled)
   (cl-weave:expect
    (handler-case (progn
                    (ntop.shared.domain:unit-definition :fixture-unit)
                    :returned)
-     (error () :signaled))
+     (simple-error () :signaled))
    :to-be :signaled)
   (cl-weave:expect
    (handler-case (progn
@@ -57,7 +57,7 @@
                     :decimal
                     :fixture-prefix)
                    :returned)
-     (error () :signaled))
+     (simple-error () :signaled))
    :to-be :signaled)
   (cl-weave:expect
    (handler-case (progn
@@ -66,7 +66,7 @@
                     :fixture-system
                     :none)
                    :returned)
-     (error () :signaled))
+     (type-error () :signaled))
    :to-be :signaled))
                    (cl-weave:it-each
                     ((:decimal :kilo 2500 5/2 "kB")

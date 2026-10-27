@@ -258,7 +258,7 @@
    (let ((snapshot (cl-tty-kit:screen-to-string screen)))
      (cl-weave:expect
       (list (not (null (search "60s" snapshot)))
-            (not (null (search "0s" snapshot))))
+            (not (null (search " 0s" snapshot))))
       :to-equal
       (if labels-visible-p '(t t) '(nil nil))))))
  (cl-weave:it-each

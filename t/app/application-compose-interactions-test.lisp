@@ -94,18 +94,15 @@
       composition)
      :to-be t)
     (cl-weave:expect forwarded :to-be nil)
-    (setf areas (list row-area legend-area memory-area)
-          (ntop.app.domain:app-state-selected-widget state) :memory
+    (setf areas (list row-area cpu-area memory-area)
           (ntop.ui:table-state-selected-index
            (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
           1)
-    (remhash :screen-selection-id
-             (ntop.app.domain:app-state-widget-v-states state))
     (%render-composition-test-instance composition state nil nil 4)
     (funcall on-action
              state
              (ntop.app.domain:make-app-action
-              :kind :select :value (list :widget 11 2)))
+              :kind :select :value (list :cpu-series 11 2)))
     (cl-weave:expect
      (ntop.app.domain:app-state-selected-widget state)
      :to-be :cpu)
@@ -116,7 +113,7 @@
     (cl-weave:expect
      (ntop.ui:table-state-selected-index
       (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
-     :to-be 1)
+     :to-be 0)
     (cl-weave:expect
      (ntop.app.application::application-composition-selection-active-p
       composition)

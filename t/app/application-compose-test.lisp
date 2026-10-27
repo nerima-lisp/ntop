@@ -186,5 +186,50 @@
                     (ntop.app.domain:app-state-widget-v-states next-state))
            :to-be t)
           (cl-weave:expect forwarded :to-be nil)
-          (cl-weave:expect history :to-be nil))))))
+          (cl-weave:expect history :to-be nil)))))
+  (cl-weave:it "routes widget pointer selections through the CPU legend area"
+    (let* ((forwarded nil)
+           (areas
+             (list
+              (ntop.ui:make-clickable-area
+               :rectangle (ntop.ui:make-rectangle :x 10 :y 1 :width 6 :height 3)
+               :action :screen-widget
+               :value :cpu-legend)))
+           (config (ntop.shared.application:make-application-config))
+           (composition
+             (ntop.app.application:make-application-composition
+              config
+              :on-action (lambda (state action)
+                           (push (list state action) forwarded))
+              :draw-screen
+              (lambda (target state config snapshot columns rows reasons series)
+                (declare
+                 (ignore target state config snapshot columns rows reasons series))
+                areas)))
+           (state (ntop.app.domain:make-app-state :selected-widget :memory))
+           (on-action
+             (ntop.app.application:application-composition-on-action composition)))
+      (setf (gethash :cpu (ntop.app.domain:app-state-widget-v-states state))
+            (ntop.ui:make-table-state :selected-index 1))
+      (%render-composition-test-instance composition state nil nil 4)
+      (funcall on-action
+               state
+               (ntop.app.domain:make-app-action
+                :kind :select :value (list :widget 11 2)))
+      (cl-weave:expect
+       (ntop.app.domain:app-state-selected-widget state)
+       :to-be :cpu)
+      (cl-weave:expect
+       (gethash :screen-selection-id
+                (ntop.app.domain:app-state-widget-v-states state))
+       :to-be :cpu-legend)
+      (cl-weave:expect
+       (ntop.ui:table-state-selected-index
+        (gethash :cpu (ntop.app.domain:app-state-widget-v-states state)))
+       :to-be 1)
+      (cl-weave:expect
+       (ntop.app.application::application-composition-selection-active-p
+        composition)
+       :to-be t)
+      (cl-weave:expect forwarded :to-be nil))))
 

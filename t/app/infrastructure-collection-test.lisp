@@ -434,7 +434,7 @@
              (list on-time-count unavailable-count)
              :to-equal (list 0 1))
             (cl-weave:expect
-             (not (null unavailable-reason))
+             (typep unavailable-reason 'simple-error)
              :to-be t)))))
     (cl-weave:it
       "raises on unavailable clock readings"

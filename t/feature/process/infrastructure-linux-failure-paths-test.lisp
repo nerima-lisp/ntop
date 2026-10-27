@@ -320,13 +320,13 @@
           (lambda ()
             (ntop.process.infrastructure::make-process-collector nil config))
           :to-throw
-          'error)
+          'simple-error)
          (sb-posix:setenv pid-name "0" 1)
          (cl-weave:expect
           (lambda ()
             (ntop.process.infrastructure::make-process-collector nil config))
           :to-throw
-          'error))
+          'simple-error))
      (if old-path
          (sb-posix:setenv path-name old-path 1)
          (sb-posix:unsetenv path-name))

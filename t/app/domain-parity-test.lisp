@@ -107,9 +107,12 @@
      (list "Scroll up" "wheel-up" '("graphs" "tables" "help" "kill dialog")
            "--disable_click disables mouse capture"))
     (cl-weave:expect
-     (member "src/event.rs:31-34"
-             (ntop.app.domain:parity-mouse-source mouse)
-             :test #'string=)
+     (and (member "src/event.rs:31-34"
+                  (ntop.app.domain:parity-mouse-source mouse)
+                  :test #'string=)
+          (member "src/lib.rs:363-369"
+                  (ntop.app.domain:parity-mouse-source mouse)
+                  :test #'string=))
      :to-be-truthy)
     (cl-weave:expect
      (list (ntop.app.domain:parity-key-action key)

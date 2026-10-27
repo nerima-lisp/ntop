@@ -256,9 +256,6 @@
    (cl-weave:expect
     (list (nth 2 values) (nth 4 values) (nth 5 values) (nth 7 values))
     :to-equal
-    (list (ntop.ui:format-disk-capacity 0)
-          (ntop.ui:format-disk-capacity 0)
-          (ntop.ui:format-percent-value 0)
-          (ntop.ui:format-disk-io-rate 0)))
+    (list "0B" "0B" "0.0%" "0B/s"))
    (cl-weave:expect (nth 8 values) :to-equal "N/A"))))
 

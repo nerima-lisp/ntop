@@ -451,10 +451,7 @@
     (every (lambda (value) (string= value "N/A")) (subseq values 4 8))
     :to-be
     t)
-   (cl-weave:expect
-    (every (lambda (value) (not (string= value "N/A"))) (subseq values 2 4))
-    :to-be
-    t)))
+   (cl-weave:expect (subseq values 2 4) :to-equal '("1.0KB" "2.0KB"))))
                    (cl-weave:it-each ((0 4) (10 0))
                      "leaves an empty basic widget rectangle blank (~Ax~A)"
                      (width height)
