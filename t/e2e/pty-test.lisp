@@ -24,7 +24,10 @@
             session 36 120 :timeout-seconds 2d0)
            (multiple-value-bind (output)
                (ntop.e2e::%route-read-through-quiet-period
-                session 0.3d0 2d0 0.75d0)
+                session
+                :quiet-seconds 0.3d0
+                :timeout-seconds 2d0
+                :initial-quiet-seconds 0.75d0)
              (cl-weave:expect
               (not (null (search "RESIZE=120x36"
                                  (ntop.e2e::%octets-to-text output))))

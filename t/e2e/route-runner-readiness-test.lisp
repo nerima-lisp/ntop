@@ -270,8 +270,11 @@
             :to-be t)
            (setf output
                  (ntop.e2e::%route-read-through-quiet-period
-                  session 1d0 2d0 0.1d0
-                  (lambda (octets)
+                  session
+                  :quiet-seconds 1d0
+                  :timeout-seconds 2d0
+                  :initial-quiet-seconds 0.1d0
+                  :completion-predicate (lambda (octets)
                     (let ((text (ntop.e2e::%octets-to-text octets)))
                       (and (search "READY" text)
                            (not (search "DONE" text)))))

@@ -395,9 +395,10 @@
           finally (return nil))))
 
 (defun %route-read-through-quiet-period
-    (session quiet-seconds timeout-seconds
-             &optional (initial-quiet-seconds quiet-seconds) completion-predicate
-             &key (completion-samples-required 2))
+    (session &key quiet-seconds timeout-seconds
+             (initial-quiet-seconds quiet-seconds)
+             completion-predicate
+             (completion-samples-required 2))
   (%validate-seconds quiet-seconds "QUIET-SECONDS")
   (%validate-seconds initial-quiet-seconds "INITIAL-QUIET-SECONDS")
   (multiple-value-bind (deadline deadline-seconds)

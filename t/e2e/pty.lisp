@@ -259,7 +259,7 @@
                                     (quiet-seconds 0.3d0)
                                     ((:first-frame-not-before
                                       first-frame-not-before-seconds))
-                                    timeout-seconds)
+                                    timeout-seconds completion-predicate)
   (%validate-seconds quiet-seconds "QUIET-SECONDS")
   (when first-frame-not-before-seconds
     (%validate-seconds first-frame-not-before-seconds "FIRST-FRAME-NOT-BEFORE"))
@@ -308,12 +308,15 @@
                                                    (and
                                                     (or (null first-frame-not-before-seconds)
                                                         (%pty-visible-screen-output-p output))
-                                                    (frame-ready-p
-                                                     (%ticks-to-seconds started-at)
+                                                    (and
+                                                     (frame-ready-p
+                                                      (%ticks-to-seconds started-at)
                                                      (%ticks-to-seconds last-output-at)
                                                      (%ticks-to-seconds now)
                                                      (%ticks-to-seconds first-frame-at)
-                                                     quiet-ticks-seconds)))
+                                                      quiet-ticks-seconds)
+                                                     (or (null completion-predicate)
+                                                         (funcall completion-predicate output)))))
                                             (return
                                              (values
                                               (make-array (length output)
@@ -331,7 +334,10 @@
                                                               (null first-frame-not-before-seconds)
                                                               (%pty-visible-screen-output-p
                                                                output)))
-                                                    (+ last-output-at quiet-ticks)))
+                                                     (when (or (null completion-predicate)
+                                                           (funcall completion-predicate
+                                                            output))
+                                                       (+ last-output-at quiet-ticks))))
                                                  (wake-at
                                                   (if idle-deadline
                                                       (min deadline
@@ -346,7 +352,7 @@
                                                "PTY frame timing did not advance."))
                                             (when
                                                 (with-e2e-operation-timeout
-                                                 ("read wait" deadline
+                                                 ("read" deadline
                                                               deadline-seconds)
                                                  (cl-tty-kit:fd-wait
                                                   (e2e-session-fd session)

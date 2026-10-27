@@ -448,10 +448,9 @@
                        "prompt with Escape. Record whether BTM exits and restores"
                        "the terminal.")))
           ((and
-            (member id (list "key-51" "key-52" "key-53"
-                             "mouse-69" "mouse-70")
+            (member id (list "key-51" "key-52" "key-53" "mouse-69")
                     :test (function string=))
-            (or (not (member id (list "mouse-69" "mouse-70")
+            (or (not (member id (list "mouse-69")
                              :test (function string=)))
                 (string-equal (or context "") "graphs")))
            (list :reason

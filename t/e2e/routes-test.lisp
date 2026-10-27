@@ -260,11 +260,11 @@
   (cl-weave:describe
  "BTM self subcase manual classifications"
  (cl-weave:it
-  "classifies exactly ten expanded BTM self subcases"
+  "classifies exactly nine expanded BTM self subcases"
   (let* ((routes (ntop.e2e::route-catalog))
          (target-ids
            (list "key-15-002" "key-51-001" "key-52-001" "key-53-001"
-                 "mouse-69-001" "mouse-70-001" "flag-113-001"
+                 "mouse-69-001" "flag-113-001"
                  "search-field-153-001" "search-field-154-001"
                  "search-field-155-001")))
     (labels ((manual-targets (mode)

@@ -130,7 +130,10 @@ while True:
          (progn
            (setf output
                  (ntop.e2e::%route-read-through-quiet-period
-                  session 0.05d0 2d0 0.08d0))
+                  session
+                  :quiet-seconds 0.05d0
+                  :timeout-seconds 2d0
+                  :initial-quiet-seconds 0.08d0))
            (cl-weave:expect (length output) :to-equal 0)
            (cl-weave:expect
             (< (ntop.e2e::%ticks-to-seconds
@@ -161,14 +164,15 @@ while True:
     (unwind-protect
          (progn
            (cl-weave:expect
-            (cl-tty-kit:fd-wait
-             (ntop.e2e::e2e-session-fd session) :input 2d0)
-            :to-be
-            t)
+            (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be t)
            (setf output
                  (ntop.e2e::%route-read-through-quiet-period
-                  session 0.05d0 2d0 0.08d0
-                  (lambda (octets)
+                  session
+                  :quiet-seconds 0.05d0
+                  :timeout-seconds 2d0
+                  :initial-quiet-seconds 0.08d0
+                  :completion-predicate (lambda (octets)
                     (search
                      "RESIZE_FRAME_COMPLETE"
                      (ntop.e2e::%octets-to-text octets)))))
@@ -209,12 +213,12 @@ while True:
     (unwind-protect
          (progn
            (cl-weave:expect
-            (cl-tty-kit:fd-wait
-             (ntop.e2e::e2e-session-fd session) :input 2d0)
+            (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
            (setf output
-                 (ntop.e2e::%route-read-through-quiet-period
-                  session 0.05d0 2d0))
+                 (ntop.e2e::%route-read-through-quiet-period session
+                  :quiet-seconds 0.05d0
+                  :timeout-seconds 2d0))
            (let* ((text (ntop.e2e::%octets-to-text output))
                   (result
                     (ntop.e2e:parse-ansi
@@ -248,12 +252,12 @@ while True:
     (unwind-protect
          (progn
            (cl-weave:expect
-            (cl-tty-kit:fd-wait
-             (ntop.e2e::e2e-session-fd session) :input 2d0)
+            (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
            (setf output
-                 (ntop.e2e::%route-read-through-quiet-period
-                  session 0.05d0 2d0))
+                 (ntop.e2e::%route-read-through-quiet-period session
+                  :quiet-seconds 0.05d0
+                  :timeout-seconds 2d0))
            (cl-weave:expect
             (ntop.e2e::%octets-to-text output)
             :to-equal
@@ -278,12 +282,12 @@ while True:
     (unwind-protect
          (progn
            (cl-weave:expect
-            (cl-tty-kit:fd-wait
-             (ntop.e2e::e2e-session-fd session) :input 2d0)
+            (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
            (setf output
-                 (ntop.e2e::%route-read-through-quiet-period
-                  session 0.05d0 2d0))
+                 (ntop.e2e::%route-read-through-quiet-period session
+                  :quiet-seconds 0.05d0
+                  :timeout-seconds 2d0))
            (cl-weave:expect
             (ntop.e2e::%octets-to-text output)
             :to-equal (format nil "~c" (code-char #x00db)))
@@ -421,3 +425,71 @@ while True:
      (ntop.e2e::%route-help-section-transition-p subcase before after)
      :to-be
      t))))
+(cl-weave:describe
+ "PTY initial read completion boundary"
+ (cl-weave:it
+  "waits until split CSI and UTF-8 bytes are complete"
+  (let* ((script
+           (format nil
+                   (concatenate 'string
+                    "import os, time, tty~%fd=0~%tty.setraw(fd)~%"
+                    "os.write(1,bytes([27])+b'[31')~%time.sleep(0.075)~%"
+                    "os.write(1,b'm'+bytes([0xe3,0x81]))~%time.sleep(0.15)~%"
+                    "os.write(1,bytes([0x82])+b'X')~%while True: time.sleep(1)~%")))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 24 80 :timeout-seconds 3d0))
+         (output nil))
+    (unwind-protect
+         (progn
+           (cl-weave:expect
+            (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be t)
+           (setf output
+                 (ntop.e2e::pty-read-until-idle
+                  session :quiet-seconds 0.05d0 :timeout-seconds 2d0
+                  :completion-predicate
+                  (lambda (octets)
+                    (not (or
+                          (ntop.e2e::%route-incomplete-escape-suffix-p octets)
+                          (ntop.e2e::%route-incomplete-utf8-suffix-p octets))))))
+           (cl-weave:expect
+            (ntop.e2e::%octets-to-text output)
+            :to-equal
+            (format nil "~c[31m~cX" (code-char 27) (code-char #x3042))))
+      (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
+  "times out while UTF-8 output remains incomplete"
+  (let* ((script
+           (format nil
+                   (concatenate 'string
+                    "import os, time, tty~%tty.setraw(0)~%"
+                    "os.write(1,bytes([0xe3,0x81]))~%while True: time.sleep(1)~%")))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 24 80 :timeout-seconds 2d0))
+         (caught nil))
+    (unwind-protect
+         (progn
+           (cl-weave:expect
+            (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be t)
+           (handler-case
+               (ntop.e2e::pty-read-until-idle
+                session :quiet-seconds 0.05d0 :timeout-seconds 0.25d0
+                :completion-predicate
+                (lambda (octets)
+                  (not (or
+                        (ntop.e2e::%route-incomplete-escape-suffix-p octets)
+                        (ntop.e2e::%route-incomplete-utf8-suffix-p octets)))))
+             (ntop.e2e::e2e-timeout (condition)
+               (setf caught condition)))
+           (cl-weave:expect
+            (typep caught 'ntop.e2e::e2e-timeout)
+            :to-be t)
+           (cl-weave:expect
+            (ntop.e2e::e2e-timeout-operation caught)
+            :to-equal
+            "read"))
+      (ntop.e2e::close-e2e-session session))))
+)

@@ -1,13 +1,29 @@
 (in-package #:ntop.e2e)
 
 (defun %route-mouse-action-inputs (route subcase grid rows columns)
-  (let* ((context (or (getf subcase :context) "")) (action (route-action route))
-         (gesture (getf subcase :gesture)))
+  (let* ((context (or (getf subcase :context) ""))
+         (action (route-action route))
+         (gesture (getf subcase :gesture))
+         (wheel-p (member gesture '("wheel-up" "wheel-down") :test #'string=)))
     (labels ((point (label)
                (loop for y below (grid-height grid)
                      for span = (first (criterion-label-spans
                                         (criterion-row-text grid y) label))
                      when span return (cons (car span) y)))
+             (frame-for-label (label)
+               (loop for y below (grid-height grid)
+                     for span = (first (criterion-label-spans
+                                        (criterion-row-text grid y) label))
+                     when span
+                       do (let ((frame
+                                  (find-if
+                                   (lambda (bounds) (= y (first bounds)))
+                                   (criterion-projection-frames grid))))
+                            (when frame (return frame)))))
+             (frame-center (frame)
+               (when frame
+                 (cons (floor (+ (1+ (third frame)) (1- (fourth frame))) 2)
+                       (floor (+ (1+ (first frame)) (1- (second frame))) 2))))
              (process-table-point ()
                (let* ((top (loop for row below (grid-height grid)
                                  for text = (criterion-row-text grid row)
@@ -17,16 +33,16 @@
                                   (find-if
                                    (lambda (bounds) (= top (first bounds)))
                                    (criterion-projection-frames grid)))))
-                 (when frame
-                   (cons (floor (+ (third frame) (fourth frame)) 2)
-                         (floor (+ (first frame) (second frame)) 2))))))
-      (let* ((target
+                 (frame-center frame)))) (let* ((target
                (cond
-                 ((and (or (string= gesture "wheel-up")
-                           (string= gesture "wheel-down"))
+                 ((and wheel-p
                        (or (string-equal context "tables")
                            (string-equal context "process table")))
                   (process-table-point))
+                 ((and wheel-p (string-equal context "graphs"))
+                  (frame-center (frame-for-label "CPU")))
+                 ((and wheel-p (string-equal context "help"))
+                  (frame-center (frame-for-label "Help")))
                  ((string= action "Select process row")
                   (let ((header (point "PID")))
                     (and header (cons (car header) (1+ (cdr header))))))
@@ -57,7 +73,8 @@
               ((string= gesture "move/drag/release")
                (list (sgr 35 #\M) (sgr 2 #\M) (sgr 34 #\M) (sgr 2 #\m)
                      (sgr 1 #\M) (sgr 33 #\M) (sgr 1 #\m)))
-              (t (error "Unknown route mouse gesture: ~s" gesture)))))))))
+              (t (error "Unknown route mouse gesture: ~s" gesture))))))))
+)
 
 (defun %route-widget-type (context)
   (cond
@@ -207,3 +224,95 @@
                                     left-cell right-cell))))
       (format nil "projection dimensions or cell count differ: ~d x ~d vs ~d x ~d"
               (aref left 0) (aref left 1) (aref right 0) (aref right 1)))))
+(defun %route-help-section-heading-line-p (text separator)
+  (when (>= separator 2)
+    (let ((border (char text (- separator 2))))
+      (or (member border '(#\│ #\┃ #\║) :test (function char=))
+          (char= border (code-char 124))))))
+(defun %route-help-section-number (grid &optional target)
+  (loop for row below (grid-height grid)
+        for text = (criterion-row-text grid row)
+        for separator = (search " - " text)
+        for number = (and separator
+                          (%route-help-section-heading-line-p text separator)
+                          (digit-char-p (char text (1- separator))))
+        when (and number (or (null target) (eql number target)))
+          return (values number row)))
+(defun %route-help-section-transition-p (subcase before-grid after-grid)
+  (let* ((input (getf subcase :input))
+         (gesture (getf subcase :gesture))
+         (target (and input
+                      (= (length input) 1)
+                      (digit-char-p (char input 0))))
+         (changed (and before-grid after-grid
+                       (not (string= (%route-grid-text before-grid)
+                                     (%route-grid-text after-grid))))))
+    (multiple-value-bind (before before-row)
+        (%route-help-section-number before-grid)
+      (multiple-value-bind (after after-row)
+          (%route-help-section-number after-grid target)
+        (cond
+          ((member gesture (list "wheel-up" "wheel-down")
+                   :test (function string=))
+           (and before after changed
+                (if (string= gesture "wheel-down")
+                    (or (> after before)
+                        (and (= after before) (< after-row before-row)))
+                    (or (< after before)
+                        (and (= after before) (> after-row before-row))))))
+          (target
+           (and (not (eql before target))
+                (eql after target)
+                changed
+                t))
+          (t nil))))))
+(defun %route-graph-window-transition-p
+    (subcase before-grid after-grid &optional expected-before expected-after)
+  (labels ((scale-position (text start)
+             (loop with cursor = start
+                   for suffix = (position (code-char 115) text :start cursor)
+                   while suffix
+                   do (let ((digit (1- suffix)))
+                        (loop while (and (>= digit cursor)
+                                         (digit-char-p (char text digit)))
+                              do (decf digit))
+                        (when (< digit (1- suffix))
+                          (return (1+ digit)))
+                        (setf cursor (1+ suffix)))))
+           (scale-value (text position)
+             (let ((suffix (and position
+                                (position (code-char 115) text :start position))))
+               (and suffix (parse-integer text :start position :end suffix))))
+           (axis-state (grid)
+             (when (and grid
+                        (search "CPU" (%route-grid-text grid) :test (function char-equal)))
+               (loop for row below (grid-height grid)
+                     for text = (criterion-row-text grid row)
+                     for start = (scale-position text 0)
+                     for first-end = (and start
+                                          (position (code-char 115) text :start start))
+                     for endpoint = (and first-end
+                                         (search "0s" text :start2 (1+ first-end)))
+                     for next-start = (and endpoint
+                                           (scale-position text (+ endpoint 2)))
+                     when endpoint
+                       return (list (scale-value text start)
+                                    (and next-start
+                                         (scale-value text next-start)))))))
+    (let* ((before (axis-state before-grid))
+           (after (axis-state after-grid))
+           (gesture (getf subcase :gesture))
+           (expected-before (or expected-before (first before))))
+      (and (member gesture (list "wheel-up" "wheel-down") :test (function string=))
+           before
+           after
+           (integerp (first before))
+           (integerp (first after))
+           (integerp (second before))
+           (eql (first before) expected-before)
+           (eql (second before) (second after))
+           (if expected-after
+               (eql (first after) expected-after)
+               (if (string= gesture "wheel-up")
+                   (< (first after) (first before))
+                   (> (first after) (first before))))))))

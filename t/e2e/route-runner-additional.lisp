@@ -19,12 +19,14 @@
     (session raw rows columns rate timeout state-predicate
              &key (completion-samples-required 2))
   (%route-read-through-quiet-period
-   session *route-frame-quiet-seconds* timeout
-   (* *route-first-frame-factor* (/ rate 1000d0))
-   (when state-predicate
-     (lambda (output)
-       (funcall state-predicate
-                (%route-grid-after-output raw output rows columns))))
+   session
+   :quiet-seconds *route-frame-quiet-seconds*
+   :timeout-seconds timeout
+   :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0))
+   :completion-predicate (when state-predicate
+                           (lambda (output)
+                             (funcall state-predicate
+                                      (%route-grid-after-output raw output rows columns))))
    :completion-samples-required completion-samples-required))
 (defun %route-close-session-with-evidence (session evidence-prefix)
   (let* ((ansi-path
@@ -64,7 +66,12 @@
          :first-frame-not-before
          (* *route-first-frame-factor* (/ rate 1000d0))
          :timeout-seconds
-         (%route-process-startup-timeout route subcase timeout))
+         (%route-process-startup-timeout route subcase timeout)
+         :completion-predicate
+         (lambda (octets)
+           (not (or
+                 (%route-incomplete-escape-suffix-p octets)
+                 (%route-incomplete-utf8-suffix-p octets)))))
       (%append-octets raw initial)
       (when (%route-process-data-required-p route subcase)
         (multiple-value-bind (readiness-result readiness-diagnostic)
@@ -86,44 +93,37 @@
       (multiple-value-bind (context-output)
           (%route-read-widget-state
            session raw rows columns rate timeout
-           (when (string-equal (or (getf subcase :context) "")
-                               "expanded widget")
+           (cond
+            ((string-equal (or (getf subcase :context) "") "expanded widget")
              (lambda (grid)
-               (%route-expanded-widget-transition-p initial-grid grid))))
+               (%route-expanded-widget-transition-p initial-grid grid)))
+            ((and (string-equal (or (getf subcase :context) "") "help")
+                  (member (getf subcase :gesture)
+                          (list "wheel-up" "wheel-down")
+                          :test (function string=)))
+             (lambda (grid)
+               (and (search "Help" (%route-grid-text grid) :test #'char-equal)
+                    (%route-help-section-number grid))))
+            (t nil)))
         (%append-octets raw context-output)
-        (when (and (string= (route-id route) "mouse-69")
+        (when (and (string= (getf subcase :gesture) "wheel-up")
                    (string-equal (or (getf subcase :context) "") "help"))
-          (dolist (input
-                   (%route-mouse-action-inputs
-                    route (list :context "help" :gesture "wheel-down")
-                    (%route-grid raw rows columns) rows columns))
-            (pty-send-input session (%route-octets input)
-                            :timeout-seconds timeout)
-            (multiple-value-bind (preparation-output)
-                (%route-read-through-quiet-period
-                 session
-                 *route-frame-quiet-seconds*
-                 timeout
-                 (* *route-first-frame-factor* (/ rate 1000d0)))
-              (%append-octets raw preparation-output))))))
+          (let ((preparation-before (%route-grid raw rows columns)))
+            (dolist (input
+                     (%route-mouse-action-inputs
+                      route (list :context "help" :gesture "wheel-down")
+                      preparation-before rows columns))
+              (pty-send-input session (%route-octets input)
+                              :timeout-seconds timeout)
+              (multiple-value-bind (preparation-output)
+                  (%route-read-widget-state
+                   session raw rows columns rate timeout
+                   (lambda (grid)
+                     (%route-help-section-transition-p
+                      (list :gesture "wheel-down") preparation-before grid)))
+                (%append-octets raw preparation-output)))))))
     (let* ((before-grid
             (progn
-              (when (and (string= (route-id route) "mouse-70")
-                         (string-equal (or (getf subcase :context) "") "graphs"))
-                ;; Start wheel-down at 45s; the CPU graph opens at its 60s limit.
-                (dolist (input
-                         (%route-mouse-action-inputs
-                          route (list :context "graphs" :gesture "wheel-up")
-                          (%route-grid raw rows columns) rows columns))
-                  (pty-send-input session (%route-octets input)
-                                  :timeout-seconds timeout)
-                  (multiple-value-bind (preparation-output)
-                      (%route-read-through-quiet-period
-                       session
-                       *route-frame-quiet-seconds*
-                       timeout
-                       (* *route-first-frame-factor* (/ rate 1000d0)))
-                    (%append-octets raw preparation-output))))
               (when (and (eq (route-kind route) :key)
                          (member (route-action route)
                                  (list "Zoom graph out" "Reset graph zoom")
@@ -135,9 +135,9 @@
                 (multiple-value-bind (preparation-output)
                     (%route-read-through-quiet-period
                      session
-                     *route-frame-quiet-seconds*
-                     timeout
-                     (* *route-first-frame-factor* (/ rate 1000d0)))
+                     :quiet-seconds *route-frame-quiet-seconds*
+                     :timeout-seconds timeout
+                     :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0)))
                   (%append-octets raw preparation-output)))
               (progn
                 (when (and (eq (route-kind route) :key)
@@ -149,9 +149,9 @@
                   (multiple-value-bind (preparation-output)
                       (%route-read-through-quiet-period
                        session
-                       *route-frame-quiet-seconds*
-                       timeout
-                       (* *route-first-frame-factor* (/ rate 1000d0)))
+                       :quiet-seconds *route-frame-quiet-seconds*
+                       :timeout-seconds timeout
+                       :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0)))
                     (%append-octets raw preparation-output)))
                 (when (and (eq (route-kind route) :key)
                            (string= (route-action route) "Select help section")
@@ -162,9 +162,9 @@
                   (multiple-value-bind (preparation-output)
                       (%route-read-through-quiet-period
                        session
-                       *route-frame-quiet-seconds*
-                       timeout
-                       (* *route-first-frame-factor* (/ rate 1000d0)))
+                       :quiet-seconds *route-frame-quiet-seconds*
+                       :timeout-seconds timeout
+                       :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0)))
                     (%append-octets raw preparation-output))))
               (%route-write-ansi
                (merge-pathnames (format nil "~a.ansi" evidence-prefix)) raw)
@@ -196,14 +196,18 @@
              ((and (eq (route-kind route) :mouse)
                    (string= (route-action route) "Ignore pointer motion"))
               (%route-read-through-quiet-period
-               session *route-frame-quiet-seconds* timeout))
+               session
+               :quiet-seconds *route-frame-quiet-seconds*
+               :timeout-seconds timeout))
              ((and (eq (route-kind route) :flag)
                    (string= (ntop.app.domain:parity-flag-snake-case
                              (route-entry route))
                             "disable_keys")
                    (not (getf subcase :invalid-value)))
               (%route-read-through-quiet-period
-               session *route-frame-quiet-seconds* timeout))
+               session
+               :quiet-seconds *route-frame-quiet-seconds*
+               :timeout-seconds timeout))
              ((and (string= (route-id route) "key-36")
                    (string-equal (or (getf subcase :context) "")
                                  "expanded widget"))
@@ -212,11 +216,31 @@
                (lambda (grid)
                  (%route-expanded-widget-restored-p grid initial-grid))))
              (t
-              (%route-read-through-quiet-period
-               session
-               *route-frame-quiet-seconds*
-               timeout
-               (* *route-first-frame-factor* (/ rate 1000d0)))))
+              (cond
+               ((and (eq (route-kind route) :mouse)
+                     (member (getf subcase :gesture)
+                             (list "wheel-up" "wheel-down")
+                             :test (function string=))
+                     (string-equal (or (getf subcase :context) "") "help"))
+                (%route-read-widget-state
+                 session raw rows columns rate timeout
+                 (lambda (grid)
+                   (%route-help-section-transition-p subcase before-grid grid))))
+               ((and (eq (route-kind route) :mouse)
+                     (member (getf subcase :gesture)
+                             (list "wheel-up" "wheel-down")
+                             :test (function string=))
+                     (string-equal (or (getf subcase :context) "") "graphs"))
+                (%route-read-widget-state
+                 session raw rows columns rate timeout
+                 (lambda (grid)
+                   (%route-graph-window-transition-p subcase before-grid grid))))
+               (t
+                (%route-read-through-quiet-period
+                 session
+                 :quiet-seconds *route-frame-quiet-seconds*
+                 :timeout-seconds timeout
+                 :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0)))))))
           (%append-octets raw action-output))
         (push (%route-grid raw rows columns) action-grids))
       (let* ((ansi-path (merge-pathnames
@@ -227,8 +251,8 @@
                 before-action initial-projection before-grid
                 (nreverse action-grids) nil)))))
 (defun %route-run-interactive-side (program route subcase evidence-prefix
-                                    rows columns rate timeout config-path
-                                    evidence-directory)
+                                            rows columns rate timeout config-path
+                                            evidence-directory)
   (let* ((context (or (getf subcase :context) ""))
          (context-text (%route-context-input context route subcase))
          (action-text (%route-action-text route subcase rows columns))
@@ -240,23 +264,23 @@
            :timeout-seconds
            (%route-process-startup-timeout route subcase timeout))))
     (unwind-protect
-         (multiple-value-bind (grid projection evidence before initial
-                               initial-grid action-grids readiness-status
-                               readiness-result readiness-diagnostic)
-             (%route-read-initial-and-action session rows columns rate timeout
-                                             action-text context-text
-                                             evidence-prefix route subcase args)
-           (list :grid grid :projection projection
-                 :initial-projection (or before initial)
-                 :initial-grid initial-grid :action-grids action-grids
-                 :evidence evidence :readiness-status readiness-status
-                 :readiness-result readiness-result
-                 :readiness-diagnostic readiness-diagnostic
-                 :actual (if readiness-result
-                             (format nil "readiness ~a: ~a"
-                                     readiness-result readiness-diagnostic)
-                           (format nil "captured a ~d by ~d terminal frame" columns rows))
-                 :cause readiness-diagnostic))
+        (multiple-value-bind (grid projection evidence before initial
+                                   initial-grid action-grids readiness-status
+                                   readiness-result readiness-diagnostic)
+            (%route-read-initial-and-action session rows columns rate timeout
+                                            action-text context-text
+                                            evidence-prefix route subcase args)
+          (list :grid grid :projection projection
+                :initial-projection (or before initial)
+                :initial-grid initial-grid :action-grids action-grids
+                :evidence evidence :readiness-status readiness-status
+                :readiness-result readiness-result
+                :readiness-diagnostic readiness-diagnostic
+                :actual (if readiness-result
+                            (format nil "readiness ~a: ~a"
+                                    readiness-result readiness-diagnostic)
+                          (format nil "captured a ~d by ~d terminal frame" columns rows))
+                :cause readiness-diagnostic))
       (%route-close-session-with-evidence session evidence-prefix))))
 (defun %route-run-exit-side (program route subcase evidence-prefix rows columns
                                      rate timeout config-path evidence-directory)
@@ -317,13 +341,15 @@
             (multiple-value-bind (resized)
                 (%route-read-through-quiet-period
                  session
-                 *route-frame-quiet-seconds*
-                 timeout
-                 (* *route-first-frame-factor* (/ rate 1000d0))
-                 (lambda (octets)
-                   (let ((grid (%route-grid octets 36 120)))
-                     (and (char= (cell-character (grid-cell-at grid 0 119)) (code-char #x2510))
-                          (char= (cell-character (grid-cell-at grid 35 119)) (code-char #x2518))))))
+                 :quiet-seconds *route-frame-quiet-seconds*
+                 :timeout-seconds timeout
+                 :initial-quiet-seconds (* *route-first-frame-factor* (/ rate 1000d0))
+                 :completion-predicate (lambda (octets)
+                                         (let ((grid (%route-grid octets 36 120)))
+                                           (and (char= (cell-character (grid-cell-at grid 0 119))
+                                                       (code-char #x2510))
+                                                (char= (cell-character (grid-cell-at grid 35 119))
+                                                       (code-char #x2518))))))
               (%append-octets raw resized))
             (let ((grid (%route-grid raw 36 120)))
               (%route-write-ansi path raw)
