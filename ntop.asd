@@ -404,6 +404,7 @@
    (:file "t/e2e/route-runner-classification")
    (:file "t/e2e/route-runner")
    (:file "t/e2e/route-runner-additional")
+   (:file "t/e2e/route-runner-modal-state")
    (:file "t/e2e/route-runner-selection")
    (:file "t/e2e/route-runner-child")
    (:file "t/e2e/route-runner-terminal")
