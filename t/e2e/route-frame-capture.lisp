@@ -1,6 +1,6 @@
 (in-package #:ntop.e2e)
 
-(defvar *route-frame-stability-seconds* nil)
+(defvar *route-frame-stability-seconds* 3.3d0)
 
 (defvar *route-frame-capture-side* :unknown)
 

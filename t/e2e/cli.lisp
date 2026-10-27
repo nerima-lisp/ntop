@@ -325,7 +325,7 @@
            :kind :value
            :type :integer
            :min 1
-           :default 30
+           :default 60
            :description "Maximum wait for each route child.")))
 
 (defun main (&optional (argv (cl-cli:application-argv)))

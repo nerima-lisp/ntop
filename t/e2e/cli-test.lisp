@@ -75,7 +75,7 @@
                       ("n1" "btm" 48 160 700 1 60 90))
             (:export-parity ("ntop-e2e" "export-parity") (:output) ("-"))
             (:n7 ("ntop-e2e" "n7") (:root) ("t/e2e/goldens"))
-            (:routes ("ntop-e2e" "routes") (:route :subcase) (nil nil)))
+            (:routes ("ntop-e2e" "routes") (:route :subcase :timeout-seconds) (nil nil 60)))
                     "uses declared defaults for the ~A command"
                     (command argv option-keys expected-values)
                     (let* ((invocation

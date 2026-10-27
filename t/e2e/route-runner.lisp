@@ -269,7 +269,7 @@
 (defun run-route-harness (&key (mode "ntop") (btm "btm") (ntop "./ntop")
                                (evidence-directory "/tmp")
                                (rows 60) (columns 220) (rate 250)
-                               (timeout-seconds 30) route-ids subcase-id)
+                               (timeout-seconds 60) route-ids subcase-id)
   (unless (member mode '("ntop" "btm-self") :test (function string=))
     (error "Unknown route mode: ~s" mode))
   (let* ((directory (%route-temporary-directory evidence-directory))

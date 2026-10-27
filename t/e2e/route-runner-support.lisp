@@ -367,9 +367,15 @@
          (completion-samples 0)
          (last-completion-gap-count
            (length (e2e-session-output-gaps-seconds session)))
+         (last-completion-output-length 0)
+         (stability-window
+           (or stability-seconds *route-frame-stability-seconds*
+               quiet-seconds))
          (*route-frame-capture-not-before-at*
-           (unless completion-predicate
-             (+ (%now) (%seconds-to-ticks initial-quiet-seconds)))))
+           (+ (%now) (%seconds-to-ticks initial-quiet-seconds))))
+    (%validate-seconds stability-window "STABILITY-SECONDS")
+    (unless (plusp stability-window)
+      (error "STABILITY-SECONDS must be positive."))
     (unless (and rows columns)
       (error "PTY session has no recorded frame dimensions."))
     (multiple-value-bind (cumulative grid metadata)
@@ -378,11 +384,7 @@
          :side (or side *route-frame-capture-side* :unknown)
          :stage (or stage :route-read-through-quiet-period)
          :timeout-seconds timeout-seconds
-         :stability-seconds
-         (if completion-predicate
-             0d0
-           (or stability-seconds *route-frame-stability-seconds*
-               quiet-seconds))
+         :stability-seconds stability-window
          :allow-unchanged-p
          (and allow-unchanged-p (null completion-predicate))
          :completion-predicate
@@ -391,15 +393,20 @@
              (declare (ignore grid))
              (let* ((output *route-frame-capture-current-octets*)
                     (new-output (subseq output prefix-length))
+                    (output-length (length new-output))
                     (gap-count
                       (length
                        (e2e-session-output-gaps-seconds session))))
                (when (> (- gap-count last-completion-gap-count) 1)
                  (setf completion-samples 0))
                (setf last-completion-gap-count gap-count)
-               (if (funcall completion-predicate new-output)
-                   (incf completion-samples)
-                 (setf completion-samples 0))
+               (let ((new-output-p
+                       (> output-length last-completion-output-length)))
+                 (setf last-completion-output-length output-length)
+                 (if (funcall completion-predicate new-output)
+                     (when new-output-p
+                       (incf completion-samples))
+                   (setf completion-samples 0)))
                (>= completion-samples completion-samples-required)))))
       (declare (ignore grid metadata))
       (values (subseq cumulative prefix-length)

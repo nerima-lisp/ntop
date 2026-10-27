@@ -49,6 +49,99 @@
             (sb-ext:process-alive-p (ntop.e2e::e2e-session-process session))
             :to-be t))
       (ntop.e2e::close-e2e-session session)))))
+(cl-weave:describe
+ "route quiet period compatibility"
+(cl-weave:it
+  "waits for a delayed border cell after an early completion predicate"
+  (let* ((script
+           (format nil
+                   (concatenate 'string
+                                "import os,time~%"
+                                "os.write(1,bytes([27])+b'[1;1HREADY')~%"
+                                "time.sleep(0.40)~%"
+                                "os.write(1,bytes([27])+b'[1;12H|')~%"
+                                "while True: time.sleep(1)~%")))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 2 12 :timeout-seconds 3d0))
+         (started nil)
+         (output nil))
+    (unwind-protect
+         (progn
+           (cl-weave:expect
+            (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be t)
+           (setf started (ntop.e2e::%now))
+           (setf output
+                 (ntop.e2e::%route-read-through-quiet-period
+                  session
+                  :quiet-seconds 0.05d0
+                  :timeout-seconds 2d0
+                  :initial-quiet-seconds 0.05d0
+                  :completion-predicate
+                  (lambda (octets)
+                    (search "READY" (ntop.e2e::%octets-to-text octets)))
+                  :completion-samples-required 2
+                  :stability-seconds 0.25d0))
+           (let ((grid (ntop.e2e::%route-grid output 2 12)))
+             (cl-weave:expect
+              (char-code
+               (ntop.e2e:cell-character
+                (ntop.e2e:grid-cell-at grid 0 11)))
+              :to-equal
+              124)
+             (cl-weave:expect
+              (>= (ntop.e2e::%ticks-to-seconds
+                   (- (ntop.e2e::%now) started))
+                  0.55d0)
+              :to-be
+              t)))
+      (ntop.e2e::close-e2e-session session))))
+(cl-weave:it
+  "honors the initial quiet deadline with an early completion predicate"
+  (let* ((script
+           (format nil
+                   (concatenate 'string
+                                "import os,time~%"
+                                "os.write(1,bytes([27])+b'[1;1HREADY')~%"
+                                "while True: time.sleep(1)~%")))
+         (session
+           (ntop.e2e::launch-e2e-process
+            "python3" (list "-c" script) 2 12 :timeout-seconds 3d0))
+         (started nil)
+         (output nil))
+    (unwind-protect
+         (progn
+           (cl-weave:expect
+            (cl-tty-kit:fd-wait (ntop.e2e::e2e-session-fd session) :input 2d0)
+            :to-be t)
+           (setf started (ntop.e2e::%now))
+           (setf output
+                 (ntop.e2e::%route-read-through-quiet-period
+                  session
+                  :quiet-seconds 0.05d0
+                  :timeout-seconds 2d0
+                  :initial-quiet-seconds 0.40d0
+                  :completion-predicate
+                  (lambda (octets)
+                    (search "READY" (ntop.e2e::%octets-to-text octets)))
+                  :completion-samples-required 1
+                  :stability-seconds 0.10d0))
+           (let ((grid (ntop.e2e::%route-grid output 2 12)))
+             (cl-weave:expect
+              (char-code
+               (ntop.e2e:cell-character
+                (ntop.e2e:grid-cell-at grid 0 0)))
+              :to-equal
+              82)
+             (cl-weave:expect
+              (>= (ntop.e2e::%ticks-to-seconds
+                   (- (ntop.e2e::%now) started))
+                  0.30d0)
+              :to-be
+              t)))
+      (ntop.e2e::close-e2e-session session))))
+)
 
 (defun route-frame-capture-test-launch (script rows columns)
   (ntop.e2e::launch-e2e-process
@@ -74,17 +167,21 @@
          (session (route-frame-capture-test-launch script 3 12)))
     (unwind-protect
          (multiple-value-bind (octets grid metadata)
-             (ntop.e2e::%route-capture-frame
-              session (route-frame-capture-test-empty-octets) 3 12
-              :side :candidate :stage :fragmented-ansi
-              :timeout-seconds 1.5d0 :stability-seconds 0.12d0)
+             (let ((ntop.e2e::*route-frame-stability-seconds* 0.12d0))
+               (ntop.e2e::%route-capture-frame
+                session (route-frame-capture-test-empty-octets) 3 12
+                :side :candidate :stage :fragmented-ansi
+                :timeout-seconds 1.5d0))
            (cl-weave:expect
             (coerce octets 'list) :to-equal
             '(#x1b #x5b #x32 #x3b #x34 #x48 #xce #xbb))
            (cl-weave:expect
             (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 1 3))
             :to-equal #\λ)
-           (cl-weave:expect (getf metadata :side) :to-be :candidate)
+           (cl-weave:expect
+            (and (eq (getf metadata :side) :candidate)
+                 (= ntop.e2e::*route-frame-stability-seconds* 3.3d0))
+            :to-be t)
            (cl-weave:expect (getf metadata :stage) :to-be :fragmented-ansi)
            (cl-weave:expect
             (realp (getf metadata :elapsed-seconds)) :to-be t)
