@@ -12,7 +12,7 @@
     };
 
     cl-tty-kit = {
-      url = "github:nerima-lisp/cl-tty-kit/v1.6.1";
+      url = "github:nerima-lisp/cl-tty-kit/v1.7.3";
       flake = false;
     };
     cl-codec-kit = {
