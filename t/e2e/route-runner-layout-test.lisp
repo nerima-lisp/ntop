@@ -57,6 +57,47 @@
                 (<= (1+ top) y (1+ bottom)))
            :to-be t)))))))
 (cl-weave:describe
+ "route help section headings"
+ (cl-weave:it
+  "ignores consecutive table-of-contents headings"
+  (let ((before (ntop.e2e:make-terminal-grid :rows 24 :cols 80))
+        (not-moved (ntop.e2e:make-terminal-grid :rows 24 :cols 80))
+        (after (ntop.e2e:make-terminal-grid :rows 24 :cols 80))
+        (subcase (list :input "3")))
+    (ntop.e2e.test::criterion-test-write before 7 0 "0" "┌ Help ──────────────────────┐")
+    (ntop.e2e.test::criterion-test-write before 8 0 "0" "│1 - General")
+    (ntop.e2e.test::criterion-test-write before 9 0 "0" "│Original body text")
+    (ntop.e2e.test::criterion-test-write not-moved 7 0 "0" "┌ Help ──────────────────────┐")
+    (ntop.e2e.test::criterion-test-write not-moved 8 0 "0" "│1 - General")
+    (ntop.e2e.test::criterion-test-write not-moved 9 0 "0" "│Changed body text")
+    (dolist (grid (list before not-moved after))
+      (ntop.e2e.test::criterion-test-write
+       grid 11 0 "0"
+       "│Scroll to browse or press the number key to go to the corresponding help menu section:")
+      (loop for heading in
+              (list "1 - General" "2 - CPU widget" "3 - Memory widget")
+            for row from 12
+            do (ntop.e2e.test::criterion-test-write grid row 0 "0" (format nil "│~a" heading))))
+    (ntop.e2e.test::criterion-test-write after 22 0 "0" "│3 - Memory widget")
+    (ntop.e2e.test::criterion-test-write after 23 0 "0" "│Memory body text")
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-number before 3)
+     :to-be
+     nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-number after 3)
+     :to-equal
+     3)
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-transition-p subcase before not-moved)
+     :to-be
+     nil)
+    (cl-weave:expect
+     (ntop.e2e::%route-help-section-transition-p subcase before after)
+     :to-be
+     t))))
+
+(cl-weave:describe
  "mouse wheel graph and help geometry"
  (cl-weave:it
   "targets a graph plot and Help frame instead of the dashboard"

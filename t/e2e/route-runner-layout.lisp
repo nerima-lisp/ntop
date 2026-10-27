@@ -231,14 +231,30 @@
       (or (member border '(#\│ #\┃ #\║) :test (function char=))
           (char= border (code-char 124))))))
 (defun %route-help-section-number (grid &optional target)
-  (loop for row below (grid-height grid)
-        for text = (criterion-row-text grid row)
-        for separator = (search " - " text)
-        for number = (and separator
-                          (%route-help-section-heading-line-p text separator)
-                          (digit-char-p (char text (1- separator))))
-        when (and number (or (null target) (eql number target)))
-          return (values number row)))
+  (labels ((heading-number (row)
+             (let* ((text (criterion-row-text grid row))
+                    (separator (search " - " text)))
+               (and separator
+                    (%route-help-section-heading-line-p text separator)
+                    (digit-char-p (char text (1- separator))))))
+           (table-of-contents-heading-p (row)
+             (loop for start from (max 0 (- row 2)) to row
+                   thereis
+                     (let ((first (heading-number start)))
+                       (and first
+                            (< (+ start 2) (grid-height grid))
+                            (let ((second (heading-number (1+ start)))
+                                  (third (heading-number (+ start 2))))
+                              (and second
+                                   third
+                                   (= second (1+ first))
+                                   (= third (1+ second)))))))))
+    (loop for row below (grid-height grid)
+          for number = (heading-number row)
+          when (and number
+                    (not (table-of-contents-heading-p row))
+                    (or (null target) (eql number target)))
+            return (values number row))))
 (defun %route-help-section-transition-p (subcase before-grid after-grid)
   (let* ((input (getf subcase :input))
          (gesture (getf subcase :gesture))
