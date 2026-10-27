@@ -100,9 +100,19 @@
                 sequence-start
               octet-count)))))
     (defun %condition-a-live-grid (octets rows columns)
-      (%route-grid
-       (subseq octets 0 (%condition-a-complete-utf8-prefix-length octets))
-       rows columns))
+      (handler-case
+          (%route-grid
+           (subseq octets 0 (%condition-a-complete-utf8-prefix-length octets))
+           rows columns)
+        (ansi-parse-error (condition)
+          (if (member (ansi-parse-error-reason condition)
+                      '("incomplete escape sequence"
+                        "incomplete escape selector"
+                        "unterminated CSI sequence"
+                        "unterminated control string")
+                      :test #'string=)
+              nil
+            (error condition)))))
     (defun %condition-a-capture
         (program arguments rows columns rate timeout-seconds environment raw-path)
       (let* ((session (launch-e2e-process program arguments rows columns
@@ -119,14 +129,13 @@
             (loop
              (%route-read-interval session raw *condition-a-observation-seconds*)
              (let* ((grid (%condition-a-live-grid raw rows columns))
-                    (projection (project-criterion-grid grid))
-                    (process-frame
-                     (find-if
-                      (lambda (frame)
-                        (search "Processes"
-                                (criterion-row-text grid (first frame))
-                                :test #'char-equal))
-                      (criterion-projection-frames grid)))
+                    (projection (and grid (project-criterion-grid grid)))
+                    (process-frame (and grid (find-if
+                                              (lambda (frame)
+                                                (search "Processes"
+                                                        (criterion-row-text grid (first frame))
+                                                        :test #'char-equal))
+                                              (criterion-projection-frames grid))))
                     (process-header-ready-p
                      (and process-frame
                           (or (<= (- (second process-frame) (first process-frame)) 2)
@@ -137,20 +146,24 @@
                                     thereis (search "No data"
                                                     (criterion-row-text grid row)
                                                     :test #'char-equal))))))
-               (when (and process-header-ready-p
-                          (%pty-visible-screen-output-p raw)
-                          (plusp (length (criterion-projection-frames grid))))
-                 (if (equalp previous-projection projection)
-                     (incf stable-samples)
-                   (setf stable-samples 0))
-                 (setf previous-projection projection)
-                 (when (and (>= (%elapsed-seconds session (%now))
-                                first-frame-seconds)
-                            (>= stable-samples 2))
-                   (unless (sb-ext:process-alive-p process)
-                     (error "~a exited before its terminal frame stabilized."
-                            program))
-                   (return grid)))))
+               (progn
+                 (when (null grid)
+                   (setf previous-projection nil
+                         stable-samples 0))
+                 (when (and process-header-ready-p
+                            (%pty-visible-screen-output-p raw)
+                            (plusp (length (criterion-projection-frames grid))))
+                   (if (equalp previous-projection projection)
+                       (incf stable-samples)
+                     (setf stable-samples 0))
+                   (setf previous-projection projection)
+                   (when (and (>= (%elapsed-seconds session (%now))
+                                  first-frame-seconds)
+                              (>= stable-samples 2))
+                     (unless (sb-ext:process-alive-p process)
+                       (error "~a exited before its terminal frame stabilized."
+                              program))
+                     (return grid))))))
           (unwind-protect
               (when (plusp (length raw))
                 (%write-octets raw-path raw))

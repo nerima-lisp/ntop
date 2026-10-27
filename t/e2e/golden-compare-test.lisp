@@ -213,7 +213,7 @@
                                          reference shifted-frame))))
                      :to-be t)))
  (cl-weave:it
-  "parses accumulated raw bytes with an incomplete UTF-8 suffix"
+  "parses accumulated raw bytes with incomplete UTF-8 and CSI suffixes"
   (let* ((complete-output
           (sb-ext:string-to-octets
            (format nil "~c[2J~c[HA" #\Escape #\Escape)
@@ -222,13 +222,29 @@
           (concatenate '(vector (unsigned-byte 8))
                        complete-output
                        (vector #xe2 #x94)))
-         (grid (ntop.e2e::%condition-a-live-grid partial-output 12 40)))
+         (grid (ntop.e2e::%condition-a-live-grid partial-output 12 40))
+         (partial-csi-output
+          (concatenate '(vector (unsigned-byte 8))
+                       complete-output
+                       (vector #x1b #x5b #x33)))
+         (complete-csi-output
+          (concatenate '(vector (unsigned-byte 8))
+                       partial-csi-output
+                       (vector #x31 #x6d)))
+         (incomplete-csi-grid
+          (ntop.e2e::%condition-a-live-grid partial-csi-output 12 40))
+         (complete-csi-grid
+          (ntop.e2e::%condition-a-live-grid complete-csi-output 12 40)))
     (cl-weave:expect
      (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 0))
      :to-equal #\A)
     (cl-weave:expect
      (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 1))
-     :to-equal #\Space)))
+     :to-equal #\Space)
+    (cl-weave:expect incomplete-csi-grid :to-be nil)
+    (cl-weave:expect
+     (ntop.e2e:cell-character (ntop.e2e:grid-cell-at complete-csi-grid 0 0))
+     :to-equal #\A)))
  (cl-weave:it
   "keeps the capture session open across samples and closes it on errors"
   (let* ((original-launch
