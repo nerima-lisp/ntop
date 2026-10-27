@@ -237,60 +237,27 @@
      (cl-weave:expect difference-kinds :to-equal '(:process-header-sgr))
      (cl-weave:expect (find #\Newline detail) :to-be nil))))
  (cl-weave:it
-  "parses accumulated raw bytes with incomplete UTF-8 and CSI suffixes"
-  (let* ((complete-output
-          (sb-ext:string-to-octets
-           (format nil "~c[2J~c[HA" #\Escape #\Escape)
-           :external-format :utf-8))
-         (partial-output
-          (concatenate '(vector (unsigned-byte 8))
-                       complete-output
-                       (vector #xe2 #x94)))
-         (grid (ntop.e2e::%condition-a-live-grid partial-output 12 40))
-         (partial-csi-output
-          (concatenate '(vector (unsigned-byte 8))
-                       complete-output
-                       (vector #x1b #x5b #x33)))
-         (complete-csi-output
-          (concatenate '(vector (unsigned-byte 8))
-                       partial-csi-output
-                       (vector #x31 #x6d)))
-         (incomplete-csi-grid
-          (ntop.e2e::%condition-a-live-grid partial-csi-output 12 40))
-         (complete-csi-grid
-          (ntop.e2e::%condition-a-live-grid complete-csi-output 12 40)))
-    (cl-weave:expect
-     (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 0))
-     :to-equal #\A)
-    (cl-weave:expect
-     (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 1))
-     :to-equal #\Space)
-    (cl-weave:expect incomplete-csi-grid :to-be nil)
-    (cl-weave:expect
-     (ntop.e2e:cell-character (ntop.e2e:grid-cell-at complete-csi-grid 0 0))
-     :to-equal #\A)))
- (cl-weave:it
-  "keeps the capture session open across samples and closes it on errors"
+  "uses one stable frame capture and closes the session on errors"
   (let* ((original-launch
           (symbol-function 'ntop.e2e::launch-e2e-process))
          (original-close
           (symbol-function 'ntop.e2e::close-e2e-session))
          (original-functions
           (list (cons 'ntop.e2e::launch-e2e-process original-launch)
-                (cons 'ntop.e2e::%route-read-interval
-                      (symbol-function 'ntop.e2e::%route-read-interval))
-                (cons 'ntop.e2e::%condition-a-live-grid
-                      (symbol-function 'ntop.e2e::%condition-a-live-grid))
-                (cons 'ntop.e2e::%pty-visible-screen-output-p
-                      (symbol-function 'ntop.e2e::%pty-visible-screen-output-p))
-                (cons 'ntop.e2e::%elapsed-seconds
-                      (symbol-function 'ntop.e2e::%elapsed-seconds))
+                (cons 'ntop.e2e::%route-capture-frame
+                      (symbol-function 'ntop.e2e::%route-capture-frame))
+                (cons 'ntop.e2e::%write-octets
+                      (symbol-function 'ntop.e2e::%write-octets))
                 (cons 'ntop.e2e::close-e2e-session original-close)))
          (active-session nil)
          (grid (criterion-test-grid 12 40 "live process"))
-         (sample-count 0)
+         (capture-output (ntop.e2e::%route-octets "captured output"))
+         (written-output nil)
+         (capture-count 0)
          (close-count 0)
-         (fail-on-sample nil))
+         (fail-capture nil)
+         (ntop.e2e::*route-frame-stability-seconds* 0.05d0)
+         (ntop.e2e::*route-frame-capture-side* :reference))
     (setf active-session
           (funcall original-launch "sleep" (list "30") 12 40
                    :timeout-seconds 5d0))
@@ -300,64 +267,72 @@
                 (lambda (&rest arguments)
                   (declare (ignore arguments))
                   active-session)
-                (symbol-function 'ntop.e2e::%route-read-interval)
-                (lambda (session raw seconds)
-                  (declare (ignore raw seconds))
+                (symbol-function 'ntop.e2e::%route-capture-frame)
+                (lambda (session prefix rows columns
+                         &key side stage timeout-seconds stability-seconds
+                           completion-predicate allow-unchanged-p)
+                  (incf capture-count)
                   (cl-weave:expect (eq session active-session) :to-be t)
                   (cl-weave:expect
                    (ntop.e2e::e2e-session-closed-p session)
                    :to-be nil)
-                  (incf sample-count)
-                  (when (eql sample-count fail-on-sample)
-                    (error "sample failure")))
-                (symbol-function 'ntop.e2e::%condition-a-live-grid)
-                (lambda (octets rows columns)
-                  (declare (ignore octets rows columns))
-                  grid)
-                (symbol-function 'ntop.e2e::%pty-visible-screen-output-p)
-                (lambda (octets)
-                  (declare (ignore octets))
-                  t)
-                (symbol-function 'ntop.e2e::%elapsed-seconds)
-                (lambda (session now)
-                  (declare (ignore session now))
-                  10d0)
+                  (cl-weave:expect (length prefix) :to-equal 0)
+                  (cl-weave:expect rows :to-equal 12)
+                  (cl-weave:expect columns :to-equal 40)
+                  (cl-weave:expect side :to-equal :reference)
+                  (cl-weave:expect stage :to-equal :condition-a)
+                  (cl-weave:expect timeout-seconds :to-equal 5d0)
+                  (cl-weave:expect stability-seconds :to-equal 0.05d0)
+                  (cl-weave:expect allow-unchanged-p :to-be nil)
+                  (if fail-capture
+                      (error "capture failure")
+                    (progn
+                      (cl-weave:expect
+                       (funcall completion-predicate grid)
+                       :to-be-truthy)
+                      (values capture-output grid
+                              (list :side side :stage stage)))))
+                (symbol-function 'ntop.e2e::%write-octets)
+                (lambda (path octets)
+                  (declare (ignore path))
+                  (setf written-output octets))
                 (symbol-function 'ntop.e2e::close-e2e-session)
                 (lambda (session)
                   (incf close-count)
                   (funcall original-close session)))
+          (setf (ntop.e2e::e2e-session-output active-session) capture-output)
           (cl-weave:expect
            (eq (ntop.e2e::%condition-a-capture
-                "ntop" nil 12 40 700 5d0 nil nil)
+                "ntop" nil 12 40 5d0 nil "unused")
                grid)
-           :to-be
-           t)
-          (cl-weave:expect sample-count :to-equal 3)
+           :to-be t)
+          (cl-weave:expect capture-count :to-equal 1)
+          (cl-weave:expect (equalp written-output capture-output) :to-be t)
           (cl-weave:expect close-count :to-equal 1)
           (cl-weave:expect
            (ntop.e2e::e2e-session-closed-p active-session)
-           :to-be
-           t)
+           :to-be t)
           (setf active-session
                 (funcall original-launch "sleep" (list "30") 12 40
                          :timeout-seconds 5d0)
-                sample-count 0
+                capture-count 0
                 close-count 0
-                fail-on-sample 2)
+                written-output nil
+                fail-capture t)
+          (setf (ntop.e2e::e2e-session-output active-session) capture-output)
           (let ((condition
                  (handler-case
                      (progn
                        (ntop.e2e::%condition-a-capture
-                        "ntop" nil 12 40 700 5d0 nil nil)
+                        "ntop" nil 12 40 5d0 nil "unused")
                        nil)
                    (error (condition) condition))))
             (cl-weave:expect (typep condition 'simple-error) :to-be t))
-          (cl-weave:expect sample-count :to-equal 2)
+          (cl-weave:expect capture-count :to-equal 1)
           (cl-weave:expect close-count :to-equal 1)
           (cl-weave:expect
            (ntop.e2e::e2e-session-closed-p active-session)
-           :to-be
-           t))
+           :to-be t))
       (dolist (entry original-functions)
         (setf (symbol-function (car entry)) (cdr entry)))
       (when (and active-session
