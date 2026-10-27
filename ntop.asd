@@ -432,6 +432,7 @@
    (:file "t/e2e/route-runner-observers-test")
    (:file "t/e2e/route-runner-layout-test")
    (:file "t/e2e/route-runner-readiness-test")
+   (:file "t/e2e/route-runner-additional-test")
    (:file "t/e2e/route-runner-child-readiness-test")
    (:file "t/e2e/route-runner-classification-test")
    (:file "t/e2e/route-runner-fixtures-test")

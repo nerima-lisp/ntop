@@ -15,6 +15,32 @@
          (or (search "Search:   Type to search, Esc to close" text :test #'char-equal)
              (search "Search: |" text))))))
 
+(defun %route-context-stage-state-p (step before-grid grid)
+  (let ((input (getf step :input))
+        (text (and grid (%route-grid-text grid)))
+        (before-text (and before-grid (%route-grid-text before-grid))))
+    (not
+     (null
+      (case (getf step :state)
+        (:help (%route-help-open-state-p grid))
+        (:help-search (%route-help-search-open-state-p text))
+        (:process-search
+         (%route-process-search-open-state-p text before-text))
+        (:help-search-query (%route-help-search-query-visible-p grid input))
+        (:process-search-query (%route-search-token-visible-p input grid))
+        (:help-section
+         (%route-help-section-transition-p (list :input input)
+                                           before-grid grid))
+        (:expanded-widget
+         (%route-expanded-widget-transition-p before-grid grid))
+        (otherwise nil))))))
+
+(defun %route-help-open-state-p (grid)
+  (let ((text (and grid (%route-grid-text grid))))
+    (not (null (and text
+                    (search "Help" text :test (function char-equal))
+                    (%route-help-section-number grid))))))
+
 (defun %route-extension-state-p (route subcase candidate)
   (let* ((action (route-action route)) (initial (getf candidate :initial-grid))
          (steps (getf candidate :action-grids))
@@ -69,8 +95,8 @@
       (let ((headers (%route-grid-headers grid)) (old (%route-grid-headers initial)))
         (cond
          ((string= action "Open help")
-          (and text (search "1 - General" text)
-               (not (search "1 - General" initial-text))))
+          (and text (eql (%route-help-section-number grid) 1)
+               (not (eql (%route-help-section-number initial) 1))))
          ((string= action "Open help search")
           (%route-help-search-open-state-p text))
          ((string= action "Open process search")

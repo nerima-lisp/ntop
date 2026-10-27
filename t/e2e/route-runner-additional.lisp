@@ -28,6 +28,37 @@
                              (funcall state-predicate
                                       (%route-grid-after-output raw output rows columns))))
    :completion-samples-required completion-samples-required))
+
+(defun %route-context-input-steps (input context)
+  (let ((text (or input ""))
+        (context (or context "")))
+    (cond
+      ((and (>= (length text) 2)
+            (string= (subseq text 0 2) "?/"))
+       (append (list (list :input "?" :state :help)
+                     (list :input "/" :state :help-search))
+               (when (> (length text) 2)
+                 (list (list :input (subseq text 2)
+                             :state :help-search-query)))))
+      ((and (> (length text) 1)
+            (char= (char text 0) #\/))
+       (list (list :input "/" :state :process-search)
+             (list :input (subseq text 1)
+                   :state :process-search-query)))
+      ((and (= (length text) 2)
+            (char= (char text 0) #\?)
+            (digit-char-p (char text 1)))
+       (list (list :input "?" :state :help)
+             (list :input (subseq text 1) :state :help-section)))
+      ((string-equal context "help")
+       (list (list :input text :state :help)))
+      ((string-equal context "help search")
+       (list (list :input text :state :help-search)))
+      ((string-equal context "process search")
+       (list (list :input text :state :process-search)))
+      ((string-equal context "expanded widget")
+       (list (list :input text :state :expanded-widget)))
+      (t (list (list :input text :state nil))))))
 (defun %route-close-session-with-evidence (session evidence-prefix)
   (let* ((ansi-path
            (merge-pathnames (format nil "~a.ansi" evidence-prefix)))
@@ -89,21 +120,22 @@
         (setf initial-grid (%route-grid raw rows columns)
               initial-projection (project-criterion-grid initial-grid))))
     (when (plusp (length context-text))
-  (pty-send-input session (%route-octets context-text)
-                  :timeout-seconds timeout)
-  (multiple-value-bind (context-output)
-      (%route-read-widget-state
-       session raw rows columns rate timeout
-       (cond
-         ((string-equal (or (getf subcase :context) "") "expanded widget")
-          (lambda (grid)
-            (%route-expanded-widget-transition-p initial-grid grid)))
-         ((string-equal (or (getf subcase :context) "") "help")
-          (lambda (grid)
-            (and (search "Help" (%route-grid-text grid) :test #'char-equal)
-                 (%route-help-section-number grid))))
-         (t nil)))
-    (%append-octets raw context-output)))
+      (let ((context-grid initial-grid))
+        (dolist (step
+                 (%route-context-input-steps
+                  context-text (or (getf subcase :context) "")))
+          (let ((input (getf step :input))
+                (before-grid context-grid))
+            (pty-send-input session (%route-octets input)
+                            :timeout-seconds timeout)
+            (multiple-value-bind (context-output)
+                (%route-read-widget-state
+                 session raw rows columns rate timeout
+                 (when (getf step :state)
+                   (lambda (grid)
+                     (%route-context-stage-state-p step before-grid grid))))
+              (%append-octets raw context-output))
+            (setf context-grid (%route-grid raw rows columns))))))
     (let* ((before-grid
             (progn
               (when fixture-state
