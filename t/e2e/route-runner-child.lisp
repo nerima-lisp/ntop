@@ -1,14 +1,27 @@
 (in-package #:ntop.e2e)
-(defun %route-send-action-inputs (session inputs raw timeout)
+(defun %route-child-capture-frame
+    (session raw rows columns stage timeout-seconds
+     &key completion-predicate allow-unchanged-p)
+  (%route-capture-frame
+   session raw rows columns
+   :side *route-frame-capture-side*
+   :stage stage
+   :timeout-seconds timeout-seconds
+   :stability-seconds *route-frame-stability-seconds*
+   :completion-predicate completion-predicate
+   :allow-unchanged-p allow-unchanged-p))
+
+(defun %route-send-action-inputs (session inputs raw timeout rows columns)
   (dolist (input inputs)
     (pty-send-input session (%route-octets input)
                     :timeout-seconds timeout)
-    (multiple-value-bind (result)
-        (pty-read-until-idle session
-                             :quiet-seconds *route-frame-quiet-seconds*
-                             :timeout-seconds timeout)
-      (%append-octets raw result)))
-  (and inputs t))
+    (multiple-value-bind (updated grid metadata)
+        (%route-child-capture-frame
+         session raw rows columns :owned-child-action timeout
+         :allow-unchanged-p t)
+      (declare (ignore grid metadata))
+      (setf raw updated)))
+  (values (and inputs t) raw))
 
 (defun %route-owned-pid-marker (pid)
   (format nil "ntop-owned-~d" pid))
@@ -67,61 +80,43 @@
        (error "No safe No or Cancel choice appears under the owned PID dialog.")))))
 
 (defun %route-wait-owned-marker-row (session raw rows columns pid)
-  (labels ((marker-visible-p ()
-             (%route-owned-marker-row-p
-              (%route-grid raw rows columns) pid))
-           (diagnostic (status)
-             (if (eq status :ready)
-                 (format nil "Owned PID ~d marker row is visible." pid)
-               (format nil
-                       "Owned PID ~d marker row not ready before timeout."
-                       pid))))
-    (when (marker-visible-p)
-      (return-from %route-wait-owned-marker-row
-        (values :ready (diagnostic :ready))))
-    (incf (e2e-session-deadline session)
-          (%seconds-to-ticks *route-process-readiness-timeout-seconds*))
-    (incf (e2e-session-timeout-seconds session)
-          *route-process-readiness-timeout-seconds*)
-    (let ((deadline
-            (+ (%now)
-               (%seconds-to-ticks *route-process-readiness-timeout-seconds*))))
-      (loop for remaining = (%ticks-to-seconds (- deadline (%now)))
-            do (when (marker-visible-p)
-                 (return (values :ready (diagnostic :ready))))
-               (unless (plusp remaining)
-                 (return (values :timeout (diagnostic :timeout))))
-               (%route-read-interval
-                session raw
-                (min *route-process-readiness-sample-seconds* remaining))))))
+  (handler-case
+      (multiple-value-bind (updated grid metadata)
+          (%route-child-capture-frame
+           session raw rows columns :owned-pid-marker-row-readiness
+           *route-process-readiness-timeout-seconds*
+           :completion-predicate
+           (lambda (stable-grid)
+             (%route-owned-marker-row-p stable-grid pid)))
+        (declare (ignore metadata))
+        (values :ready
+                (format nil "Owned PID ~d marker row is visible." pid)
+                updated))
+    (route-frame-capture-timeout (condition)
+      (values :timeout
+              (format nil
+                      "Owned PID ~d marker row not ready before timeout.~%~a"
+                      pid condition)
+              (e2e-session-output session)))))
 (defun %route-wait-owned-dialog (session raw rows columns pid)
-  (labels ((dialog-visible-p ()
-             (%route-owned-dialog-pid-matches-p
-              (%route-grid raw rows columns) pid))
-           (diagnostic (status)
-             (if (eq status :ready)
-                 (format nil "Owned PID ~d kill dialog is visible." pid)
-               (format nil
-                       "Owned PID ~d kill dialog not ready before timeout."
-                       pid))))
-    (when (dialog-visible-p)
-      (return-from %route-wait-owned-dialog
-        (values :ready (diagnostic :ready))))
-    (incf (e2e-session-deadline session)
-          (%seconds-to-ticks *route-process-readiness-timeout-seconds*))
-    (incf (e2e-session-timeout-seconds session)
-          *route-process-readiness-timeout-seconds*)
-    (let ((deadline
-            (+ (%now)
-               (%seconds-to-ticks *route-process-readiness-timeout-seconds*))))
-      (loop for remaining = (%ticks-to-seconds (- deadline (%now)))
-            do (when (dialog-visible-p)
-                 (return (values :ready (diagnostic :ready))))
-               (unless (plusp remaining)
-                 (return (values :timeout (diagnostic :timeout))))
-               (%route-read-interval
-                session raw
-                (min *route-process-readiness-sample-seconds* remaining))))))
+  (handler-case
+      (multiple-value-bind (updated grid metadata)
+          (%route-child-capture-frame
+           session raw rows columns :owned-pid-dialog-readiness
+           *route-process-readiness-timeout-seconds*
+           :completion-predicate
+           (lambda (stable-grid)
+             (%route-owned-dialog-pid-matches-p stable-grid pid)))
+        (declare (ignore metadata))
+        (values :ready
+                (format nil "Owned PID ~d kill dialog is visible." pid)
+                updated))
+    (route-frame-capture-timeout (condition)
+      (values :timeout
+              (format nil
+                      "Owned PID ~d kill dialog not ready before timeout.~%~a"
+                      pid condition)
+              (e2e-session-output session)))))
 
 (defun %route-owned-marker-selected-p (grid pid)
   (let ((styles (%route-owned-marker-style grid pid)))
@@ -186,6 +181,7 @@
          (sent nil)
          (actual "owned process row and dialog target were not proven")
          (error-value nil))
+    (declare (ignore rate))
     (unwind-protect
         (handler-case
             (progn
@@ -195,20 +191,21 @@
                              :timeout-seconds
                              (%route-process-startup-timeout route subcase timeout)))
               (multiple-value-bind (initial)
-                  (pty-read-until-idle
-                   session :quiet-seconds *route-frame-quiet-seconds*
-                   :first-frame-not-before
-                   (* *route-first-frame-factor* (/ rate 1000d0))
-                   :timeout-seconds (%route-process-startup-timeout route subcase timeout))
+                  (%route-child-capture-frame
+                   session raw screen-rows columns
+                   :owned-child-initial-frame
+                   (%route-process-startup-timeout route subcase timeout))
                 (progn
-                  (%append-octets raw initial)
+                  (setf raw initial)
                   (when (and (eq (route-kind route) :column)
                              (not (sb-ext:process-alive-p child)))
                     (error "Harness-owned column fixture PID ~d exited before the frame." pid))
                   (when (%route-process-data-required-p route subcase)
   (multiple-value-bind (readiness-result readiness-diagnostic)
-      (%route-wait-process-data
-       session raw screen-rows columns args)
+      (multiple-value-bind (result diagnostic updated)
+    (%route-wait-process-data session raw screen-rows columns args)
+  (setf raw updated)
+  (values result diagnostic))
     (when (eq :timeout readiness-result)
       (let ((alive (sb-ext:process-alive-p child)))
         (return-from %route-run-sleep-child-side
@@ -281,12 +278,15 @@
      (format nil "/~a~c" (%route-owned-pid-marker pid) #\Return))
     :timeout-seconds timeout)
    (multiple-value-bind (searched)
-       (pty-read-until-idle
-        session :quiet-seconds *route-frame-quiet-seconds*
-        :timeout-seconds timeout)
-     (%append-octets raw searched))
+       (%route-child-capture-frame
+        session raw screen-rows columns :owned-child-action timeout
+        :allow-unchanged-p t)
+     (setf raw searched))
    (multiple-value-bind (marker-result marker-diagnostic)
-       (%route-wait-owned-marker-row session raw screen-rows columns pid)
+       (multiple-value-bind (result diagnostic updated)
+    (%route-wait-owned-marker-row session raw screen-rows columns pid)
+  (setf raw updated)
+  (values result diagnostic))
      (when (eq :timeout marker-result)
        (return-from %route-run-sleep-child-side
          (%route-owned-marker-row-timeout-result
@@ -305,10 +305,10 @@
                                       :timeout-seconds timeout)
                       (setf sent t)
                       (multiple-value-bind (clicked)
-                          (pty-read-until-idle
-                           session :quiet-seconds *route-frame-quiet-seconds*
-                           :timeout-seconds timeout)
-                        (%append-octets raw clicked))
+                          (%route-child-capture-frame
+                           session raw screen-rows columns :owned-child-action timeout
+                           :allow-unchanged-p t)
+                        (setf raw clicked))
                       (let* ((after-grid (%route-grid raw screen-rows columns))
        (selected (%route-owned-marker-selected-p after-grid pid))
        (alive (sb-ext:process-alive-p child))
@@ -327,14 +327,16 @@
                    (%route-octets (format nil "/~a~c" (%route-owned-pid-marker pid) #\Return))
                    :timeout-seconds timeout)
                   (multiple-value-bind (searched)
-                      (pty-read-until-idle
-                       session :quiet-seconds *route-frame-quiet-seconds*
-                       :timeout-seconds timeout)
-                    (%append-octets raw searched))
+                      (%route-child-capture-frame
+                       session raw screen-rows columns :owned-child-action timeout
+                       :allow-unchanged-p t)
+                    (setf raw searched))
                   (progn
                     (multiple-value-bind (marker-result marker-diagnostic)
-                        (%route-wait-owned-marker-row
-                         session raw screen-rows columns pid)
+                        (multiple-value-bind (result diagnostic updated)
+    (%route-wait-owned-marker-row session raw screen-rows columns pid)
+  (setf raw updated)
+  (values result diagnostic))
                       (when (eq :timeout marker-result)
                         (return-from %route-run-sleep-child-side
                           (%route-owned-marker-row-timeout-result
@@ -345,10 +347,10 @@
                   (pty-send-input session (%route-octets (string #\Return))
                                   :timeout-seconds timeout)
                   (multiple-value-bind (selected)
-                      (pty-read-until-idle
-                       session :quiet-seconds *route-frame-quiet-seconds*
-                       :timeout-seconds timeout)
-                    (%append-octets raw selected))
+                      (%route-child-capture-frame
+                       session raw screen-rows columns :owned-child-action timeout
+                       :allow-unchanged-p t)
+                    (setf raw selected))
                   (unless (%route-owned-marker-row-p (%route-grid raw screen-rows columns) pid)
                     (error "Owned PID ~d was not selected after search."
                            pid))
@@ -357,13 +359,15 @@
                      session (%route-octets (%route-key-input "Delete"))
                      :timeout-seconds timeout)
                     (multiple-value-bind (opened)
-                        (pty-read-until-idle
-                         session :quiet-seconds *route-frame-quiet-seconds*
-                         :timeout-seconds timeout)
-                      (%append-octets raw opened))
+                        (%route-child-capture-frame
+                         session raw screen-rows columns :owned-child-action timeout
+                         :allow-unchanged-p t)
+                      (setf raw opened))
                     (multiple-value-bind (dialog-result diagnostic)
-                        (%route-wait-owned-dialog
-                         session raw screen-rows columns pid)
+                        (multiple-value-bind (result diagnostic updated)
+    (%route-wait-owned-dialog session raw screen-rows columns pid)
+  (setf raw updated)
+  (values result diagnostic))
                       (unless (eq dialog-result :ready)
                         (error "~a" diagnostic))))
                   (let* ((grid (%route-grid raw screen-rows columns))
@@ -397,7 +401,9 @@
                                         :test #'string=))
                       (error "Unsupported kill-dialog action ~a."
                              action-name))
-                    (setf sent (%route-send-action-inputs session action raw timeout))
+                    (multiple-value-setq (sent raw)
+                      (%route-send-action-inputs
+                       session action raw timeout screen-rows columns))
                     (let* ((after (%route-grid raw screen-rows columns))
                            (dialog-after (%route-owned-dialog-pid-matches-p after pid))
                            (changed
@@ -466,18 +472,19 @@
                        (t (error "No safe assertion for kill action ~a."
                                  action-name))))))))
           (error (condition)
-                 (setf error-value condition
-                       actual (princ-to-string condition))))
+            (setf error-value condition
+                  actual (princ-to-string condition))))
       (when session
-        (close-e2e-session session))
+        (close-e2e-session session)
+        (when error-value
+          (setf raw (copy-seq (e2e-session-output session)))))
       (when (and child (sb-ext:process-alive-p child))
         (progn (sb-ext:process-kill child 9 :pid) (sb-ext:process-wait child)))
       (%route-write-ansi path raw))
       (list :passed (and passed sent (null error-value))
             :actual actual
             :evidence path
-            :capture-error
-            (and error-value (zerop (length raw)) error-value))))
+            :capture-error error-value)))
 
 (defun %route-sleep-child-action-actual (pid alive dialog-after)
   (format nil

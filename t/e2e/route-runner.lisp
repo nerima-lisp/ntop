@@ -1,8 +1,5 @@
 (in-package #:ntop.e2e)
 
-(defparameter *route-frame-quiet-seconds* 0.3d0)
-(defparameter *route-first-frame-factor* 3d0)
-
 (defun %route-temporary-directory (parent)
   (loop for directory =
           (merge-pathnames
@@ -34,7 +31,6 @@
   (progn
   ;; btm 0.14.9's first macOS `ps` collection took 26-47 seconds; allow 120 seconds.
   (defparameter *route-process-readiness-timeout-seconds* 120d0)
-  (defparameter *route-process-readiness-sample-seconds* 1d0)
   (defun %route-isolated-environment-directory ()
     (let* ((directory (%route-temporary-directory "/tmp"))
            (claim (merge-pathnames ".claim" directory)))
@@ -121,6 +117,7 @@
                                               (code-char 9474))
                                         name-value))))))
        observed-heading diagnostic)))
+  (progn
   (defun %route-read-interval (session raw seconds)
     (multiple-value-bind (deadline deadline-seconds)
         (%deadline-for-call session "process readiness" nil)
@@ -156,31 +153,34 @@
                          (setf query-scan-index next-index)))))))
         raw)))
   (defun %route-wait-process-data (session raw rows columns &optional arguments)
-    (incf (e2e-session-deadline session)
-          (%seconds-to-ticks *route-process-readiness-timeout-seconds*))
-    (incf (e2e-session-timeout-seconds session)
-          *route-process-readiness-timeout-seconds*)
-    (let ((deadline (+ (%now)
-                       (%seconds-to-ticks
-                        *route-process-readiness-timeout-seconds*)))
-          (ready-samples 0)
-          (readiness-diagnostic nil))
-      (loop for remaining = (%ticks-to-seconds (- deadline (%now)))
-            while (plusp remaining)
-            do (%route-read-interval
-                session raw
-                (min *route-process-readiness-sample-seconds* remaining))
-            (multiple-value-bind (ready-p observed-heading diagnostic)
-                (%route-process-widget-ready-p
-                 (%route-grid raw rows columns) arguments)
-              (declare (ignore observed-heading))
-              (setf readiness-diagnostic diagnostic)
-              (if ready-p
-                  (when (= 2 (incf ready-samples))
-                    (return-from %route-wait-process-data
-                                 (values :ready readiness-diagnostic)))
-                (setf ready-samples 0)))
-            finally (return (values :timeout readiness-diagnostic)))))
+  (handler-case
+      (multiple-value-bind (updated grid metadata)
+          (%route-capture-frame
+           session raw rows columns
+           :side *route-frame-capture-side*
+           :stage :process-data-readiness
+           :timeout-seconds *route-process-readiness-timeout-seconds*
+           :stability-seconds *route-frame-stability-seconds*
+           :completion-predicate
+           (lambda (stable-grid)
+             (nth-value 0 (%route-process-widget-ready-p
+                           stable-grid arguments))))
+        (declare (ignore metadata))
+        (multiple-value-bind (ready-p observed-heading diagnostic)
+            (%route-process-widget-ready-p grid arguments)
+          (declare (ignore observed-heading))
+          (values (if ready-p :ready :timeout) diagnostic updated)))
+    (route-frame-capture-timeout (condition)
+      (let* ((updated (e2e-session-output session))
+             (grid (handler-case (%route-grid updated rows columns)
+                     (ansi-parse-error () nil))))
+        (multiple-value-bind (ready-p observed-heading diagnostic)
+            (%route-process-widget-ready-p grid arguments)
+          (declare (ignore ready-p observed-heading))
+          (values :timeout
+                  (format nil "~a~%~a" diagnostic condition)
+                  updated)))))))
+
   (progn
   (defun %route-process-data-required-p (route subcase)
     (let* ((context (or (getf subcase :context) ""))

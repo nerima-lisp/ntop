@@ -320,51 +320,56 @@
 (cl-weave:describe
  "route read completion predicates"
  (cl-weave:it
-  "returns after one complete state while output continues"
+  "waits for a stable grid after readiness becomes true"
   (let* ((script
-           (concatenate (quote string)
+           (concatenate 'string
              "import os,time;os.write(1,bytes([82,69,65,68,89,27,91]));"
              "time.sleep(0.15);os.write(1,bytes([51,49,109]));"
              "time.sleep(0.25);os.write(1,bytes([68,79,78,69]));"
-             "[time.sleep(0.05) or os.write(1,bytes([46])) for _ in range(50)]"))
+             "[time.sleep(0.05) or os.write(1,bytes([46])) for _ in range(4)];time.sleep(0.5)"))
          (session
            (ntop.e2e::launch-e2e-process
             "python3" (list "-c" script) 24 80 :timeout-seconds 4d0))
          (started (ntop.e2e::%now))
-         (output nil))
+         (output nil)
+         (grid nil)
+         (ntop.e2e::*route-frame-stability-seconds* 0.3d0))
     (unwind-protect
          (progn
            (cl-weave:expect
             (cl-tty-kit:fd-wait
              (ntop.e2e::e2e-session-fd session) :input 2d0)
             :to-be t)
-           (setf output
-                 (ntop.e2e::%route-read-through-quiet-period
-                  session
-                  :quiet-seconds 1d0
-                  :timeout-seconds 2d0
-                  :initial-quiet-seconds 0.1d0
-                  :completion-predicate (lambda (octets)
-                    (let ((text (ntop.e2e::%octets-to-text octets)))
-                      (and (search "READY" text)
-                           (not (search "DONE" text)))))
-                  :completion-samples-required 1))
+           (multiple-value-setq (output grid)
+             (ntop.e2e::%route-capture-frame
+              session
+              (make-array 0 :element-type '(unsigned-byte 8))
+              24 80
+              :side :candidate
+              :stage :readiness-stability-test
+              :timeout-seconds 3d0
+              :stability-seconds ntop.e2e::*route-frame-stability-seconds*
+              :completion-predicate
+              (lambda (current-grid)
+                (search "READY" (ntop.e2e::%route-grid-text current-grid)))))
            (cl-weave:expect
-            (search "READY" (ntop.e2e::%octets-to-text output))
+            (search "READY" (ntop.e2e::%route-grid-text grid))
+            :to-satisfy (function identity))
+           (cl-weave:expect
+            (search "DONE" (ntop.e2e::%route-grid-text grid))
             :to-satisfy (function identity))
            (cl-weave:expect
             (ntop.e2e::%route-incomplete-escape-suffix-p output)
             :to-be nil)
            (cl-weave:expect
-            (search "DONE" (ntop.e2e::%octets-to-text output))
-            :to-be nil)
+            (> (ntop.e2e::%ticks-to-seconds
+                (- (ntop.e2e::%now) started))
+               0.5d0)
+            :to-be t)
            (cl-weave:expect
             (< (ntop.e2e::%ticks-to-seconds
                 (- (ntop.e2e::%now) started))
-               0.8d0)
-            :to-be t)
-           (cl-weave:expect
-            (sb-ext:process-alive-p (ntop.e2e::e2e-session-process session))
+               3d0)
             :to-be t))
       (ntop.e2e::close-e2e-session session))))
  (cl-weave:it
@@ -491,6 +496,5 @@
   (cl-weave:expect
    (ntop.e2e::%route-btm-self-mode-na-p
     "btm-self"
-    (list (cons 1 (list :probe :extension))
-          (cons 2 (list :probe :cpu-frequency))))
+    (list (cons 1 (list :probe :extension)) (cons 2 (list :probe :cpu-frequency))))
    :to-be nil)))
