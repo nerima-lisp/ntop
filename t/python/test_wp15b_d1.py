@@ -103,62 +103,6 @@ class D1DisplayTests(unittest.TestCase):
             },
         ])
 
-    def test_writer_syncs_chunks_and_uses_absolute_deadlines(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            handlers, synced = [], []
-
-            def sync(fd):
-                synced.append(fd)
-                if len(synced) == 2:
-                    handlers[0](wp15b_d1.signal.SIGTERM, None)
-
-            ticks = iter((0, 0, 0, 1_000, 1_000, 150_000_000, 150_000_000,
-                          150_000_000, 150_001_000, 150_001_000,
-                          300_000_000, 300_000_000))
-            clock = SimpleNamespace(monotonic_ns=lambda: next(ticks), sleep=Mock())
-            with (
-                patch.object(wp15b_d1.os, "open", return_value=17),
-                patch.object(wp15b_d1.os, "close"),
-                patch.object(wp15b_d1.fcntl, "F_NOCACHE", 73, create=True),
-                patch.object(wp15b_d1.fcntl, "fcntl") as set_cache,
-                patch.object(wp15b_d1.signal, "signal",
-                             side_effect=lambda _sig, h: handlers.append(h)),
-                patch.object(wp15b_d1, "write_all") as write,
-                patch.object(wp15b_d1.os, "fsync", side_effect=sync),
-                patch.object(wp15b_d1, "time", clock),
-            ):
-                names = ("writer.data", "writer.json", "ready", "writer-io-samples.tsv")
-                wp15b_d1.writer_child(
-                    [str(root / name) for name in names] + ["1000000"]
-                )
-
-            report = wp15b_d1.json.loads((root / "writer.json").read_text())
-            rows = [line.split("\t") for line in
-                    (root / "writer-io-samples.tsv").read_text().splitlines()[1:]]
-            set_cache.assert_called_once_with(17, 73, 1)
-            self.assertEqual((synced, write.call_count), ([17, 17], 2))
-            io_settings = report["io_settings"]
-            self.assertTrue(io_settings["f_nocache_enabled"] and io_settings["fsync_per_chunk"])
-            chunks = [(row[0], row[-1]) for row in rows]
-            self.assertEqual(chunks, [("1", "100000"), ("2", "200000")])
-            self.assertEqual((int(rows[1][1]), int(rows[1][4])), (150_000_000, 300_000_000))
-            clock.sleep.assert_not_called()
-            failed_ready = root / "failed.ready"
-            with (
-                patch.object(wp15b_d1.os, "open", return_value=18),
-                patch.object(wp15b_d1.os, "close") as close_failed,
-                patch.object(wp15b_d1.fcntl, "F_NOCACHE", 73, create=True),
-                patch.object(wp15b_d1.fcntl, "fcntl", side_effect=OSError("denied")),
-                patch.object(wp15b_d1.signal, "signal"),
-            ):
-                failed_names = ("failed.data", "failed.json", "failed.ready", "failed.tsv")
-                with self.assertRaises(OSError):
-                    wp15b_d1.writer_child(
-                        [str(root / name) for name in failed_names] + ["1000000"]
-                    )
-            self.assertFalse(failed_ready.exists())
-            close_failed.assert_called_once_with(18)
 
     def test_cli_keeps_ntop_arguments_and_selects_optional_btm_mode(self):
         raw_dir = Path("/tmp/ntop-wp15b-d1-test")
@@ -276,6 +220,14 @@ class D1DisplayTests(unittest.TestCase):
         self.assertEqual(len(observations), 1)
         self.assertEqual(samples[0]["sampled_at_monotonic_ns"], 1_234_567_890)
         self.assertEqual(samples[0]["total_write_bytes"], 2_400_000)
+        self.assertEqual(observations[0]["observation_index"], 1)
+        self.assertEqual(
+            observations[0]["load_average_before"], [1.0, 1.0, 1.0]
+        )
+        self.assertEqual(
+            observations[0]["load_average_after"], [1.0, 1.0, 1.0]
+        )
+        self.assertTrue(observations[0]["low_load_eligible"])
         self.assertIn(display.WRITER_TOKEN, samples[0]["writer_row"])
 
     def test_btm_collector_filters_the_writer_pid_before_sampling(self):

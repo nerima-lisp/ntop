@@ -7,19 +7,17 @@ import select
 import time
 
 from wp15b_measure import PtySession, TerminalGrid
+from wp15b_d1_acceptance import (
+    LOW_LOAD_1M_THRESHOLD, SAMPLE_LIMIT, TARGET_BPS, load_average, load_evidence,
+)
 
 
-ROWS, COLUMNS = 48, 160
-RATE_MS, TARGET_BPS = 700, 1_000_000
-SAMPLE_LIMIT, MAX_SECONDS, QUIET_SECONDS = 20, 90, 0.25
+ROWS, COLUMNS, RATE_MS = 48, 160, 700
+MAX_SECONDS, QUIET_SECONDS = 90, 0.25
 WRITER_TOKEN = "WP15B_D1_WRITER"
 RATE_TOKEN = re.compile(
     r"(?<![\w.])(N/A|\d+(?:\.\d+)?(?:\s*[KMGT]?B)?/s)(?![\w])", re.I
 )
-
-
-def load_average():
-    return [float(value) for value in os.getloadavg()]
 
 
 def parse_rate(text):
@@ -263,7 +261,7 @@ def collect_samples(ntop_child, writer, raw_dir, started):
     last_writer_observation_at = time.monotonic()
     last_writer_bytes = writer_data_path.stat().st_size
     with (raw_dir / "ntop.ansi").open("wb") as raw:
-        while len(samples) < SAMPLE_LIMIT and time.monotonic() < deadline:
+        while len(observations) < SAMPLE_LIMIT and time.monotonic() < deadline:
             if ntop_child.poll() is not None:
                 raise RuntimeError(f"ntop exited early with status {ntop_child.status}")
             if writer.poll() is not None:
@@ -301,6 +299,8 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                     and now - last_sample_at < RATE_MS / 1000):
                 continue
             last_sample_at = now
+            observation_index = len(observations) + 1
+            load_before = load_average()
             sampled_at_monotonic_ns = time.monotonic_ns()
             writer_data_bytes = writer_data_path.stat().st_size
             writer_interval_bytes = writer_data_bytes - last_writer_bytes
@@ -319,7 +319,9 @@ def collect_samples(ntop_child, writer, raw_dir, started):
             }
             grid = TerminalGrid(ROWS, COLUMNS)
             if not grid.feed(bytes(transcript)):
+                load_after = load_average()
                 observations.append({
+                    "observation_index": observation_index,
                     "elapsed_seconds": now - started,
                     "sampled_at_monotonic_ns": sampled_at_monotonic_ns,
                     "valid": False,
@@ -330,14 +332,16 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                     "total_write_bytes": None,
                     "terminal_frame_repeated": None,
                     **writer_evidence,
-                    "load_average": load_average(),
+                    **load_evidence(load_before, load_after),
                 })
                 continue
             signature = grid.signature()
             terminal_frame_repeated = signature == last_signature
             last_signature = signature
             rate, reason, detail = displayed_writer_rate(grid, writer.pid)
+            load_after = load_average()
             observation = {
+                "observation_index": observation_index,
                 "elapsed_seconds": now - started,
                 "sampled_at_monotonic_ns": sampled_at_monotonic_ns,
                 "valid": rate is not None,
@@ -355,7 +359,7 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                 "w_s_bytes_per_second": rate,
                 "reason": reason,
                 **writer_evidence,
-                "load_average": load_average(),
+                **load_evidence(load_before, load_after),
             }
             observations.append(observation)
             if (not pid_filter_sent
@@ -384,7 +388,7 @@ def collect_btm_samples(btm_child, writer, raw_dir, started):
     last_writer_observation_at = time.monotonic()
     last_writer_bytes = writer_data_path.stat().st_size
     with (raw_dir / "btm.ansi").open("wb") as raw:
-        while len(samples) < SAMPLE_LIMIT and time.monotonic() < deadline:
+        while len(observations) < SAMPLE_LIMIT and time.monotonic() < deadline:
             if btm_child.poll() is not None:
                 raise RuntimeError(
                     f"btm exited early with status {btm_child.status}"
@@ -430,6 +434,8 @@ def collect_btm_samples(btm_child, writer, raw_dir, started):
                 last_output = time.monotonic()
                 continue
             last_sample_at = now
+            observation_index = len(observations) + 1
+            load_before = load_average()
             sampled_at_monotonic_ns = time.monotonic_ns()
             writer_data_bytes = writer_data_path.stat().st_size
             writer_interval_bytes = writer_data_bytes - last_writer_bytes
@@ -448,7 +454,9 @@ def collect_btm_samples(btm_child, writer, raw_dir, started):
             }
             grid = TerminalGrid(ROWS, COLUMNS)
             if not grid.feed(bytes(transcript)):
+                load_after = load_average()
                 observations.append({
+                    "observation_index": observation_index,
                     "elapsed_seconds": now - started,
                     "sampled_at_monotonic_ns": sampled_at_monotonic_ns,
                     "valid": False,
@@ -458,11 +466,13 @@ def collect_btm_samples(btm_child, writer, raw_dir, started):
                     "w_s_text": None,
                     "w_s_bytes_per_second": None,
                     **writer_evidence,
-                    "load_average": load_average(),
+                    **load_evidence(load_before, load_after),
                 })
                 continue
             rate, reason, detail = displayed_btm_writer_rate(grid, writer.pid)
+            load_after = load_average()
             observation = {
+                "observation_index": observation_index,
                 "elapsed_seconds": now - started,
                 "sampled_at_monotonic_ns": sampled_at_monotonic_ns,
                 "valid": rate is not None,
@@ -477,7 +487,7 @@ def collect_btm_samples(btm_child, writer, raw_dir, started):
                 "w_s_bytes_per_second": rate,
                 "reason": reason,
                 **writer_evidence,
-                "load_average": load_average(),
+                **load_evidence(load_before, load_after),
             }
             observations.append(observation)
             if rate is not None:

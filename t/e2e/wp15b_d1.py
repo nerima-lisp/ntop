@@ -3,7 +3,6 @@
 
 import argparse
 import errno
-import fcntl
 import json
 import os
 import signal
@@ -14,6 +13,16 @@ import time
 from pathlib import Path
 
 import wp15b_d1_display as d1_display
+from wp15b_d1_acceptance import evaluate_d1_observations
+from wp15b_d1_writer import (
+    WRITE_TRACE_FIELDS,
+    _writer_bounds_for_timestamp,
+    read_writer_write_samples,
+    writer_byte_bounds_at,
+    writer_child,
+    writer_counter_interval_bounds,
+    write_all,
+)
 from wp15b_d1_darwin import RusageCaptureClock, attach_rusage_samples
 from wp15b_measure import (
     PtySession,
@@ -41,88 +50,6 @@ from wp15b_d1_display import (
     start_btm,
     start_ntop,
 )
-
-
-def write_all(fd, data):
-    view = memoryview(data)
-    while view:
-        view = view[os.write(fd, view):]
-
-
-def writer_child(arguments):
-    data_path, report_path, ready_path, trace_path = map(Path, arguments[:4])
-    rate = int(arguments[4])
-    fd = os.open(data_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    running = True
-    events = []
-
-    def request_stop(_signum, _frame):
-        nonlocal running
-        running = False
-
-    chunk_bytes = 100_000
-    period_ns = int(chunk_bytes * 1_000_000_000 / rate)
-    try:
-        signal.signal(signal.SIGTERM, request_stop)
-        nocache_command = getattr(fcntl, "F_NOCACHE", None)
-        if nocache_command is None:
-            raise RuntimeError("Darwin F_NOCACHE is unavailable")
-        fcntl.fcntl(fd, nocache_command, 1)
-        ready_path.write_text("ready\n")
-        block = b"x" * chunk_bytes
-        started = time.monotonic_ns()
-        written = chunk_index = 0
-        while running:
-            deadline = started + chunk_index * period_ns
-            delay_ns = deadline - time.monotonic_ns()
-            if delay_ns > 0:
-                time.sleep(delay_ns / 1_000_000_000)
-            if not running:
-                break
-            write_started = time.monotonic_ns()
-            write_all(fd, block)
-            write_completed = time.monotonic_ns()
-            fsync_started = time.monotonic_ns()
-            os.fsync(fd)
-            fsync_completed = time.monotonic_ns()
-            written += chunk_bytes
-            events.append((chunk_index + 1, write_started, write_completed,
-                           fsync_started, fsync_completed, written))
-            chunk_index += 1
-        ended = time.monotonic_ns()
-    finally:
-        os.close(fd)
-
-    trace_fields = ("chunk", "write_started_monotonic_ns",
-                    "write_completed_monotonic_ns", "fsync_started_monotonic_ns",
-                    "fsync_completed_monotonic_ns", "cumulative_bytes")
-    trace_path.write_text(
-        "\t".join(trace_fields) + "\n" + "".join(
-            "\t".join(map(str, event)) + "\n" for event in events
-        ),
-        encoding="utf-8",
-    )
-    write_json(report_path, {
-        "target_bytes_per_second": rate,
-        "bytes_written": written,
-        "started_monotonic_ns": started,
-        "ended_monotonic_ns": ended,
-        "duration_seconds": (ended - started) / 1_000_000_000,
-        "chunk_count": len(events),
-        "io_settings": {
-            "open_flags": ["O_WRONLY", "O_CREAT", "O_EXCL"],
-            "file_mode": "0600",
-            "f_nocache_command": nocache_command,
-            "f_nocache_enabled": True,
-            "fsync_per_chunk": True,
-            "chunk_bytes": chunk_bytes,
-            "period_ns": period_ns,
-            "pacing": "absolute_from_start",
-        },
-    })
-
-
-
 
 
 def wait_bounded(child, seconds):
@@ -227,7 +154,8 @@ def start_writer(raw_dir):
     argv = [WRITER_TOKEN, script, "--writer-child",
             str(raw_dir / "writer.data"), str(raw_dir / "writer.json"),
             str(raw_dir / "writer.ready"),
-            str(raw_dir / "writer-io-samples.tsv"), str(TARGET_BPS)]
+            str(raw_dir / "writer-io-samples.tsv"), str(TARGET_BPS),
+            str(raw_dir / "writer-write-samples.tsv")]
     log = (raw_dir / "writer.log").open("wb")
     try:
         writer = subprocess.Popen(
@@ -310,12 +238,14 @@ def run_d1(binary, raw_dir, backend="ntop"):
             "target_bytes_per_second": TARGET_BPS,
             "samples_requested": SAMPLE_LIMIT,
             "max_seconds": MAX_SECONDS,
+            "low_load_1m_threshold": d1_display.LOW_LOAD_1M_THRESHOLD,
         },
         "raw": {
             "pty": "btm.ansi" if is_btm else "ntop.ansi",
             "writer_data": "writer.data",
             "writer_report": "writer.json",
             "writer_io_samples": "writer-io-samples.tsv",
+            "writer_write_samples": "writer-write-samples.tsv",
             "writer_log": "writer.log",
         },
     }
@@ -386,6 +316,7 @@ def run_d1(binary, raw_dir, backend="ntop"):
                 write_json(output, result)
     report_path = raw_dir / "writer.json"
     writer_path = raw_dir / "writer.data"
+    writer_report = None
     if report_path.exists():
         writer_report = json.loads(report_path.read_text())
         actual_bytes = writer_path.stat().st_size
@@ -400,6 +331,29 @@ def run_d1(binary, raw_dir, backend="ntop"):
     else:
         result["writer"] = {"report_missing": True}
         actual_rate = None
+    write_trace_path = raw_dir / "writer-write-samples.tsv"
+    write_samples = []
+    write_trace_error = None
+    if write_trace_path.exists():
+        try:
+            write_samples = read_writer_write_samples(write_trace_path)
+        except (OSError, RuntimeError, ValueError) as exc:
+            write_trace_error = f"{type(exc).__name__}: {exc}"
+    else:
+        write_trace_error = "writer write-sample trace missing"
+    write_trace_bytes = (
+        write_samples[-1]["cumulative_bytes_after"] if write_samples else 0
+    )
+    writer_write_trace_ok = (
+        write_trace_error is None
+        and writer_report is not None
+        and len(write_samples) == writer_report.get("write_syscall_count")
+        and write_trace_bytes == writer_report.get("bytes_written")
+    )
+    result["writer_write_sample_count"] = len(write_samples)
+    result["writer_write_sample_trace_passed"] = writer_write_trace_ok
+    if write_trace_error is not None:
+        result["writer_write_sample_trace_error"] = write_trace_error
     displayed = [sample["w_s_bytes_per_second"] for sample in samples]
     median = statistics.median(displayed) if displayed else None
     writer_in_range = (
@@ -420,14 +374,38 @@ def run_d1(binary, raw_dir, backend="ntop"):
         len(internal_samples) >= 2
         and sum(sample["write_bytes"] is not None for sample in internal_samples) >= 2
     )
-    displayed_in_range = (
-        median is not None and TARGET_BPS * 0.9 <= median <= TARGET_BPS * 1.1
+    if is_btm:
+        writer_intervals = []
+        writer_boundaries_complete = True
+    elif writer_write_trace_ok and writer_report is not None:
+        writer_intervals = writer_counter_interval_bounds(
+            internal_samples, write_samples, writer_report
+        )
+        writer_boundaries_complete = (
+            len(internal_samples) >= 2
+            and len(writer_intervals) == len(internal_samples) - 1
+            and all(interval["available"] for interval in writer_intervals)
+        )
+    else:
+        writer_intervals = []
+        writer_boundaries_complete = False
+    result["writer_counter_interval_bounds"] = writer_intervals
+    result["writer_counter_boundary_trace_passed"] = writer_boundaries_complete
+    evaluation = evaluate_d1_observations(
+        samples,
+        observations,
+        writer_boundaries_complete=writer_boundaries_complete,
     )
-    complete = len(samples) == SAMPLE_LIMIT
-    acceptance_passed = complete and writer_in_range and displayed_in_range
-    acceptance_passed = acceptance_passed and file_matches and cleanup_complete
+    displayed_in_range = evaluation["all_samples_within_10_percent"]
+    acceptance_passed = (
+        evaluation["passed"]
+        and writer_in_range
+        and file_matches
+        and cleanup_complete
+    )
     passed = acceptance_passed and rusage_ok and internal_trace_ok
     result["summary"] = {
+        "observation_count": len(observations),
         "valid_sample_count": len(samples),
         "median_displayed_bytes_per_second": median,
         "minimum_displayed_bytes_per_second": min(displayed) if displayed else None,
@@ -435,9 +413,16 @@ def run_d1(binary, raw_dir, backend="ntop"):
         "displayed_samples_in_10_percent_range": sum(
             sample["within_target_10_percent"] for sample in samples
         ),
+        "all_displayed_samples_within_10_percent": displayed_in_range,
+        "low_load_eligible_count": evaluation["low_load_eligible_count"],
+        "low_load_result_complete": (
+            evaluation["low_load_eligible_count"] == SAMPLE_LIMIT
+        ),
         "writer_rate_within_10_percent": writer_in_range,
-        "median_display_within_10_percent": displayed_in_range,
         "writer_file_count_matches": file_matches,
+        "writer_write_sample_trace_passed": writer_write_trace_ok,
+        "writer_counter_boundary_trace_passed": writer_boundaries_complete,
+        "writer_counter_interval_count": len(writer_intervals),
         "owned_children_reaped": cleanup_complete,
         "darwin_proc_pid_rusage_v2_passed": rusage_ok,
         "internal_sample_trace_passed": internal_trace_ok,
@@ -446,14 +431,20 @@ def run_d1(binary, raw_dir, backend="ntop"):
     result["acceptance"] = {
         "target_bytes_per_second": TARGET_BPS,
         "tolerance_percent": 10,
+        "requires_20_observations": True,
         "requires_20_valid_display_samples": True,
+        "requires_all_observations_low_load": True,
+        "low_load_1m_threshold": d1_display.LOW_LOAD_1M_THRESHOLD,
+        "requires_writer_counter_boundary_evidence": not is_btm,
         "passed": acceptance_passed,
+        "complete": evaluation["complete"],
+        "incomplete_reasons": evaluation["incomplete_reasons"],
     }
-    result["status"] = "pass" if passed else "fail" if complete else "incomplete"
-    if not complete:
-        result["incomplete_reason"] = (
-            f"Collected {len(samples)} valid W/s samples before {MAX_SECONDS}s limit"
-        )
+    result["status"] = (
+        "pass" if passed else "fail" if evaluation["complete"] else "incomplete"
+    )
+    if not evaluation["complete"]:
+        result["incomplete_reason"] = ", ".join(evaluation["incomplete_reasons"])
     write_json(output, result)
     return result
 
