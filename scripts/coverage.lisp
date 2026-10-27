@@ -16,6 +16,8 @@
    (pathname
     (or (uiop:getenv "NTOP_COVERAGE_DIR")
         (merge-pathnames "ntop-coverage/" (uiop:temporary-directory))))))
+(defparameter *coverage-compiled-source-count*
+  0)
 
 (asdf:load-asd (merge-pathnames "ntop.asd" *project-root*))
 
@@ -50,8 +52,10 @@
               (load fasl-path))
             (sb-cover:save-coverage)
             (incf compiled-source-count)))))
-    (unless (plusp compiled-source-count)
-      (error "Coverage did not compile any source files."))))
+    (progn
+      (unless (plusp compiled-source-count)
+        (error "Coverage did not compile any source files."))
+      (setf *coverage-compiled-source-count* compiled-source-count))))
 
 (asdf:load-system "ntop/test" :force t)
 
@@ -100,44 +104,53 @@
       (format t
               "Coverage report: ~A~%"
               (merge-pathnames "cover-index.html" *coverage-report-directory*))
-      (dolist
-          (file-statistics
-           (cl-weave:coverage-file-statistics :include-pathnames
-                                              (list *coverage-source-root*)))
-        (let* ((file-path
-                (enough-namestring (getf file-statistics :pathname)
-                                   *project-root*))
-               (file-expression-covered
-                (getf file-statistics :expression-covered))
-               (file-expression-total (getf file-statistics :expression-total))
-               (file-expression-percent
-                (when (plusp file-expression-total)
-                  (* 100d0
-                     (/ file-expression-covered file-expression-total))))
-               (file-branch-covered (getf file-statistics :branch-covered))
-               (file-branch-total (getf file-statistics :branch-total))
-               (file-branch-percent
-                (when (plusp file-branch-total)
-                  (* 100d0 (/ file-branch-covered file-branch-total)))))
-          (format t
-                  "COVERAGE_FILE|~A|~D|~D|~A|~D|~D|~A~%"
-                  file-path
-                  file-expression-covered
-                  file-expression-total
-                  (if file-expression-percent
-                      (format nil "~,1F" file-expression-percent)
-                      "N/A")
-                  file-branch-covered
-                  file-branch-total
-                  (if file-branch-percent
-                      (format nil "~,1F" file-branch-percent)
-                      "N/A"))
-          (when
-              (or (null file-expression-percent)
-                  (< file-expression-percent minimum-coverage-percent)
-                  (and file-branch-percent
-                       (< file-branch-percent minimum-coverage-percent)))
-            (push file-path below-threshold-files))))
+      (let* ((coverage-file-statistics
+              (cl-weave:coverage-file-statistics :include-pathnames
+                                                 (list *coverage-source-root*)))
+             (checked-file-count (length coverage-file-statistics)))
+        (unless (= checked-file-count *coverage-compiled-source-count*)
+          (error
+           "Coverage statistics contain ~D files, but compiled ~D source files."
+           checked-file-count
+           *coverage-compiled-source-count*))
+        (format t
+                "Coverage files checked: ~D; compiled files: ~D.~%"
+                checked-file-count
+                *coverage-compiled-source-count*)
+        (dolist (file-statistics coverage-file-statistics)
+          (let* ((file-path
+                  (enough-namestring (getf file-statistics :pathname)
+                                     *project-root*))
+                 (file-expression-covered
+                  (getf file-statistics :expression-covered))
+                 (file-expression-total
+                  (getf file-statistics :expression-total))
+                 (file-branch-covered (getf file-statistics :branch-covered))
+                 (file-branch-total (getf file-statistics :branch-total)))
+            (unless (plusp file-expression-total)
+              (error "Coverage statistics contain no expressions for ~A."
+                     file-path))
+            (let ((file-expression-percent
+                   (* 100d0 (/ file-expression-covered file-expression-total)))
+                  (file-branch-percent
+                   (when (plusp file-branch-total)
+                     (* 100d0 (/ file-branch-covered file-branch-total)))))
+              (format t
+                      "COVERAGE_FILE|~A|~D|~D|~,1F|~D|~D|~A~%"
+                      file-path
+                      file-expression-covered
+                      file-expression-total
+                      file-expression-percent
+                      file-branch-covered
+                      file-branch-total
+                      (if file-branch-percent
+                          (format nil "~,1F" file-branch-percent)
+                          "N/A"))
+              (when
+                  (or (< file-expression-percent minimum-coverage-percent)
+                      (and file-branch-percent
+                           (< file-branch-percent minimum-coverage-percent)))
+                (push file-path below-threshold-files))))))
       (unless
           (and (>= expression-percent minimum-coverage-percent)
                (>= branch-percent minimum-coverage-percent))
