@@ -318,10 +318,9 @@
          (input (%route-input-description route subcase))
          (context (or (getf subcase :context) "default"))
          (reason (or reason (route-manual-reason route) input))
-         (path (if prefix
-                   (pathname (format nil "~a-manual.md" prefix))
-                   (merge-pathnames (format nil "~a-manual.md" id)
-                                    directory)))
+         (path (merge-pathnames
+                 (format nil "~a-manual.md" (or prefix id))
+                 directory))
          (procedure (or procedure
                         (%route-manual-procedure route subcase input context)))
          (expected

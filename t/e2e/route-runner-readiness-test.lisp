@@ -140,12 +140,18 @@
                     (ntop.e2e::%route-run-sleep-child-pair
                      route subcase "owned child probe limit" "btm-self"
                      "btm" "ntop"
-                     (namestring (merge-pathnames "reference" directory))
+                     "reference"
                      (namestring (merge-pathnames "candidate" directory))
                      24 80 250 1 nil directory))))
            (let ((route-status
                    (ntop.e2e::%route-result-status route (list result))))
-             (cl-weave:expect (getf result :status) :to-equal :manual)
+             (progn
+               (cl-weave:expect (getf result :status) :to-equal :manual)
+               (cl-weave:expect
+                (first (getf result :evidence))
+                :to-equal
+                (namestring
+                 (merge-pathnames "reference-manual.md" directory))))
              (cl-weave:expect (getf result :classification) :to-be nil)
              (cl-weave:expect route-status :to-equal :manual)
              (cl-weave:expect
