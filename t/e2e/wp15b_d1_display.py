@@ -256,6 +256,7 @@ def collect_samples(ntop_child, writer, raw_dir, started):
     last_sample_at = None
     last_signature = None
     pid_filter_sent = False
+    measurement_started = False
     deadline = started + MAX_SECONDS
     writer_data_path = raw_dir / "writer.data"
     last_writer_observation_at = time.monotonic()
@@ -299,6 +300,26 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                     and now - last_sample_at < RATE_MS / 1000):
                 continue
             last_sample_at = now
+            grid = TerminalGrid(ROWS, COLUMNS)
+            if grid.feed(bytes(transcript)):
+                signature = grid.signature()
+                terminal_frame_repeated = signature == last_signature
+                rate, reason, detail = displayed_writer_rate(grid, writer.pid)
+            else:
+                signature = terminal_frame_repeated = None
+                rate, reason, detail = None, "ansi-grid-invalid", {}
+
+            if not measurement_started:
+                if (not pid_filter_sent
+                        and detail.get("process_header")
+                        and "PID" in detail["process_header"]):
+                    ntop_child.send(f"/pid = {writer.pid}\r".encode())
+                    pid_filter_sent = True
+                    continue
+                if rate is None:
+                    continue
+                measurement_started = True
+
             observation_index = len(observations) + 1
             load_before = load_average()
             sampled_at_monotonic_ns = time.monotonic_ns()
@@ -317,28 +338,8 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                 "writer_interval_seconds": writer_interval_seconds,
                 "writer_interval_bytes_per_second": writer_interval_rate,
             }
-            grid = TerminalGrid(ROWS, COLUMNS)
-            if not grid.feed(bytes(transcript)):
-                load_after = load_average()
-                observations.append({
-                    "observation_index": observation_index,
-                    "elapsed_seconds": now - started,
-                    "sampled_at_monotonic_ns": sampled_at_monotonic_ns,
-                    "valid": False,
-                    "reason": "ansi-grid-invalid",
-                    "writer_pid": writer.pid,
-                    "writer_row": None,
-                    "total_write_text": None,
-                    "total_write_bytes": None,
-                    "terminal_frame_repeated": None,
-                    **writer_evidence,
-                    **load_evidence(load_before, load_after),
-                })
-                continue
-            signature = grid.signature()
-            terminal_frame_repeated = signature == last_signature
-            last_signature = signature
-            rate, reason, detail = displayed_writer_rate(grid, writer.pid)
+            if signature is not None:
+                last_signature = signature
             load_after = load_average()
             observation = {
                 "observation_index": observation_index,
@@ -362,12 +363,6 @@ def collect_samples(ntop_child, writer, raw_dir, started):
                 **load_evidence(load_before, load_after),
             }
             observations.append(observation)
-            if (not pid_filter_sent
-                    and detail.get("process_header")
-                    and "PID" in detail["process_header"]):
-                ntop_child.send(f"/pid = {writer.pid}\r".encode())
-                pid_filter_sent = True
-                observation["pid_filter_sent"] = True
             if rate is not None:
                 observation["sample"] = len(samples) + 1
                 observation["within_target_10_percent"] = (
