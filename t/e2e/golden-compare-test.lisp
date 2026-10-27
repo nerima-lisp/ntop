@@ -174,60 +174,68 @@
 (cl-weave:describe
  "FR-001 condition A live-grid comparison"
  (cl-weave:it
-  "separates frame geometry and border, title, and process-header SGR at 40x12"
-  (let* ((reference (criterion-test-grid 12 40 "live process"))
-         (same (ntop.e2e::copy-terminal-grid reference))
-         (border-style (ntop.e2e::copy-terminal-grid reference))
-         (title-style (ntop.e2e::copy-terminal-grid reference))
-         (header-style (ntop.e2e::copy-terminal-grid reference))
-         (shifted-frame (ntop.e2e::copy-terminal-grid reference)))
-    (cl-weave:expect
-     (ntop.e2e::condition-a-difference-kinds reference same)
-     :to-equal nil)
-    (setf (ntop.e2e:cell-foreground
-           (ntop.e2e:grid-cell-at border-style 0 0))
-          '(:indexed . 1))
-    (cl-weave:expect
-     (ntop.e2e::condition-a-difference-kinds reference border-style)
-     :to-equal '(:border-sgr))
-    (setf (ntop.e2e:cell-foreground
-           (ntop.e2e:grid-cell-at title-style 0 3))
-          '(:indexed . 4))
-    (cl-weave:expect
-     (ntop.e2e::condition-a-difference-kinds reference title-style)
-     :to-equal '(:title-sgr))
-    (setf (ntop.e2e:cell-background
-           (ntop.e2e:grid-cell-at header-style 9 2))
-          '(:indexed . 5))
-    (cl-weave:expect
-     (ntop.e2e::condition-a-difference-kinds reference header-style)
-     :to-equal '(:process-header-sgr))
-    (setf (ntop.e2e:cell-character
-           (ntop.e2e:grid-cell-at shifted-frame 0 39))
-          #\Space)
-    (setf (ntop.e2e:cell-character
-           (ntop.e2e:grid-cell-at shifted-frame 0 38))
-          #\┐)
-    (cl-weave:expect (not (null (member :frame-geometry
-                                        (ntop.e2e::condition-a-difference-kinds
-                                         reference shifted-frame))))
-                     :to-be t)))
+ "separates frame geometry and border, title, and process-header SGR at 40x12"
+ (let* ((reference (criterion-test-grid 12 40 "live process"))
+        (same (ntop.e2e::copy-terminal-grid reference))
+        (border-style (ntop.e2e::copy-terminal-grid reference))
+        (title-style (ntop.e2e::copy-terminal-grid reference))
+        (header-style (ntop.e2e::copy-terminal-grid reference))
+        (header-text (ntop.e2e::copy-terminal-grid reference))
+        (shifted-frame (ntop.e2e::copy-terminal-grid reference)))
+   (cl-weave:expect
+    (ntop.e2e::condition-a-difference-kinds reference same)
+    :to-equal nil)
+   (setf (ntop.e2e:cell-foreground
+          (ntop.e2e:grid-cell-at border-style 0 0))
+         '(:indexed . 1))
+   (cl-weave:expect
+    (ntop.e2e::condition-a-difference-kinds reference border-style)
+    :to-equal '(:border-sgr))
+   (setf (ntop.e2e:cell-foreground
+          (ntop.e2e:grid-cell-at title-style 0 3))
+         '(:indexed . 4))
+   (cl-weave:expect
+    (ntop.e2e::condition-a-difference-kinds reference title-style)
+    :to-equal '(:title-sgr))
+   (setf (ntop.e2e:cell-background
+          (ntop.e2e:grid-cell-at header-style 9 2))
+         '(:indexed . 5))
+   (cl-weave:expect
+    (ntop.e2e::condition-a-difference-kinds reference header-style)
+    :to-equal '(:process-header-sgr))
+   (setf (ntop.e2e:cell-character
+          (ntop.e2e:grid-cell-at header-text 9 2))
+         #\X)
+   (cl-weave:expect
+    (ntop.e2e::condition-a-difference-kinds reference header-text)
+    :to-equal nil)
+   (setf (ntop.e2e:cell-character
+          (ntop.e2e:grid-cell-at shifted-frame 0 39))
+         #\Space)
+   (setf (ntop.e2e:cell-character
+          (ntop.e2e:grid-cell-at shifted-frame 0 38))
+         #\┐)
+   (cl-weave:expect
+    (not (null (member :frame-geometry
+                       (ntop.e2e::condition-a-difference-kinds
+                        reference shifted-frame))))
+    :to-be t)))
  (cl-weave:it
-  "keeps first difference detail on one line when pretty printing is enabled"
-  (let* ((reference (criterion-test-grid 12 40 "live process"))
-         (candidate (ntop.e2e::copy-terminal-grid reference)))
-    (setf (ntop.e2e:cell-character
-           (ntop.e2e:grid-cell-at candidate 9 2))
-          #\X)
-    (let* ((*print-pretty* t)
-           (*print-right-margin* 12)
-           (difference-kinds
-             (ntop.e2e::condition-a-difference-kinds reference candidate))
-           (detail
-             (ntop.e2e::%condition-a-first-difference
-              reference candidate difference-kinds)))
-      (cl-weave:expect difference-kinds :to-equal '(:process-header-cells))
-      (cl-weave:expect (find #\Newline detail) :to-be nil))))
+ "reports process-header SGR differences in one line when pretty printing is enabled"
+ (let* ((reference (criterion-test-grid 12 40 "live process"))
+        (candidate (ntop.e2e::copy-terminal-grid reference)))
+   (setf (ntop.e2e:cell-background
+          (ntop.e2e:grid-cell-at candidate 9 2))
+         '(:indexed . 4))
+   (let* ((*print-pretty* t)
+          (*print-right-margin* 12)
+          (difference-kinds
+            (ntop.e2e::condition-a-difference-kinds reference candidate))
+          (detail
+            (ntop.e2e::%condition-a-first-difference
+             reference candidate difference-kinds)))
+     (cl-weave:expect difference-kinds :to-equal '(:process-header-sgr))
+     (cl-weave:expect (find #\Newline detail) :to-be nil))))
  (cl-weave:it
   "parses accumulated raw bytes with incomplete UTF-8 and CSI suffixes"
   (let* ((complete-output
@@ -279,22 +287,7 @@
                       (symbol-function 'ntop.e2e::%elapsed-seconds))
                 (cons 'ntop.e2e::close-e2e-session original-close)))
          (active-session nil)
-         (grid (let ((grid (ntop.e2e:make-terminal-grid :rows 12 :cols 40)))
-                 (criterion-test-write
-                  grid 2 0 "38;5;7;49"
-                  (concatenate 'string "┌─ Processes ─"
-                               (make-string 25 :initial-element #\─)
-                               "┐"))
-                 (loop for row from 3 below 10
-                       do (criterion-test-write grid row 0 "38;5;7;49" "│")
-                       (criterion-test-write grid row 39 "38;5;7;49" "│"))
-                 (criterion-test-write grid 4 2 "38;5;8;49" "No data")
-                 (criterion-test-write
-                  grid 10 0 "38;5;7;49"
-                  (concatenate 'string "└"
-                               (make-string 38 :initial-element #\─)
-                               "┘"))
-                 grid))
+         (grid (criterion-test-grid 12 40 "live process"))
          (sample-count 0)
          (close-count 0)
          (fail-on-sample nil))
@@ -371,3 +364,26 @@
                  (not (ntop.e2e::e2e-session-closed-p active-session)))
         (funcall original-close active-session)))))
 )
+(cl-weave:describe
+ "FR-001 condition A capture readiness"
+ (cl-weave:it
+  "waits for process-header cells on a full process frame"
+  (let* ((empty-projection #(40 12 #()))
+         (header-projection
+           (ntop.e2e:project-criterion-grid
+            (criterion-test-grid 12 40 "live process"))))
+    (cl-weave:expect
+     (ntop.e2e::%condition-a-process-header-ready-p
+      (quote (8 11 2 39)) empty-projection)
+     :to-be
+     nil)
+    (cl-weave:expect
+     (ntop.e2e::%condition-a-process-header-ready-p
+      (quote (8 11 2 39)) header-projection)
+     :to-be
+     t)
+    (cl-weave:expect
+     (ntop.e2e::%condition-a-process-header-ready-p
+      (quote (8 10 2 39)) empty-projection)
+     :to-be
+     t))))

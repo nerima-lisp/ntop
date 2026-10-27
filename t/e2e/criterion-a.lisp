@@ -2,13 +2,19 @@
 (defparameter *condition-a-observation-seconds* 0.3d0)
 (defparameter *condition-a-first-frame-factor* 3d0)
 (defparameter *condition-a-categories*
-  '(("border" :border-cells :border-sgr)
-    ("title" :title-cells :title-sgr)
-    ("process-header" :process-header-cells :process-header-sgr)))
+  (quote (("border" :border-cells :border-sgr)
+          ("title" :title-cells :title-sgr)
+          ("process-header" nil :process-header-sgr))))
 (defun %condition-a-category-entries (projection category)
   (loop for entry across (aref projection 2)
         when (string= (aref entry 0) category)
         collect entry))
+(defun %condition-a-process-header-ready-p (process-frame projection)
+  (and process-frame
+       (or (<= (- (second process-frame) (first process-frame)) 2)
+           (plusp
+            (length
+             (%condition-a-category-entries projection "process-header"))))))
 (defun %condition-a-entry-shapes (entries)
   (mapcar (lambda (entry) (subseq entry 0 4)) entries))
 (defun %condition-a-shared-style-difference-p (reference candidate)
@@ -35,8 +41,9 @@
                (%condition-a-category-entries reference name))
               (candidate-entries
                (%condition-a-category-entries candidate name)))
-          (unless (equalp (%condition-a-entry-shapes reference-entries)
-                          (%condition-a-entry-shapes candidate-entries))
+          (when (and cells-kind
+                     (not (equalp (%condition-a-entry-shapes reference-entries)
+                                  (%condition-a-entry-shapes candidate-entries))))
             (push cells-kind differences))
           (when (%condition-a-shared-style-difference-p
                  reference-entries candidate-entries)
@@ -60,13 +67,16 @@
                     (member style-kind difference-kinds))
             (let ((left (%condition-a-category-entries reference name))
                   (right (%condition-a-category-entries candidate name)))
-              (loop for index below (max (length left) (length right))
-                    for left-entry = (nth index left)
-                    for right-entry = (nth index right)
-                    unless (equalp left-entry right-entry)
-                    do (return-from %condition-a-first-difference
-                         (format nil "~a reference=~s candidate=~s"
-                                 name left-entry right-entry)))))))
+              (if cells-kind
+                  (loop for index below (max (length left) (length right))
+                        for left-entry = (nth index left)
+                        for right-entry = (nth index right)
+                        unless (equalp left-entry right-entry)
+                          do (return-from %condition-a-first-difference
+                               (format nil "~a reference=~s candidate=~s"
+                                       name left-entry right-entry)))
+                (return-from %condition-a-first-difference
+                  (format nil "~a SGR attributes differ" name)))))))
       (if difference-kinds
           (string-downcase (symbol-name (first difference-kinds)))
           "none"))))
@@ -112,15 +122,8 @@
                                                     :test #'char-equal))
                                           (criterion-projection-frames grid))))
                 (process-header-ready-p
-                 (and process-frame
-                      (or (<= (- (second process-frame) (first process-frame)) 2)
-                          (plusp
-                           (length
-                            (%condition-a-category-entries projection "process-header")))
-                          (loop for row from (first process-frame) to (second process-frame)
-                                thereis (search "No data"
-                                                (criterion-row-text grid row)
-                                                :test #'char-equal))))))
+                 (%condition-a-process-header-ready-p
+                  process-frame projection)))
            (when (null grid)
              (setf previous-projection nil
                    stable-samples 0))
@@ -178,52 +181,50 @@
                             :if-does-not-exist :create
                             :external-format :utf-8)
       (loop for column in '("width" "height" "frame_geometry" "border_cells"
-                                    "border_sgr" "title_cells" "title_sgr"
-                                    "process_header_cells" "process_header_sgr"
-                                    "differences" "first_difference")
+                            "border_sgr" "title_cells" "title_sgr"
+                            "process_header_sgr" "differences" "first_difference")
             for first-p = t then nil
             do (unless first-p (write-char #\Tab stream))
-            (write-string column stream))
+               (write-string column stream))
       (terpri stream)
       (loop for (width height) in dimensions
             for reference-path =
-            (%condition-a-raw-path raw-directory btm width height)
+              (%condition-a-raw-path raw-directory btm width height)
             for candidate-path =
-            (%condition-a-raw-path raw-directory ntop width height)
+              (%condition-a-raw-path raw-directory ntop width height)
             for reference-grid =
-            (%condition-a-capture btm (list "-C" (namestring config-path))
-                                  height width rate timeout-seconds
-                                  environment reference-path)
+              (%condition-a-capture btm (list "-C" (namestring config-path))
+                                    height width rate timeout-seconds
+                                    environment reference-path)
             for candidate-grid =
-            (%condition-a-capture ntop (list "--rate"
-                                             (format nil "~dms" rate))
-                                  height width rate timeout-seconds
-                                  environment candidate-path)
+              (%condition-a-capture ntop (list "--rate"
+                                               (format nil "~dms" rate))
+                                    height width rate timeout-seconds
+                                    environment candidate-path)
             for difference-kinds =
-            (condition-a-difference-kinds reference-grid candidate-grid)
+              (condition-a-difference-kinds reference-grid candidate-grid)
             for first-difference =
-            (%condition-a-first-difference reference-grid candidate-grid
-                                           difference-kinds)
+              (%condition-a-first-difference reference-grid candidate-grid
+                                             difference-kinds)
             do (when difference-kinds (incf mismatch-count))
-            (format stream "~d" width)
-            (write-char #\Tab stream)
-            (format stream "~d" height)
-            (dolist (kind '(:frame-geometry :border-cells :border-sgr
-                                            :title-cells :title-sgr
-                                            :process-header-cells :process-header-sgr))
-              (write-char #\Tab stream)
-              (write-string (if (member kind difference-kinds)
-                                "false" "true")
-                            stream))
-            (write-char #\Tab stream)
-            (write-string (if difference-kinds
-                              (format nil "~{~(~a~)~^,~}" difference-kinds)
-                            "match")
-                          stream)
-            (write-char #\Tab stream)
-            (write-string first-difference stream)
-            (terpri stream)
-            (force-output stream)))
+               (format stream "~d" width)
+               (write-char #\Tab stream)
+               (format stream "~d" height)
+               (dolist (kind '(:frame-geometry :border-cells :border-sgr
+                               :title-cells :title-sgr :process-header-sgr))
+                 (write-char #\Tab stream)
+                 (write-string (if (member kind difference-kinds)
+                                   "false" "true")
+                               stream))
+               (write-char #\Tab stream)
+               (write-string (if difference-kinds
+                                 (format nil "~{~(~a~)~^,~}" difference-kinds)
+                               "match")
+                             stream)
+               (write-char #\Tab stream)
+               (write-string first-difference stream)
+               (terpri stream)
+               (force-output stream)))
     (format t "Compared ~d dimensions; ~d have differences. Table: ~a; raw ANSI: ~a~%"
             (length dimensions) mismatch-count (namestring output-path)
             (namestring raw-directory))
