@@ -321,4 +321,27 @@
               (ntop.network.domain:network-sample-interfaces (second result))))
             :to-equal
             "eth0")))
-         (cl-weave:expect (member :linux *features*) :to-be nil))))
+         (cl-weave:expect (member :linux *features*) :to-be nil)))
+   #+darwin
+(cl-weave:it
+ "delegates interface reads to Darwin and forwards the provider result"
+ (let ((collector
+         (ntop.network.infrastructure:make-network-collector
+          (make-instance 'network-fixture-clock)))
+       (result nil))
+   (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin:darwin-read-network-interface-data)
+       (lambda (on-value on-unavailable)
+         (declare (ignore on-unavailable))
+         (funcall on-value
+                  '((:name "en0" :rx-bytes 11 :tx-bytes 22
+                     :rx-packets 3 :tx-packets 4))))))
+     (ntop.network.infrastructure:read-network-interface-data
+      collector
+      (lambda (rows) (setf result (list :value rows)))
+      (lambda (reason) (setf result (list :unavailable reason)))))
+   (cl-weave:expect
+    result
+    :to-equal
+    '(:value ((:name "en0" :rx-bytes 11 :tx-bytes 22
+              :rx-packets 3 :tx-packets 4)))))))

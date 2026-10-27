@@ -89,6 +89,17 @@
                 "N/A"))
     (finish-output stream)))
 
+  (defun %process-signal-error-message (errno)
+    (cond
+      ((= errno sb-posix:esrch)
+       "the target process did not exist.")
+      ((= errno sb-posix:eperm)
+       (concatenate 'string
+                    "the calling process does not have the permissions to "
+                    "terminate the target process(es)."))
+      ((= errno sb-posix:einval)
+       "an invalid signal was specified.")
+      (t "Unknown error occurred.")))
   (defun send-process-signal (target-pids signal-number)
     (unless (and (listp target-pids)
                  (every (lambda (pid) (and (integerp pid) (plusp pid)))
@@ -104,17 +115,7 @@
               (incf sent-count))
           (sb-posix:syscall-error (condition)
             (let* ((errno (sb-posix:syscall-errno condition))
-                   (message
-                    (cond
-                      ((= errno sb-posix:esrch)
-                       "the target process did not exist.")
-                      ((= errno sb-posix:eperm)
-                       (concatenate (quote string)
-                                    "the calling process does not have the permissions to "
-                                    "terminate the target process(es)."))
-                      ((= errno sb-posix:einval)
-                       "an invalid signal was specified.")
-                      (t "Unknown error occurred."))))
+                   (message (%process-signal-error-message errno)))
               (if (> target-count 1)
                   (error
                    "PID ~D failed after successfully signaling ~D of ~D targets. Error code ~D - ~A"

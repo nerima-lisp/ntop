@@ -241,6 +241,27 @@
                                  :to-equal
                                  "            ")))
  (cl-weave:it-each
+ ((8 nil nil t) (8 t nil nil) (8 nil t nil) (6 nil nil nil))
+ "shows time labels only when height and time settings allow them"
+ (height hide-time-p auto-hide-time-p labels-visible-p)
+ (let* ((screen (cl-tty-kit:make-screen 40 height))
+        (rectangle
+         (ntop.ui:make-rectangle :x 0 :y 0 :width 40 :height height))
+        (config
+         (ntop.shared.application:make-application-config
+          :time-window-seconds 60
+          :hide-time-p hide-time-p
+          :auto-hide-time-p auto-hide-time-p)))
+   (ntop.ui:draw-widget
+    :temperature-graph screen rectangle nil config
+    (%f6-temperature-graph-fixture-series))
+   (let ((snapshot (cl-tty-kit:screen-to-string screen)))
+     (cl-weave:expect
+      (list (not (null (search "60s" snapshot)))
+            (not (null (search "0s" snapshot))))
+      :to-equal
+      (if labels-visible-p '(t t) '(nil nil))))))
+ (cl-weave:it-each
   ((0 1) (12 0))
   "does not draw a title in rectangles of size ~A by ~A"
   (width height)

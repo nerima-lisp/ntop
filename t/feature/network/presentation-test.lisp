@@ -436,6 +436,25 @@
                       (let ((snapshot (cl-tty-kit:screen-to-string screen)))
                         (cl-weave:expect (not (null (search "Total RX" snapshot))) :to-be t)
                         (cl-weave:expect (search "RX Pkts" snapshot) :to-be nil))))
+                   (cl-weave:it
+ "keeps cumulative totals when the first sample cannot provide rates"
+ (let* ((config
+         (ntop.shared.application:make-application-config
+          :basic-p t
+          :network-show-packets-p t))
+        (latest (%f4-sample 2d0 1000 2000 10 20))
+        (values
+         (ntop.network.presentation::%network-legend-values
+          latest nil nil config t)))
+   (cl-weave:expect (subseq values 0 2) :to-equal '("N/A" "N/A"))
+   (cl-weave:expect
+    (every (lambda (value) (string= value "N/A")) (subseq values 4 8))
+    :to-be
+    t)
+   (cl-weave:expect
+    (every (lambda (value) (not (string= value "N/A"))) (subseq values 2 4))
+    :to-be
+    t)))
                    (cl-weave:it-each ((0 4) (10 0))
                      "leaves an empty basic widget rectangle blank (~Ax~A)"
                      (width height)
@@ -449,4 +468,32 @@
                         (every (lambda (line) (string= line ""))
                                (%f4-network-screen-lines screen))
                         :to-be
-                        t))))
+                        t)))
+                   (cl-weave:it
+    "clips basic network output at empty content and render bounds"
+    (let* ((config (ntop.shared.application:make-application-config :basic-p t :data-unit :byte))
+           (rate (ntop.shared.domain:make-quantity 1000 :byte))
+           (screen (cl-tty-kit:make-screen 10 1))
+           (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 10 :height 1))
+           (packet-config (%f4-basic-config :packets-p t))
+           (empty-screen (cl-tty-kit:make-screen 8 3))
+           (clip-rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 4 :height 2))
+           (clip-config (%f4-basic-config))
+           (style (ntop.ui:presentation-theme-style
+                   (ntop.shared.application:application-config-theme clip-config) :rx))
+           (before (cl-tty-kit:screen-to-string empty-screen)))
+      (cl-weave:expect
+       (ntop.network.presentation::%network-rate-text rate :decimal config)
+       :to-equal "1.0K/s")
+      (ntop.network.presentation::%draw-network-basic
+       screen rectangle nil nil nil packet-config)
+      (let ((snapshot (cl-tty-kit:screen-to-string screen)))
+        (cl-weave:expect (search "Network" snapshot) :to-be-truthy)
+        (cl-weave:expect (search "RX:" snapshot) :to-be-null))
+      (ntop.network.presentation::%network-write-text
+       empty-screen clip-rectangle 4 0 "right edge" 4 style)
+      (ntop.network.presentation::%network-write-text
+       empty-screen clip-rectangle 0 2 "bottom edge" 4 style)
+      (cl-weave:expect
+       (cl-tty-kit:screen-to-string empty-screen)
+       :to-equal before))))

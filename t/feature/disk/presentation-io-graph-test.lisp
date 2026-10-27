@@ -287,4 +287,19 @@
                                            nil)
                       (cl-weave:expect
                        (search "Disk I/O" (cl-tty-kit:screen-to-string screen))
-                       :to-be-null))))
+                       :to-be-null)))
+                   (cl-weave:it
+ "hides time labels at tall heights when configured to hide time"
+ (let* ((screen (cl-tty-kit:make-screen 40 8))
+        (rectangle (ntop.ui:make-rectangle :x 0 :y 0 :width 40 :height 8))
+        (config
+         (ntop.shared.application:make-application-config
+          :hide-time-p t
+          :time-window-seconds 60)))
+   (ntop.ui:draw-widget
+    :disk-io-graph screen rectangle nil config
+    (%f5-disk-graph-fixture-series))
+   (let ((snapshot (cl-tty-kit:screen-to-string screen)))
+     (cl-weave:expect (not (null (search "Disk I/O" snapshot))) :to-be t)
+     (cl-weave:expect (search "60s" snapshot) :to-be-null)
+     (cl-weave:expect (search "0s" snapshot) :to-be-null)))))

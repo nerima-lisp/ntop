@@ -180,5 +180,24 @@
                      (ntop.temperature.presentation::%temperature-row-comparison
                       nil
                       nil
-                      :unsupported))))
+                      :unsupported)))
+                   (cl-weave:it
+ "renders missing sensor labels and zero-degree readings through table columns"
+ (let* ((columns
+         (ntop.ui:table-config-columns
+          (ntop.temperature.presentation:make-temperature-table-config
+           :temperature-unit :fahrenheit)))
+        (sensor-column (first columns))
+        (temperature-column (second columns))
+        (sensor-value
+         (funcall (ntop.ui:table-column-value-function sensor-column) nil))
+        (missing-value
+         (funcall (ntop.ui:table-column-value-function temperature-column)
+                  '(:temperature-celsius nil)))
+        (zero-value
+         (funcall (ntop.ui:table-column-value-function temperature-column)
+                  '(:temperature-celsius 0))))
+   (cl-weave:expect sensor-value :to-equal "")
+   (cl-weave:expect missing-value :to-equal "N/A")
+   (cl-weave:expect zero-value :to-equal "32°F"))))
 

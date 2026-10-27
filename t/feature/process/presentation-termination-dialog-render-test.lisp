@@ -228,6 +228,50 @@
                               line))
                     lines)))
         :to-be t))))
+  (cl-weave:it
+ "identifies the single failed process and leaves the error visible"
+ (let* ((sample (%f8b-process-sample))
+        (config (ntop.shared.application:make-application-config))
+        (dialog (%f8b-opened-termination-dialog
+                 '(123) "fixture-worker" sample config))
+        (target (%f8b-kill-target 120 8)))
+   (setf (ntop.process.presentation:process-termination-dialog-state-error-message
+          dialog)
+         "permission denied")
+   (%f8b-draw-termination-dialog target 120 8 dialog config sample)
+   (let ((lines (%f8b-kill-lines target)))
+     (cl-weave:expect
+      (not (null
+            (some (lambda (line)
+                    (search "Failed to kill process fixture-worker (123):" line))
+                  lines)))
+      :to-be t)
+     (cl-weave:expect
+      (not (null (some (lambda (line) (search "permission denied" line)) lines)))
+      :to-be t)
+     (cl-weave:expect
+      (not (some (lambda (line)
+                   (search "Signal delivery stopped while killing processes" line))
+                 lines))
+      :to-be t))))
+  (cl-weave:it-each
+  ((0 4) (120 2))
+  "leaves undersized termination error panes blank (~Dx~D)"
+  (width height)
+  (let* ((sample (%f8b-process-sample))
+         (config (ntop.shared.application:make-application-config))
+         (dialog
+          (%f8b-opened-termination-dialog
+           '(123) "fixture-worker" sample config))
+         (target (%f8b-kill-target width height)))
+    (setf (ntop.process.presentation:process-termination-dialog-state-error-message
+           dialog)
+          "permission denied")
+    (%f8b-draw-termination-dialog target width height dialog config sample)
+    (cl-weave:expect
+     (%f8b-kill-lines target)
+     :to-equal
+     (make-list height :initial-element ""))))
   (cl-weave:it-each
     ((1 4 ("" "" "" "")) (1 2 ("" "")) (0 4 ("" "" "" "")))
     "draws safely in a ~D-by-~D rectangle"

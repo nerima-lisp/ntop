@@ -207,4 +207,38 @@
                              (ntop.ui:table-config-show-header-p table-config)
                              (ntop.ui:table-config-empty-message table-config))
                        :to-equal
-                       (list nil t "No data")))))
+                       (list nil t "No data"))))
+                   (cl-weave:it
+ "keeps first duplicate columns, accepts vectors, and rejects invalid options"
+ (let* ((config
+         (ntop.process.presentation::make-process-table-config
+          :column-ids '(:cpu :memory :cpu)))
+        (column-ids
+         (ntop.process.presentation:process-table-config-column-ids config)))
+   (cl-weave:expect (length column-ids) :to-be 2)
+   (cl-weave:expect (first column-ids) :to-be :cpu)
+   (cl-weave:expect (second column-ids) :to-be :memory))
+ (let ((config
+         (ntop.process.presentation::make-process-table-config
+          :column-ids #(:cpu :memory))))
+   (cl-weave:expect
+    (ntop.process.presentation:process-table-config-column-ids config)
+    :to-equal
+    '(:cpu :memory)))
+ (cl-weave:signals
+  simple-error
+  (ntop.process.presentation::make-process-table-config :basic-p :yes))
+ (cl-weave:signals
+  simple-error
+  (ntop.process.presentation::make-process-table-config
+   :grouped-p nil :grouped-by-tab-p t))
+ (cl-weave:signals
+  simple-error
+  (ntop.process.presentation::make-process-table-config :memory-mode :invalid))
+ (cl-weave:signals
+  simple-error
+  (ntop.process.presentation::make-process-table-config :column-ids 42))
+ (cl-weave:signals
+  simple-error
+  (ntop.process.presentation::make-process-table-config
+   :column-ids '(:cpu :unsupported)))))

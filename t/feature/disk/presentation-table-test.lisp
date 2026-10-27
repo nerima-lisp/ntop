@@ -238,5 +238,27 @@
                                    nil))
                         columns)
                        :to-equal
-                       (make-list (length columns) :initial-element "N/A")))))
+                       (make-list (length columns) :initial-element "N/A"))))
+                   (cl-weave:it
+ "keeps zero-valued counters while marking absent disk fields as N/A"
+ (let* ((row
+         '(:disk nil :mount nil :used 0 :free nil :total 0
+           :used-percent 0 :free-percent nil :read-rate 0 :write-rate nil))
+        (columns ntop.disk.presentation:*disk-table-columns-with-free-percent*)
+        (values
+         (mapcar
+          (lambda (column)
+            (funcall (ntop.ui:table-column-value-function column) row))
+          columns)))
+   (cl-weave:expect (subseq values 0 2) :to-equal '("N/A" "N/A"))
+   (cl-weave:expect (nth 3 values) :to-equal "N/A")
+   (cl-weave:expect (nth 6 values) :to-equal "N/A")
+   (cl-weave:expect
+    (list (nth 2 values) (nth 4 values) (nth 5 values) (nth 7 values))
+    :to-equal
+    (list (ntop.ui:format-disk-capacity 0)
+          (ntop.ui:format-disk-capacity 0)
+          (ntop.ui:format-percent-value 0)
+          (ntop.ui:format-disk-io-rate 0)))
+   (cl-weave:expect (nth 8 values) :to-equal "N/A"))))
 

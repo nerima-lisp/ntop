@@ -145,6 +145,24 @@
                            "Error code ~D - the target process did not exist.")
               missing-pid sb-posix:esrch))))
   (cl-weave:it
+    "maps signal errno codes to actionable messages"
+    (cl-weave:expect
+     (ntop.process.infrastructure::%process-signal-error-message sb-posix:esrch)
+     :to-equal
+     "the target process did not exist.")
+    (cl-weave:expect
+     (ntop.process.infrastructure::%process-signal-error-message sb-posix:eperm)
+     :to-equal
+     "the calling process does not have the permissions to terminate the target process(es).")
+    (cl-weave:expect
+     (ntop.process.infrastructure::%process-signal-error-message sb-posix:einval)
+     :to-equal
+     "an invalid signal was specified.")
+    (cl-weave:expect
+     (ntop.process.infrastructure::%process-signal-error-message 12345)
+     :to-equal
+     "Unknown error occurred."))
+  (cl-weave:it
     "covers numeric and optional-value fallback inputs"
     (cl-weave:expect
      (ntop.process.infrastructure::%linux-process-status-uid '(("Uid" . 1000)))
@@ -273,4 +291,89 @@
         '(:starttime :invalid)
         1700000000
         100)
-       :to-be-null))))
+       :to-be-null)))
+  (cl-weave:it
+ "validates paired sample trace environment settings"
+ (let* ((config (ntop.shared.application:make-application-config))
+        (path-name "NTOP_D1_SAMPLE_TRACE_PATH")
+        (pid-name "NTOP_D1_SAMPLE_TRACE_PID")
+        (old-path (sb-ext:posix-getenv path-name))
+        (old-pid (sb-ext:posix-getenv pid-name)))
+   (unwind-protect
+       (progn
+         (sb-posix:setenv path-name "/tmp/process-samples.tsv" 1)
+         (sb-posix:setenv pid-name "4242" 1)
+         (let ((collector
+                 (ntop.process.infrastructure::make-process-collector nil config)))
+           (cl-weave:expect
+            (ntop.process.infrastructure::%process-collector-sample-trace-path
+             collector)
+            :to-equal
+            "/tmp/process-samples.tsv")
+           (cl-weave:expect
+            (ntop.process.infrastructure::%process-collector-sample-trace-pid
+             collector)
+            :to-be
+            4242))
+         (sb-posix:unsetenv pid-name)
+         (cl-weave:expect
+          (lambda ()
+            (ntop.process.infrastructure::make-process-collector nil config))
+          :to-throw
+          'error)
+         (sb-posix:setenv pid-name "0" 1)
+         (cl-weave:expect
+          (lambda ()
+            (ntop.process.infrastructure::make-process-collector nil config))
+          :to-throw
+          'error))
+     (if old-path
+         (sb-posix:setenv path-name old-path 1)
+         (sb-posix:unsetenv path-name))
+     (if old-pid
+         (sb-posix:setenv pid-name old-pid 1)
+         (sb-posix:unsetenv pid-name)))))
+  (cl-weave:it
+ "indexes non-nil PIDs first and writes missing trace counters through the collector"
+ (host-kit:call-with-temporary-directory
+  (lambda (directory)
+   (let* ((trace-path (merge-pathnames "process-samples.tsv" directory))
+          (nil-pid-record
+           (ntop.process.domain:make-process-record :pid nil))
+          (first-record (ntop.process.domain:make-process-record :pid 4242))
+          (duplicate-record (ntop.process.domain:make-process-record :pid 4242))
+          (processes (list nil-pid-record first-record duplicate-record))
+          (collector
+           (make-instance
+            'ntop.process.infrastructure::process-collector
+            :clock
+            (make-instance '%f8a-process-test-clock :outcome '(:time 42d0))
+            :config (ntop.shared.application:make-application-config)
+            :sample-trace-path trace-path
+            :sample-trace-pid 4242))
+          (sample :unset)
+          (reason :unset))
+     (cl-weave:with-mocked-functions
+      (((symbol-function 'ntop.process.infrastructure::read-process-data)
+        (lambda (ignored on-value on-unavailable)
+          (declare (ignore ignored on-unavailable))
+          (funcall on-value processes nil))))
+      (ntop.shared.application:collect-process-sample
+       collector (lambda (value) (setf sample value))
+       (lambda (value) (setf reason value))))
+     (let ((pid-index
+             (ntop.process.domain::process-sample-pid-index sample)))
+       (cl-weave:expect sample :to-be-truthy)
+       (cl-weave:expect reason :to-be :unset)
+       (multiple-value-bind (value present-p) (gethash nil pid-index)
+         (declare (ignore value))
+         (cl-weave:expect present-p :to-be-null))
+       (cl-weave:expect (eq (gethash 4242 pid-index) first-record)
+                        :to-be t))
+     (cl-weave:expect
+      (with-open-file (stream trace-path :direction :input)
+        (read-line stream nil))
+      :to-equal
+      (format nil "~D~C~D~C~A~C~A"
+              42000000000 (code-char 9) 4242 (code-char 9)
+              "N/A" (code-char 9) "N/A")))))))

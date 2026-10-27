@@ -168,6 +168,29 @@
            (ntop.platform.darwin::decode-darwin-rusage-info octets)))
      :to-throw 'error)))
  #+darwin
+(cl-weave:it
+ "skips an unreadable process record while returning readable rows"
+ (let ((rows :unset)
+       (reason :unset))
+   (cl-weave:with-mocked-functions
+     (((symbol-function 'ntop.platform.darwin::%darwin-list-pids)
+       (lambda () (values '(17 18) nil)))
+      ((symbol-function 'ntop.platform.darwin::mach-timebase-info)
+       (lambda (on-value on-error)
+         (declare (ignore on-error))
+         (funcall on-value 1 1)))
+      ((symbol-function 'ntop.platform.darwin::%darwin-process-row)
+       (lambda (pid real-uid include-threads-p numerator denominator)
+         (declare (ignore real-uid include-threads-p numerator denominator))
+         (if (= pid 17)
+             (error "mock process row failure")
+             (list :pid pid)))))
+     (ntop.platform.darwin:read-darwin-process-rows
+      (lambda (value) (setf rows value))
+      (lambda (value) (setf reason value))))
+   (cl-weave:expect rows :to-equal '((:pid 18)))
+   (cl-weave:expect reason :to-be :unset)))
+ #+darwin
  (cl-weave:it
   "bounds native process buffers and catches decoder failures"
   (let ((count 4)
