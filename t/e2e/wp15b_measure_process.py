@@ -5,8 +5,10 @@ import re
 import shutil
 import statistics
 import subprocess
+import sys
 import time
 from pathlib import Path
+from runpy import run_path
 
 from wp15b_measure_support import PtySession
 ROWS, COLUMNS, RATE_MS = 48, 160, 700
@@ -67,6 +69,17 @@ def system_load():
     values = re.findall(r"(?:\d+\.\d+|\d+|\.\d+)", raw)
     if len(values) != 3: raise RuntimeError(f"Expected three load averages, got: {raw!r}")
     return {"values": [float(value) for value in values], "raw": raw}
+
+
+def n3_source_registry(root):
+    scripts_path = str(root / "scripts")
+    sys.path.insert(0, scripts_path)
+    try:
+        return run_path(
+            str(root / "scripts" / "darwin-workflow.py")
+        )["resolve_source_registry"]()
+    finally:
+        sys.path.remove(scripts_path)
 
 def btm_config(path):
     rows = ("[flags]", "basic = false", "dot_marker = false", f"rate = {RATE_MS}",
@@ -297,115 +310,169 @@ def run_n2(ntop, raw_dir):
         session.close()
 
 def run_n3(ntop, raw_dir, btm=None):
-    runs = []
-    output = raw_dir / "n3.json"
-    command = [ntop, "--version"]
-    paired_fallback = btm is not None
-    write_json(output, {
-        "measurement": "N3",
-        "status": "running",
-        "command": command,
-        "fallback_mode": "paired_high_load" if paired_fallback else "load_gated",
-        "runs": runs,
-    })
-    for pair in range(1, 4):
-        targets = ("btm", "ntop") if paired_fallback else ("ntop",)
-        for target in targets:
-            executable_path = btm if target == "btm" else ntop
-            run_command = [executable_path, "--version"]
-            stem = (
-                f"n3-{target}-run-{pair:02d}"
-                if paired_fallback else f"n3-run-{pair:02d}"
-            )
-            out, err = (
-                raw_dir / f"{stem}.{ext}" for ext in ("stdout", "stderr")
-            )
-            load_before = system_load()
-            started = time.perf_counter()
-            completed = subprocess.run(
-                run_command, capture_output=True, timeout=10)
-            elapsed = time.perf_counter() - started
-            load_after = system_load()
-            out.write_bytes(completed.stdout)
-            err.write_bytes(completed.stderr)
-            run = {
-                "pair": pair,
-                "target": target,
-                "command": run_command,
-                "wall_seconds": elapsed,
-                "within_100ms": elapsed <= .1,
-                "exit_code": completed.returncode,
-                "load_before": load_before,
-                "load_after": load_after,
-                "load_eligible": (
-                    load_before["values"][0] < 40
-                    and load_after["values"][0] < 40
-                ),
-                "stdout": out.name,
-                "stderr": err.name,
-            }
-            runs.append(run)
-            write_json(output, {
-                "measurement": "N3",
-                "status": "running",
-                "command": command,
-                "fallback_mode": (
-                    "paired_high_load" if paired_fallback else "load_gated"
-                ),
-                "runs": runs,
-            })
-            if completed.returncode:
-                raise RuntimeError(
-                    f"{target} --version exited with {completed.returncode}"
-                )
-    ntop_runs = [run for run in runs if run["target"] == "ntop"]
-    btm_runs = [run for run in runs if run["target"] == "btm"]
-    eligible_runs = [run for run in ntop_runs if run["load_eligible"]]
-    evaluation_runs = ntop_runs if paired_fallback else eligible_runs
-    passed = (
-        len(evaluation_runs) == 3
-        and all(run["within_100ms"] for run in evaluation_runs)
-    )
-    if paired_fallback:
-        status = "pass" if passed else "incomplete"
+    run_count, load_limit, time_limit = 3, 16, .1
+    output, runs = raw_dir / "n3.json", []
+    root = Path(__file__).resolve().parents[2]
+    builder = root / "scripts" / "build-n3-profile.lisp"
+    sbcl = executable(os.environ.get("NTOP_N3_SBCL", "sbcl"))
+    sbcl_version = command_output([sbcl, "--version"]).strip()
+    override = os.environ.get("NTOP_N3_PROFILE")
+    build_failed = False
+    if override:
+        profile = Path(executable(override))
+        environment, source_count = os.environ.copy(), None
+        source_registry_status = "not applicable; reused saved executable"
+        build_info = {"status": "reused", "profile_source": "NTOP_N3_PROFILE"}
     else:
-        status = (
-            "pass" if passed
-            else "incomplete" if len(eligible_runs) < 3
-            else "fail"
-        )
+        profile = raw_dir / "ntop-n3-profile"
+        environment, source_count = n3_source_registry(root)
+        source_registry_status = "resolved pinned ASDF inputs"
+        build_command = [sbcl, "--script", str(builder), str(profile)]
+        build = subprocess.run(build_command, capture_output=True, timeout=300,
+                               cwd=root, env=environment)
+        (raw_dir / "n3-profile-build.stdout").write_bytes(build.stdout)
+        (raw_dir / "n3-profile-build.stderr").write_bytes(build.stderr)
+        build_info = {"status": "built", "profile_source": "workspace ASDF system",
+                      "command": build_command, "exit_code": build.returncode,
+                      "stdout": "n3-profile-build.stdout",
+                      "stderr": "n3-profile-build.stderr"}
+        build_failed = (build.returncode != 0 or not profile.is_file()
+                        or not os.access(profile, os.X_OK))
+    command = [str(profile), "--version"]
     result = {
-        "measurement": "N3",
-        "status": status,
+        "measurement": "N3", "status": "running", "profile": str(profile),
+        "profile_builder": str(builder),
+        "sbcl": {"executable": sbcl, "version": sbcl_version},
+        "asdf_source_registry_status": source_registry_status,
+        "asdf_source_registry_count": source_count, "build": build_info,
         "command": command,
-        "fallback_mode": (
-            "paired_high_load" if paired_fallback else "load_gated"
-        ),
+        "settings": {"required_runs": run_count, "time_limit_seconds": time_limit,
+                     "load_limit_one_minute": load_limit, "load_comparison": "<="},
         "runs": runs,
-        "median_wall_seconds": (
-            statistics.median(run["wall_seconds"] for run in evaluation_runs)
-            if evaluation_runs else None
-        ),
-        "acceptance": {
-            "status": status,
-            "policy": (
-                "ntop_absolute_threshold_with_paired_btm_context"
-                if paired_fallback else "low_load_ntop_runs"
-            ),
-            "limit_seconds": .1,
-            "required_ntop_runs": 3,
-            "evaluated_ntop_runs": len(evaluation_runs),
-            "low_load_eligible_ntop_runs": len(eligible_runs),
-            "excluded_ntop_runs": [
-                run["pair"] for run in ntop_runs if not run["load_eligible"]
-            ],
-            "paired_btm_runs": len(btm_runs),
-            "passed": passed,
-        },
-        "decomposition": {
-            "status": "not_measured",
-            "reason": "--version exposes no hooks to split core load and initialization.",
-        },
     }
     write_json(output, result)
+    if build_failed:
+        result.update({"status": "error",
+                       "build_error": "Profile build failed or did not produce an executable."})
+        write_json(output, result)
+        raise RuntimeError(result["build_error"])
+
+    for pair in range(1, run_count + 1):
+        run_command = [str(profile), "--version"]
+        stem = f"n3-run-{pair:02d}"
+        out, err = (raw_dir / f"{stem}.{ext}" for ext in ("stdout", "stderr"))
+        load_before, before_error = n3_sample_load()
+        launch_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+        exit_code, stdout, stderr, run_error = None, b"", b"", None
+        try:
+            completed = subprocess.run(run_command, capture_output=True, timeout=10,
+                                       cwd=root, env=environment)
+            exit_code, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
+        except subprocess.TimeoutExpired as exc:
+            stdout, stderr, run_error = exc.stdout or b"", exc.stderr or b"", "TimeoutExpired"
+        except OSError as exc:
+            run_error = f"{type(exc).__name__}: {exc}"
+        total = (time.clock_gettime_ns(time.CLOCK_MONOTONIC) - launch_ns) / 1_000_000_000
+        load_after, after_error = n3_sample_load()
+        stdout = stdout.encode() if isinstance(stdout, str) else stdout
+        stderr = stderr.encode() if isinstance(stderr, str) else stderr
+        out.write_bytes(stdout); err.write_bytes(stderr)
+        timing = n3_timing_decomposition(launch_ns, stderr, total)
+        validity = n3_load_eligibility(load_before, load_after, load_limit)
+        runs.append({
+            "pair": pair, "command": run_command, "total_elapsed_seconds": total,
+            "exit_code": exit_code, "error": run_error,
+            "load_before": load_before, "load_before_error": before_error,
+            "load_after": load_after, "load_after_error": after_error,
+            "load_eligibility": validity, "load_eligible": validity["eligible"],
+            "timing_decomposition": timing, "stdout": out.name, "stderr": err.name,
+        })
+        result["status"] = n3_evaluate_runs(runs, run_count, time_limit)["status"]
+        write_json(output, result)
+
+    evaluation = n3_evaluate_runs(runs, run_count, time_limit)
+    result.update({
+        "status": evaluation["status"],
+        "median_wall_seconds": statistics.median(
+            run["total_elapsed_seconds"] for run in runs),
+        "acceptance": evaluation["acceptance"],
+        "decomposition": {
+            "status": "complete" if all(
+                run["timing_decomposition"]["status"] == "complete" for run in runs
+            ) else "incomplete",
+            "start_phase": "process launch to SBCL init-hook marker",
+            "post_init_phase": "SBCL init-hook marker to exit-hook marker",
+            "phase_clock": "CLOCK_MONOTONIC nanoseconds recorded in child markers",
+            "total_clock": "time.clock_gettime_ns(CLOCK_MONOTONIC) in parent",
+            "clock_note": "Parent launch timestamp is taken immediately before subprocess.run.",
+        },
+    })
+    write_json(output, result)
     return result
+
+
+def n3_sample_load():
+    try:
+        return system_load(), None
+    except (OSError, RuntimeError, TimeoutError, ValueError, subprocess.SubprocessError) as exc:
+        return {"values": [], "raw": ""}, f"{type(exc).__name__}: {exc}"
+
+
+def n3_timing_decomposition(launch_ns, stderr, total_elapsed_seconds):
+    text = stderr.decode(errors="replace") if isinstance(stderr, bytes) else stderr
+    pattern = re.compile(r"^N3_PROFILE_MARKER kind=(init|exit) clock=monotonic_ns value=(\d+)$")
+    markers, evidence, errors = {}, [], []
+    for line in text.splitlines():
+        match = pattern.fullmatch(line)
+        if match:
+            kind, value = match.group(1), int(match.group(2))
+            evidence.append({"kind": kind, "raw": line})
+            if kind in markers: errors.append(f"duplicate {kind} marker")
+            markers[kind] = value
+    init_ns, exit_ns = markers.get("init"), markers.get("exit")
+    start = (init_ns - launch_ns) / 1e9 if init_ns is not None else None
+    post = (exit_ns - init_ns) / 1e9 if init_ns is not None and exit_ns is not None else None
+    marker_elapsed = (exit_ns - launch_ns) / 1e9 if exit_ns is not None else None
+    if start is not None and start < 0: errors.append("init marker precedes launch timestamp")
+    if post is not None and post < 0: errors.append("exit marker precedes init marker")
+    complete = init_ns is not None and exit_ns is not None and not errors
+    return {
+        "status": "complete" if complete else "incomplete",
+        "process_start_to_init_hook_seconds": start,
+        "post_init_hook_to_exit_hook_seconds": post,
+        "marker_elapsed_seconds": marker_elapsed,
+        "total_elapsed_seconds": total_elapsed_seconds,
+        "marker_clock": "CLOCK_MONOTONIC",
+        "parent_launch_monotonic_ns": launch_ns,
+        "init_monotonic_ns": init_ns, "exit_monotonic_ns": exit_ns,
+        "raw_marker_evidence": evidence, "errors": errors,
+    }
+
+
+def n3_load_eligibility(load_before, load_after, limit=16):
+    before = load_before.get("values", [])
+    after = load_after.get("values", [])
+    start, end = before[0] if before else None, after[0] if after else None
+    return {"limit_one_minute": limit, "comparison": "<=",
+            "start_one_minute": start, "end_one_minute": end,
+            "eligible": start is not None and end is not None
+            and start <= limit and end <= limit}
+
+
+def n3_evaluate_runs(runs, required_runs=3, time_limit=.1):
+    eligible = sum(run.get("load_eligible", False) for run in runs)
+    complete = len(runs) == required_runs and all(
+        run.get("exit_code") == 0 and run.get("error") is None
+        and run.get("timing_decomposition", {}).get("status") == "complete"
+        for run in runs)
+    if len(runs) != required_runs or eligible != required_runs or not complete:
+        status = "incomplete"
+    else:
+        status = ("pass" if all(
+            run["total_elapsed_seconds"] <= time_limit for run in runs) else "fail")
+    return {"status": status, "acceptance": {
+        "status": status, "policy": "three unfiltered runs; before/after load <= 16",
+        "limit_seconds": time_limit, "required_runs": required_runs,
+        "recorded_runs": len(runs), "low_load_eligible_runs": eligible,
+        "excluded_runs": [], "passed": status == "pass",
+    }}
