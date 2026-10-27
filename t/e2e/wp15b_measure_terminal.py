@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import signal
-import statistics
 
 from wp15b_measure_process import (
     COLUMNS,
@@ -12,7 +11,13 @@ from wp15b_measure_process import (
     terminal_command,
     write_json,
 )
-from wp15b_measure_support import QUIET_SECONDS, TerminalGrid, interaction_result
+from wp15b_measure_support import TerminalGrid, interaction_result
+from wp15b_terminal_acceptance import (
+    finalize_terminal_measurement,
+    load_is_eligible,
+    load_policy,
+    reject_high_start_load,
+)
 def terminal_interaction_sample(session, raw_dir, name, number, measurement, screen):
     if measurement == "n4":
         return interaction_result(
@@ -30,7 +35,9 @@ def terminal_interaction_sample(session, raw_dir, name, number, measurement, scr
 
 def run_terminal_interactions(ntop, raw_dir, measurement, btm=None):
     name = measurement.lower()
-    paired_fallback = btm is not None
+    paired_fallback = btm is not None and measurement != "n5"
+    load_limit_1min, load_limit_comparison = load_policy(measurement)
+
     argv = terminal_command("ntop", ntop, None, raw_dir)
     session = None
     initial_valid = None
@@ -80,7 +87,8 @@ def run_terminal_interactions(ntop, raw_dir, measurement, btm=None):
             "rate_ms": RATE_MS,
             "samples_requested": 20,
             "minimum_observation_window_seconds": 5 * RATE_MS / 1000,
-            "load_limit_1min": 40,
+            "load_limit_1min": load_limit_1min,
+            "load_limit_comparison": load_limit_comparison,
             "paired_initial_size_policy": (
                 "N5 odd samples start at 48x160 and resize to 49x161; "
                 "even samples start at 49x161 and resize to 48x160"
@@ -142,8 +150,12 @@ def run_terminal_interactions(ntop, raw_dir, measurement, btm=None):
                 "load_before": sample_load_before,
                 "load_after": sample_load_after,
                 "load_eligible": (
-                    sample_load_before["values"][0] < 40
-                    and sample_load_after["values"][0] < 40
+                    load_is_eligible(
+                        measurement, sample_load_before["values"][0],
+                        load_limit_1min)
+                    and load_is_eligible(
+                        measurement, sample_load_after["values"][0],
+                        load_limit_1min)
                 ),
                 "pair_order": list(order),
                 "initial_rows": initial_rows,
@@ -262,6 +274,12 @@ def run_terminal_interactions(ntop, raw_dir, measurement, btm=None):
     try:
         result["uptime_before"] = command_output(["uptime"])
         result["load_before"] = system_load()
+        if reject_high_start_load(
+            result, measurement, result["load_before"]["values"][0],
+            load_limit_1min, load_limit_comparison
+        ):
+            write_json(output, result)
+            return result
         if paired_fallback:
             for number in range(1, 21):
                 order = (
@@ -294,8 +312,12 @@ def run_terminal_interactions(ntop, raw_dir, measurement, btm=None):
                     "load_before": sample_load_before,
                     "load_after": sample_load_after,
                     "load_eligible": (
-                        sample_load_before["values"][0] < 40
-                        and sample_load_after["values"][0] < 40
+                        load_is_eligible(
+                            measurement, sample_load_before["values"][0],
+                            load_limit_1min)
+                        and load_is_eligible(
+                            measurement, sample_load_after["values"][0],
+                            load_limit_1min)
                     ),
                     "initial_grid_parse_valid": initial_valid,
                     "raw_initial_output": f"{name}-initial.ansi",
@@ -305,148 +327,15 @@ def run_terminal_interactions(ntop, raw_dir, measurement, btm=None):
                 write_json(output, result)
         result["uptime_after"] = command_output(["uptime"])
         result["load_after"] = system_load()
-        eligible_samples = [
-            sample for sample in result["samples"] if sample["load_eligible"]
-        ]
-        high_load_samples = [
-            sample for sample in result["samples"] if not sample["load_eligible"]
-        ]
-        evaluation_samples = (
-            result["samples"] if paired_fallback else eligible_samples
+        finalize_terminal_measurement(
+            result,
+            measurement,
+            paired_fallback,
+            btm_context,
+            pair_orders,
+            load_limit_1min,
+            load_limit_comparison,
         )
-        last_bytes = [
-            sample["last_byte_latency_seconds"] for sample in evaluation_samples
-            if sample["last_byte_latency_seconds"] is not None
-        ]
-        quiet = [
-            sample["quiet_complete_latency_seconds"]
-            for sample in evaluation_samples if sample["response_observed"]
-        ]
-        metric = (
-            "visible_change_latency_seconds"
-            if measurement == "n4"
-            else "redraw_completion_latency_seconds"
-        )
-        latencies = [
-            sample[metric] for sample in evaluation_samples
-            if sample.get(metric) is not None
-        ]
-        initial_valid = (
-            len(evaluation_samples) == 20
-            and all(sample["initial_grid_parse_valid"]
-                    for sample in evaluation_samples)
-        )
-        if measurement == "n4":
-            verified = (
-                initial_valid and len(evaluation_samples) == 20 and all(
-                    sample["visible_change_verified"]
-                    for sample in evaluation_samples)
-            )
-        else:
-            verified = (
-                initial_valid and len(evaluation_samples) == 20 and all(
-                    sample["redraw_completed"]
-                    for sample in evaluation_samples)
-            )
-        median = statistics.median(latencies) if latencies else None
-        limit = .05 if measurement == "n4" else .1
-        run_load_values = [
-            result["load_before"]["values"][0],
-            result["load_after"]["values"][0],
-        ]
-        reasons = []
-        if not initial_valid:
-            reasons.append("initial terminal grid ANSI parse was invalid")
-        if not paired_fallback and len(eligible_samples) != 20:
-            reasons.append(
-                f"only {len(eligible_samples)} of 20 samples had both "
-                "boundary loads below 40")
-        if paired_fallback and len(btm_context["samples"]) != 20:
-            reasons.append(
-                "paired btm context was collected for only "
-                f"{len(btm_context['samples'])} of 20 samples")
-        if not verified:
-            if measurement == "n5":
-                incomplete_samples = [
-                    sample["sample"] for sample in evaluation_samples
-                    if not sample["redraw_completed"]
-                ]
-                if incomplete_samples:
-                    reasons.append(
-                        "requested-size full repaint was not proven for samples "
-                        + ", ".join(map(str, incomplete_samples)))
-            else:
-                incomplete_samples = [
-                    sample["sample"] for sample in evaluation_samples
-                    if not sample["visible_change_verified"]
-                ]
-                if incomplete_samples:
-                    reasons.append(
-                        "expected layout change was not visible for samples "
-                        + ", ".join(map(str, incomplete_samples)))
-        if len(latencies) != 20:
-            reasons.append(
-                f"only {len(latencies)} of 20 evaluated latency samples were verified")
-        if len(quiet) != 20:
-            reasons.append(
-                f"quiet output was observed for only {len(quiet)} of 20 evaluated samples")
-        passed = (
-            len(evaluation_samples) == 20 and len(latencies) == 20
-            and len(quiet) == 20 and verified and median is not None
-            and median <= limit
-        )
-        incomplete = (
-            len(evaluation_samples) != 20 or len(latencies) != 20
-            or len(quiet) != 20 or not verified
-            or (paired_fallback and len(btm_context["samples"]) != 20)
-        )
-        if paired_fallback:
-            status = "pass" if passed else "incomplete"
-        else:
-            status = "pass" if passed else "incomplete" if incomplete else "fail"
-        if not passed and median is not None and median > limit:
-            reasons.append(f"median latency {median:.6f}s exceeded {limit:.3f}s")
-        result["acceptance"] = {
-            "status": status,
-            "passed": passed,
-            "policy": (
-                "ntop_absolute_threshold_with_paired_btm_context"
-                if paired_fallback else "low_load_ntop_samples"
-            ),
-            "latency_metric": metric,
-            "median_latency_seconds": median,
-            "latency_samples": len(latencies),
-            "median_limit_seconds": limit,
-            "quiet_stability_gate_seconds": QUIET_SECONDS,
-            "quiet_complete_samples": len(quiet),
-            "visual_verification_complete": verified,
-            "visual_verification_reason": reasons[0] if reasons else None,
-            "reasons": reasons,
-            "run_boundary_load_values": run_load_values,
-            "evaluated_samples": len(evaluation_samples),
-            "low_load_eligible_samples": len(eligible_samples),
-            "high_load_ntop_samples": [
-                sample["sample"] for sample in high_load_samples
-            ],
-            "btm_context_samples": len(btm_context["samples"]),
-            "load_gate_applied": not paired_fallback,
-            "low_load_gate_passed": len(eligible_samples) == 20,
-            "load_limit_1min": 40,
-        }
-        result.update({
-            "status": status,
-            "response_samples_with_output": len(last_bytes),
-            "median_last_byte_latency_seconds": (
-                statistics.median(last_bytes) if last_bytes else None),
-            "median_quiet_complete_latency_seconds": (
-                statistics.median(quiet) if quiet else None),
-            "median_verified_latency_seconds": median,
-            "raw_initial_output": (
-                [sample["raw_initial_output"] for sample in result["samples"]]
-                if paired_fallback else f"{name}-initial.ansi"
-            ),
-            "pair_orders": pair_orders if paired_fallback else None,
-        })
         write_json(output, result)
         return result
     except BaseException as exc:
