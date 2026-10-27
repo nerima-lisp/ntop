@@ -263,6 +263,12 @@ class D1DisplayTests(unittest.TestCase):
             def poll(self):
                 return None
 
+        monotonic_ns_calls = []
+
+        def monotonic_ns():
+            monotonic_ns_calls.append(True)
+            return 1_234_567_890
+
         child = Child()
 
         def fake_select(readers, _writers, _errors, timeout):
@@ -280,7 +286,7 @@ class D1DisplayTests(unittest.TestCase):
             (raw_dir / "writer.data").write_bytes(b"x" * 100_000)
             fake_time = SimpleNamespace(
                 monotonic=lambda: clock[0],
-                monotonic_ns=lambda: 1_234_567_890,
+                monotonic_ns=monotonic_ns,
             )
             with (
                 patch.object(display, "SAMPLE_LIMIT", 1),
@@ -290,8 +296,11 @@ class D1DisplayTests(unittest.TestCase):
                 patch.object(
                     display,
                     "displayed_btm_writer_rate",
-                    return_value=(950_000, None, {"process_header": "PID W/s"}),
-                ),
+                    side_effect=[
+                        (None, "process-table-header-missing", {}),
+                        (950_000, None, {"process_header": "PID W/s"}),
+                    ],
+                ) as rate_reader,
                 patch.object(display, "load_average", return_value=[1.0, 1.0, 1.0]),
                 patch.object(display.select, "select", side_effect=fake_select),
                 patch.object(display.os, "read", return_value=b"screen"),
@@ -303,6 +312,8 @@ class D1DisplayTests(unittest.TestCase):
         self.assertEqual(child.sent, [b"/pid 222\r"])
         self.assertEqual(len(samples), 1)
         self.assertEqual(len(observations), 1)
+        self.assertEqual(rate_reader.call_count, 2)
+        self.assertEqual(monotonic_ns_calls, [True])
 
     def test_btm_collector_parses_write_rate_from_ungrouped_pid_row(self):
         lines = process_table(

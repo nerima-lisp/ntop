@@ -378,6 +378,7 @@ def collect_btm_samples(btm_child, writer, raw_dir, started):
     last_output = None
     last_sample_at = None
     pid_filter_sent = False
+    measurement_started = False
     deadline = started + MAX_SECONDS
     writer_data_path = raw_dir / "writer.data"
     last_writer_observation_at = time.monotonic()
@@ -431,7 +432,6 @@ def collect_btm_samples(btm_child, writer, raw_dir, started):
             last_sample_at = now
             observation_index = len(observations) + 1
             load_before = load_average()
-            sampled_at_monotonic_ns = time.monotonic_ns()
             writer_data_bytes = writer_data_path.stat().st_size
             writer_interval_bytes = writer_data_bytes - last_writer_bytes
             writer_interval_seconds = now - last_writer_observation_at
@@ -448,23 +448,14 @@ def collect_btm_samples(btm_child, writer, raw_dir, started):
                 "writer_interval_bytes_per_second": writer_interval_rate,
             }
             grid = TerminalGrid(ROWS, COLUMNS)
-            if not grid.feed(bytes(transcript)):
-                load_after = load_average()
-                observations.append({
-                    "observation_index": observation_index,
-                    "elapsed_seconds": now - started,
-                    "sampled_at_monotonic_ns": sampled_at_monotonic_ns,
-                    "valid": False,
-                    "reason": "ansi-grid-invalid",
-                    "writer_pid": writer.pid,
-                    "writer_row": None,
-                    "w_s_text": None,
-                    "w_s_bytes_per_second": None,
-                    **writer_evidence,
-                    **load_evidence(load_before, load_after),
-                })
+            if grid.feed(bytes(transcript)):
+                rate, reason, detail = displayed_btm_writer_rate(grid, writer.pid)
+            else:
+                rate, reason, detail = None, "ansi-grid-invalid", {}
+            if rate is None and not measurement_started:
                 continue
-            rate, reason, detail = displayed_btm_writer_rate(grid, writer.pid)
+            measurement_started = True
+            sampled_at_monotonic_ns = time.monotonic_ns()
             load_after = load_average()
             observation = {
                 "observation_index": observation_index,
