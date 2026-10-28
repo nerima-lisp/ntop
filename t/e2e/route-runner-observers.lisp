@@ -22,9 +22,11 @@
             (setup-state (getf subcase :fixture-setup-help-state)))
        (and target setup-state
             (not (eql setup-state target))
-            (eql (%route-observer-help-content-section-number initial)
+            (eql (%route-observer-help-content-section-number
+                  initial
+                  (if (integerp setup-state) setup-state target))
                  (if (eq setup-state :chooser) nil setup-state))
-            (eql (%route-observer-help-content-section-number grid)
+            (eql (%route-observer-help-content-section-number grid target)
                  target))))
     (:graph-window-transition
      (%route-graph-window-transition-p subcase initial grid))

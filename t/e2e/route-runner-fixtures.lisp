@@ -111,11 +111,11 @@
                                         (and expected-section
                                              (not (eql
                                                    (%route-observer-help-content-section-number
-                                                    before-grid)
+                                                    before-grid expected-section)
                                                    expected-section))
                                              (eql
                                               (%route-observer-help-content-section-number
-                                               after-grid)
+                                               after-grid expected-section)
                                               expected-section))))))
                                  :allow-unchanged-p t)))))
              (process-rows ()

@@ -283,11 +283,11 @@
         (when sections
           (cons (apply (function min) sections)
                 (apply (function max) sections))))))
-  (defun %route-observer-help-content-section-number (grid)
+  (defun %route-observer-help-content-section-number (grid target)
     (when (and grid
                (not (search "Scroll to browse or press the number key"
                             (%route-grid-text grid))))
-      (nth-value 0 (%route-help-section-number grid))))
+      (nth-value 0 (%route-help-section-number grid target))))
   (defun %route-observer-help-navigation-p (route subcase before after)
     (let* ((action (route-action route))
            (old (%route-observer-help-section-range before))
@@ -302,9 +302,11 @@
                     (setup-state (getf subcase :fixture-setup-help-state)))
                (and target setup-state
                     (not (eql setup-state target))
-                    (eql (%route-observer-help-content-section-number before)
+                    (eql (%route-observer-help-content-section-number
+                          before
+                          (if (integerp setup-state) setup-state target))
                          (if (eq setup-state :chooser) nil setup-state))
-                    (eql (%route-observer-help-content-section-number after)
+                    (eql (%route-observer-help-content-section-number after target)
                          target))))
             ((string= action "Go to first row") (= (car new) 1))
             ((string= action "Go to last row") (= (cdr new) 9))

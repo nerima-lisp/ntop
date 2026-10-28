@@ -348,7 +348,7 @@
     (criterion-test-write grid 2 0 "0" "│1 - General")
     (criterion-test-write grid 3 0 "0" "│2 - CPU widget")
     (cl-weave:expect
-     (ntop.e2e::%route-observer-help-content-section-number grid)
+     (ntop.e2e::%route-observer-help-content-section-number grid 2)
      :to-equal
      nil)))
  (cl-weave:it
@@ -370,7 +370,43 @@
      (ntop.e2e::%route-observer-completion-p
       :help-content-section subcase chooser chooser)
      :to-be
-     nil))))
+     nil)))
+ (cl-weave:it
+  "recognizes the numeric setup section before selecting another section"
+  (let ((initial (ntop.e2e:make-terminal-grid :rows 4 :cols 80))
+        (content (ntop.e2e:make-terminal-grid :rows 4 :cols 80))
+        (subcase (list :input "1" :fixture-setup-help-state 2)))
+    (criterion-test-write initial 1 0 "0" "│2 - CPU widget")
+    (criterion-test-write content 1 0 "0" "│1 - General")
+    (cl-weave:expect
+     (ntop.e2e::%route-observer-help-content-section-number initial 2)
+     :to-equal
+     2)
+    (cl-weave:expect
+     (ntop.e2e::%route-observer-completion-p
+      :help-content-section subcase initial content)
+     :to-be
+     t)))
+ (cl-weave:it
+  "matches the requested section when section 6 appears first after movement"
+  (let ((chooser (ntop.e2e:make-terminal-grid :rows 4 :cols 80)))
+    (criterion-test-write chooser 1 0 "0"
+                          "│Scroll to browse or press the number key")
+    (criterion-test-write chooser 2 0 "0" "│1 - General")
+    (criterion-test-write chooser 3 0 "0" "│2 - CPU widget")
+    (dolist (target '(7 8 9))
+      (let ((content (ntop.e2e:make-terminal-grid :rows 4 :cols 80))
+            (subcase
+              (list :input (princ-to-string target)
+                    :fixture-setup-help-state :chooser)))
+        (criterion-test-write content 1 0 "0" "│6 - Temperature widget")
+        (criterion-test-write
+         content 2 0 "0" (format nil "│~d - Requested section" target))
+        (cl-weave:expect
+         (ntop.e2e::%route-observer-completion-p
+          :help-content-section subcase chooser content)
+         :to-be
+         t))))))
 (cl-weave:describe
  "graph wheel observer dispatch"
  (cl-weave:it
