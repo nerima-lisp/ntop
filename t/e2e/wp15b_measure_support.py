@@ -348,13 +348,22 @@ def redraw_completion(raw, chunks, rows, columns):
     return None, evidence
 
 LAYOUT_MARKERS = {
-    "default": {"row": 16, "text": "Network"},
-    "expanded": {"row": 0, "text": "Processes"},
+    "default": {"text": "Network"},
+    "expanded": {"text": "Processes"},
 }
 
+def layout_marker_row(screen, layout):
+    marker = LAYOUT_MARKERS[layout]["text"]
+    title_rows = [row for row, cells in enumerate(screen.cells)
+                  if cells[0] == "┌" and marker in "".join(cells)]
+    if len(title_rows) != 1: return None
+    row = title_rows[0]
+    if layout == "expanded" and any(
+            cells[0] == "┌" for cells in screen.cells[:row]): return None
+    return row
+
 def layout_marker_visible(screen, layout):
-    marker = LAYOUT_MARKERS[layout]
-    return marker["text"] in "".join(screen.cells[marker["row"]])
+    return layout_marker_row(screen, layout) is not None
 
 def infer_layout(screen):
     markers = {
@@ -448,9 +457,11 @@ def interaction_result(session, raw_dir, name, number, action, screen, target=No
             markers_before[current_layout] if current_layout is not None else False)
         expected_visible_before = (
             markers_before[expected_layout] if expected_layout is not None else None)
-        expected_visible_after = (
-            layout_marker_visible(screen, expected_layout)
+        expected_marker_row = (
+            layout_marker_row(screen, expected_layout)
             if expected_layout is not None else None)
+        expected_visible_after = (
+            expected_marker_row is not None if expected_layout is not None else None)
         visible = (
             current_visible_before and not expected_visible_before
             and expected_visible_after and parse_valid)
@@ -464,15 +475,17 @@ def interaction_result(session, raw_dir, name, number, action, screen, target=No
             "expected_layout": expected_layout,
             "layout_marker_evidence": {
                 "marker_visibility_before": markers_before,
+                "marker_rows_before": {
+                    layout: layout_marker_row(before_grid, layout)
+                    for layout in LAYOUT_MARKERS
+                },
                 "current_marker_visible_before": current_visible_before,
                 "expected_marker_visible_before": expected_visible_before,
                 "expected_marker_visible_after": expected_visible_after,
                 "expected_marker": (
                     LAYOUT_MARKERS[expected_layout]["text"]
                     if expected_layout is not None else None),
-                "expected_marker_row": (
-                    LAYOUT_MARKERS[expected_layout]["row"]
-                    if expected_layout is not None else None),
+                "expected_marker_row": expected_marker_row,
                 "reason": (
                     None if current_layout is not None
                     else "layout_markers_not_unique_before_action"),
