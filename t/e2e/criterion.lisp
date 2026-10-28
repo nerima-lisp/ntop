@@ -252,6 +252,24 @@
                     (loop for candidate-row from (1+ top) below bottom
                           when (header-row-p candidate-row left right)
                             return candidate-row))))))
+(defun criterion-column-header-row-p (grid row frames)
+  (let ((text (criterion-row-text grid row)))
+    (loop for (top bottom left right) in frames
+          thereis
+          (and (> row top)
+               (< row bottom)
+               (>=
+                (loop for open from (1+ left) below (- right 2)
+                      for before = (char text (1- open))
+                      for marker = (char text open)
+                      for identifier = (char text (1+ open))
+                      for close = (char text (+ open 2))
+                      count (and (or (alpha-char-p before)
+                                     (find before "%/"))
+                                 (char= marker #\()
+                                 (alpha-char-p identifier)
+                                 (char= close #\))))
+                2)))))
 (defun criterion-border-cell-p (grid row column character frames)
   (and (criterion-character-in-p
         character (first (criterion-rule-values :border-characters)))

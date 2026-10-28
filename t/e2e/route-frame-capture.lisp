@@ -314,12 +314,11 @@
                 grid
                 (lambda (value) value)
                 (lambda (condition) (error condition)))))
-
 (defun %route-grid-stable-signature (grid)
   (let* ((height (grid-height grid))
          (width (grid-width grid))
          (mask (make-array (list height width) :initial-element nil))
-         (frames (criterion-projection-frames grid)))
+         (frames (criterion-frame-spans grid)))
     (labels
         ((canonical-color (color)
    (case (car color)
@@ -328,29 +327,32 @@
      (:rgb (list :rgb (coerce (cdr color) 'list)))))
  ;; Stability tracks frame structure; route predicates inspect the unmasked grid.
  ;; Process body rows therefore stay out of the signature.
- (mask-process-rows (frame header-row)
-   (loop for row from (1+ header-row) below (second frame)
-         unless (criterion-frame-divider-row-p
-                 grid row (third frame) (fourth frame))
-           do (loop for column from (1+ (third frame)) below (fourth frame)
-                    do (setf (aref mask row column) t)))))
-      (dotimes (row height)
-        (let* ((text (criterion-row-text grid row))
-               (span (criterion-cpu-title-border-span text row frames)))
-          (when span
-            (loop for column from (car span) below (cdr span)
-                  for character =
-                  (cell-character (grid-cell-at grid row column))
-                  unless (criterion-border-cell-p
-                          grid row column character frames)
-                  do (setf (aref mask row column) t)))))
-      (dolist (frame frames)
-        (let ((header-row
-               (loop for row from (1+ (first frame)) below (second frame)
-                     when (criterion-process-header-row-p grid row (list frame))
-                       return row)))
-          (when header-row
-            (mask-process-rows frame header-row))))
+ (mask-panel-interiors (frames)
+  (let ((terminal-frame (list 0 (1- height) 0 (1- width)))
+        (structural (make-array (list height width) :initial-element nil)))
+    (dolist (frame frames)
+      (destructuring-bind (top bottom left right) frame
+        (loop for column from left to right
+              do (setf (aref structural top column) t
+                       (aref structural bottom column) t))
+        (loop for row from top to bottom
+              do (setf (aref structural row left) t
+                       (aref structural row right) t))
+        (loop for row from (1+ top) below bottom
+              when (or (criterion-frame-divider-row-p grid row left right)
+                       (criterion-process-header-row-p grid row (list frame))
+                       (criterion-column-header-row-p grid row (list frame)))
+                do (loop for column from (1+ left) below right
+                         do (setf (aref structural row column) t)))))
+    (dolist (frame frames)
+      (unless (equal frame terminal-frame)
+        (destructuring-bind (top bottom left right) frame
+          (loop for row from (1+ top) below bottom
+                do (loop for column from (1+ left) below right
+                         unless (aref structural row column)
+                           do (setf (aref mask row column) t))))))
+    mask)))
+      (mask-panel-interiors frames)
       (let ((canonical
              (loop for row below height
                    collect
@@ -365,7 +367,8 @@
                                  (cell-bold-p cell)))))))
         (values (list :rows height
                       :columns width
-                      :hash (sxhash canonical))
+                      :hash (sxhash canonical)
+                      :canonical canonical)
                 canonical)))))
 
 (defun %route-incomplete-escape-suffix-p (octets)
