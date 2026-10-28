@@ -166,14 +166,25 @@
             for candidate-path =
               (%condition-a-raw-path raw-directory ntop width height)
             for reference-grid =
-              (%condition-a-capture btm (list "-C" (namestring config-path))
-                                    height width timeout-seconds
-                                    environment reference-path)
+              (let ((*route-frame-capture-side* :reference))
+                (%condition-a-capture
+                   btm
+                   (list "-C" (namestring config-path))
+                   height
+                   width
+                   timeout-seconds
+                   environment
+                   reference-path))
             for candidate-grid =
-              (%condition-a-capture ntop (list "--rate"
-                                               (format nil "~dms" rate))
-                                    height width timeout-seconds
-                                    environment candidate-path)
+              (let ((*route-frame-capture-side* :candidate))
+                (%condition-a-capture
+                   ntop
+                   (list "--rate" (format nil "~dms" rate))
+                   height
+                   width
+                   timeout-seconds
+                   environment
+                   candidate-path))
             for difference-kinds =
               (condition-a-difference-kinds reference-grid candidate-grid)
             for first-difference =

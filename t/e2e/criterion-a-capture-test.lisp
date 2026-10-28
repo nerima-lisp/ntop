@@ -63,6 +63,8 @@
             :to-satisfy (function identity)))
       (when (probe-file raw-path)
         (delete-file raw-path))))))
+ (cl-weave:describe
+ "Condition A incomplete CSI frame"
  (cl-weave:it
   "keeps Condition A stable when output ends in an incomplete CSI"
   (let* ((tail
@@ -110,4 +112,85 @@
                1.5d0)
             :to-be t))
       (when (probe-file raw-path)
-        (delete-file raw-path)))))
+        (delete-file raw-path))))))
+ (cl-weave:describe
+ "Condition A capture side attribution"
+ (cl-weave:it
+  "records reference and candidate sides on capture timeouts"
+  (let* ((symbols
+           (list (find-symbol "%CONDITION-A-CAPTURE" "NTOP.E2E")
+                 (find-symbol "GOLDEN-DIMENSIONS" "NTOP.E2E")
+                 (find-symbol "%MAKE-E2E-TEMPORARY-DIRECTORY" "NTOP.E2E")))
+         (original-functions
+           (mapcar (lambda (symbol) (symbol-function symbol)) symbols)))
+    (dolist (timeout-side (list :reference :candidate))
+      (let* ((directory (funcall (third original-functions)))
+             (output
+               (merge-pathnames
+                (format nil "comparison-~(~a~).tsv" timeout-side)
+                directory))
+             (condition nil))
+        (unwind-protect
+             (progn
+               (setf (symbol-function (second symbols))
+                     (lambda () (list (list 40 12))))
+               (setf (symbol-function (third symbols))
+                     (lambda () directory))
+               (setf (symbol-function (first symbols))
+                     (lambda (program arguments rows columns timeout-seconds
+                              environment raw-path)
+                       (declare
+                        (ignore program arguments timeout-seconds environment
+                                raw-path))
+                       (if (eq ntop.e2e::*route-frame-capture-side*
+                               timeout-side)
+                           (let ((session
+                                   (ntop.e2e::launch-e2e-process
+                                    "python3"
+                                    (list "-c" "import time; time.sleep(30)")
+                                    rows columns :timeout-seconds 2d0)))
+                             (unwind-protect
+                                  (ntop.e2e::%route-capture-frame
+                                   session
+                                   (make-array
+                                    0 :element-type '(unsigned-byte 8))
+                                   rows columns
+                                   :stage :condition-a-side-attribution
+                                   :timeout-seconds 0.15d0
+                                   :stability-seconds 0.05d0)
+                               (ntop.e2e::close-e2e-session session)))
+                           (ntop.e2e:make-terminal-grid
+                            :rows rows :cols columns))))
+               (setf condition
+                     (handler-case
+                         (progn
+                           (ntop.e2e::run-condition-a-comparison
+                            :output output :rate 700 :timeout-seconds 2d0)
+                           nil)
+                       (ntop.e2e::route-frame-capture-timeout (caught)
+                         caught)))
+               (cl-weave:expect
+                (typep condition
+                       (find-symbol "ROUTE-FRAME-CAPTURE-TIMEOUT" "NTOP.E2E"))
+                :to-be t)
+               (cl-weave:expect
+                (typep condition (find-symbol "E2E-TIMEOUT" "NTOP.E2E"))
+                :to-be t)
+               (cl-weave:expect
+                (ntop.e2e::route-frame-timeout-side condition)
+                :to-equal timeout-side)
+               (cl-weave:expect
+                (ntop.e2e::route-frame-timeout-stage condition)
+                :to-equal :condition-a-side-attribution)
+               (cl-weave:expect
+                (> (ntop.e2e::route-frame-timeout-elapsed-seconds condition) 0)
+                :to-be t)
+               (let ((report (format nil "~a" condition)))
+                 (cl-weave:expect
+                  (search (string-downcase (symbol-name timeout-side))
+                          (string-downcase report))
+                  :to-satisfy (function identity))))
+          (loop for symbol in symbols
+                for original in original-functions
+                do (setf (symbol-function symbol) original))
+          (uiop:delete-directory-tree directory :validate t)))))))
