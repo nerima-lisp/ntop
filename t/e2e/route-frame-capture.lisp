@@ -322,89 +322,47 @@
          (frames (criterion-projection-frames grid)))
     (labels
         ((canonical-color (color)
-           (case (car color)
-             (:default '(:default))
-             (:indexed (list :indexed (cdr color)))
-             (:rgb (list :rgb (coerce (cdr color) 'list)))))
-         (dynamic-process-column-p (id label)
-           (or (member id '(:cpu :memory :read-per-second :write-per-second
-                            :total-read :total-write :time)
-                       :test #'eq)
-               (and (eq id :pid-or-count)
-                    (string= label "Count"))))
-         (mark-process-values (frame header-row)
-           (let* ((text (criterion-row-text grid header-row))
-                  (entries
-                    (sort
-                     (loop for (label id)
-                             in (criterion-rule-values
-                                 :process-header-column-ids)
-                           for span =
-                             (find-if
-                              (lambda (candidate)
-                                (and (> (car candidate) (third frame))
-                                     (<= (cdr candidate) (fourth frame))))
-                              (criterion-label-spans text label))
-                           when span
-                             collect (list (car span) (cdr span) id label))
-                     #'< :key #'first)))
-             (loop for entry in entries
-                   for index from 0
-                   for start =
-                     (if (zerop index)
-                         (1+ (third frame))
-                       (floor (+ (second (nth (1- index) entries))
-                                 (first entry))
-                              2))
-                   for end =
-                     (if (< (1+ index) (length entries))
-                         (floor (+ (second entry)
-                                   (first (nth (1+ index) entries)))
-                                2)
-                       (fourth frame))
-                   when (dynamic-process-column-p
-                         (third entry) (fourth entry))
-                     do (loop for row from (1+ header-row)
-                              below (second frame)
-                              unless (criterion-frame-divider-row-p
-                                      grid row (third frame) (fourth frame))
-                                do (loop for column from start below end
-                                         unless
-                                           (criterion-border-cell-p
-                                            grid row column
-                                            (cell-character
-                                             (grid-cell-at grid row column))
-                                            (list frame))
-                                           do (setf (aref mask row column)
-                                                    t)))))))
+   (case (car color)
+     (:default '(:default))
+     (:indexed (list :indexed (cdr color)))
+     (:rgb (list :rgb (coerce (cdr color) 'list)))))
+ ;; Stability tracks frame structure; route predicates inspect the unmasked grid.
+ ;; Process body rows therefore stay out of the signature.
+ (mask-process-rows (frame header-row)
+   (loop for row from (1+ header-row) below (second frame)
+         unless (criterion-frame-divider-row-p
+                 grid row (third frame) (fourth frame))
+           do (loop for column from (1+ (third frame)) below (fourth frame)
+                    do (setf (aref mask row column) t)))))
       (dotimes (row height)
         (let* ((text (criterion-row-text grid row))
                (span (criterion-cpu-title-border-span text row frames)))
           (when span
             (loop for column from (car span) below (cdr span)
                   for character =
-                    (cell-character (grid-cell-at grid row column))
+                  (cell-character (grid-cell-at grid row column))
                   unless (criterion-border-cell-p
                           grid row column character frames)
-                    do (setf (aref mask row column) t)))))
+                  do (setf (aref mask row column) t)))))
       (dolist (frame frames)
-        (let ((header-row (1+ (first frame))))
-          (when (and (< header-row (second frame))
-                     (criterion-process-header-row-p
-                      grid header-row (list frame)))
-            (mark-process-values frame header-row))))
+        (let ((header-row
+               (loop for row from (1+ (first frame)) below (second frame)
+                     when (criterion-process-header-row-p grid row (list frame))
+                       return row)))
+          (when header-row
+            (mask-process-rows frame header-row))))
       (let ((canonical
-              (loop for row below height
-                    collect
-                    (loop for column below width
-                          for cell = (grid-cell-at grid row column)
-                          collect
-                          (if (aref mask row column)
-                              :dynamic
-                            (list (cell-character cell)
-                                  (canonical-color (cell-foreground cell))
-                                  (canonical-color (cell-background cell))
-                                  (cell-bold-p cell)))))))
+             (loop for row below height
+                   collect
+                   (loop for column below width
+                         for cell = (grid-cell-at grid row column)
+                         collect
+                         (if (aref mask row column)
+                             :dynamic
+                           (list (cell-character cell)
+                                 (canonical-color (cell-foreground cell))
+                                 (canonical-color (cell-background cell))
+                                 (cell-bold-p cell)))))))
         (values (list :rows height
                       :columns width
                       :hash (sxhash canonical))

@@ -369,6 +369,7 @@
              condition))
       (ntop.e2e::close-e2e-session session))))
 
+(progn
 (cl-weave:describe
  "route frame capture cursor query"
  (cl-weave:it
@@ -461,4 +462,4 @@
      (search "grid unavailable: :INCOMPLETE-UTF8-SUFFIX."
              (format nil "~a" condition))
      :to-be-truthy)))
- )
+ ))

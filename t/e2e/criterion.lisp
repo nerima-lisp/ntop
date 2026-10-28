@@ -230,25 +230,28 @@
                       (second pair))))
         (criterion-rule-values :frame-divider-pairs)))
 (defun criterion-process-header-row-p (grid row frames)
-  (let ((text (criterion-row-text grid row)))
-    (loop for (top bottom left right) in frames
-          thereis
-          (and (= row (1+ top))
-               (< row bottom)
-               (search "Processes" (criterion-row-text grid top))
+  (labels ((header-row-p (candidate-row left right)
+             (let ((text (criterion-row-text grid candidate-row)))
                (some
                 (lambda (pair)
-                  (let ((spans
-                         (mapcar
-                          (lambda (label)
-                            (find-if
-                             (lambda (span)
-                               (and (< left (car span))
-                                    (<= (cdr span) right)))
-                             (criterion-label-spans text label)))
-                          pair)))
-                    (every #'identity spans)))
-                (criterion-rule-values :process-header-anchor-pairs))))))
+                  (every
+                   (lambda (label)
+                     (find-if
+                      (lambda (span)
+                        (and (< left (car span))
+                             (<= (cdr span) right)))
+                      (criterion-label-spans text label)))
+                   pair))
+                (criterion-rule-values :process-header-anchor-pairs)))))
+    (loop for (top bottom left right) in frames
+          thereis
+          (and (> row top)
+               (< row bottom)
+               (search "Processes" (criterion-row-text grid top))
+               (eql row
+                    (loop for candidate-row from (1+ top) below bottom
+                          when (header-row-p candidate-row left right)
+                            return candidate-row))))))
 (defun criterion-border-cell-p (grid row column character frames)
   (and (criterion-character-in-p
         character (first (criterion-rule-values :border-characters)))
