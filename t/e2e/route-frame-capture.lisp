@@ -13,19 +13,38 @@
    (last-output-seconds :initarg :last-output-seconds
                         :reader route-frame-timeout-last-output-seconds)
    (stable-signature :initarg :stable-signature
-                     :reader route-frame-timeout-stable-signature))
+                     :reader route-frame-timeout-stable-signature)
+   (awaiting-post-query-output-p
+    :initarg :awaiting-post-query-output-p
+    :initform nil
+    :reader route-frame-timeout-awaiting-post-query-output-p)
+   (candidate-grid-p :initarg :candidate-grid-p
+                     :initform nil
+                     :reader route-frame-timeout-candidate-grid-p)
+   (stable-check-at-seconds :initarg :stable-check-at-seconds
+                            :initform nil
+                            :reader route-frame-timeout-stable-check-at-seconds)
+   (grid-unavailable-reason :initarg :grid-unavailable-reason
+                            :initform nil
+                            :reader route-frame-timeout-grid-unavailable-reason))
   (:report
    (lambda (condition stream)
      (format stream
              (concatenate 'string
                          "E2E route frame capture timed out. Side: ~s; stage: ~s; "
                          "elapsed: ~,3f seconds; last output: ~s; "
-                         "last stable signature: ~s.")
+                         "last stable signature: ~s; awaiting post-query output: ~s; "
+                         "candidate grid: ~s; stable check at: ~s; "
+                         "grid unavailable: ~s.")
              (route-frame-timeout-side condition)
              (route-frame-timeout-stage condition)
              (route-frame-timeout-elapsed-seconds condition)
              (route-frame-timeout-last-output-seconds condition)
-             (route-frame-timeout-stable-signature condition)))))
+             (route-frame-timeout-stable-signature condition)
+             (route-frame-timeout-awaiting-post-query-output-p condition)
+             (route-frame-timeout-candidate-grid-p condition)
+             (route-frame-timeout-stable-check-at-seconds condition)
+             (route-frame-timeout-grid-unavailable-reason condition)))))
 
 (declaim (ftype function %route-grid
                              %route-grid-stable-signature
@@ -41,15 +60,26 @@
               :initial-contents octets))
 
 (defun %route-frame-capture-current-grid (octets rows columns)
-  (unless (or (%route-incomplete-escape-suffix-p octets)
-              (%route-incomplete-utf8-suffix-p octets))
-    (let ((grid (%route-grid octets rows columns)))
-      (when (and (= (grid-height grid) rows)
-                 (= (grid-width grid) columns))
-        grid))))
+  (cond
+    ((%route-incomplete-escape-suffix-p octets)
+     (values nil :incomplete-escape-suffix))
+    ((%route-incomplete-utf8-suffix-p octets)
+     (values nil :incomplete-utf8-suffix))
+    (t
+     (let ((grid (%route-grid octets rows columns)))
+       (if (and (= (grid-height grid) rows)
+                (= (grid-width grid) columns))
+           (values grid nil)
+         (values nil
+                 (list :dimension-mismatch
+                       :expected (list rows columns)
+                       :actual (list (grid-height grid)
+                                     (grid-width grid)))))))))
 
 (defun %route-frame-capture-signal-timeout
-    (side stage started-at timeout-seconds session stable-signature)
+    (side stage started-at timeout-seconds session stable-signature
+     &key awaiting-post-query-output-p candidate-grid-p stable-check-at-seconds
+       grid-unavailable-reason)
   (let* ((now (%now))
          (last-output-at (e2e-session-last-output-at session)))
     (error 'route-frame-capture-timeout
@@ -60,17 +90,21 @@
            :elapsed-seconds (%ticks-to-seconds (- now started-at))
            :last-output-seconds
            (and last-output-at (%elapsed-seconds session last-output-at))
-           :stable-signature stable-signature)))
+           :stable-signature stable-signature
+           :awaiting-post-query-output-p awaiting-post-query-output-p
+           :candidate-grid-p candidate-grid-p
+           :stable-check-at-seconds stable-check-at-seconds
+           :grid-unavailable-reason grid-unavailable-reason)))
 
 (defun %route-capture-frame
     (session prefix rows columns
-     &key side stage timeout-seconds stability-seconds
-       completion-predicate allow-unchanged-p)
+             &key side stage timeout-seconds stability-seconds
+             completion-predicate allow-unchanged-p)
   (let* ((started-at (%now))
          (side (or side *route-frame-capture-side* :unknown))
          (stage (or stage :capture))
          (stability-seconds
-           (or stability-seconds *route-frame-stability-seconds*))
+          (or stability-seconds *route-frame-stability-seconds*))
          (allow-unchanged-p (not (null allow-unchanged-p))))
     (%ensure-session-open session)
     (unless (and (integerp rows) (plusp rows))
@@ -83,14 +117,14 @@
     (when (and completion-predicate (not (functionp completion-predicate)))
       (error "COMPLETION-PREDICATE must be a function or NIL."))
     (let* ((deadline-values
-             (handler-case
-                 (multiple-value-list
-                  (%deadline-for-call session "route frame capture"
-                                      timeout-seconds started-at))
-               (e2e-timeout (condition)
-                 (%route-frame-capture-signal-timeout
-                  side stage started-at (e2e-timeout-seconds condition)
-                  session nil))))
+            (handler-case
+                (multiple-value-list
+                 (%deadline-for-call session "route frame capture"
+                                     timeout-seconds started-at))
+              (e2e-timeout (condition)
+                           (%route-frame-capture-signal-timeout
+                            side stage started-at (e2e-timeout-seconds condition)
+                            session nil))))
            (prefix (%route-frame-capture-copy-octets prefix))
            (prefix-length (length prefix))
            (output-gap-count
@@ -108,61 +142,88 @@
            (candidate-canonical nil)
            (candidate-stable-since nil)
            (candidate-stability-tested-p nil)
-           (last-stable-signature nil))
+           (last-stable-signature nil)
+           (last-grid-unavailable-reason :empty-prefix))
       (destructuring-bind (deadline timeout-budget)
           deadline-values
         (labels
             ((predicate-p (grid)
-               (if completion-predicate
-                   (let ((*route-frame-capture-current-octets* cumulative))
-                     (not (null (funcall completion-predicate grid))))
-                 t))
+                          (if completion-predicate
+                              (let ((*route-frame-capture-current-octets* cumulative))
+                                (not (null (funcall completion-predicate grid))))
+                            t))
              (install-grid (grid now)
-               (multiple-value-bind (signature canonical)
-                   (%route-grid-stable-signature grid)
-                 (if (and candidate-canonical
-                          (equal canonical candidate-canonical))
-                     (setf candidate-grid grid
-                           candidate-signature signature)
-                   (setf candidate-grid grid
-                         candidate-signature signature
-                         candidate-canonical canonical
-                         candidate-stable-since now))
-                 (setf candidate-stability-tested-p nil)
-                 (when completion-predicate
-                   (predicate-p candidate-grid))))
+                           (multiple-value-bind (signature canonical)
+                               (%route-grid-stable-signature grid)
+                             (if (and candidate-canonical
+                                      (equal canonical candidate-canonical))
+                                 (setf candidate-grid grid
+                                       candidate-signature signature)
+                               (setf candidate-grid grid
+                                     candidate-signature signature
+                                     candidate-canonical canonical
+                                     candidate-stable-since now))
+                             (setf candidate-stability-tested-p nil)
+                             (when completion-predicate
+                               (predicate-p candidate-grid))))
              (clear-candidate ()
-               (setf candidate-grid nil
-                     candidate-signature nil
-                     candidate-canonical nil
-                     candidate-stable-since nil
-                     candidate-stability-tested-p nil))
+                              (setf candidate-grid nil
+                                    candidate-signature nil
+                                    candidate-canonical nil
+                                    candidate-stable-since nil
+                                    candidate-stability-tested-p nil))
+             (compute-stable-check-at ()
+                                      (and candidate-grid
+                                           candidate-stable-since
+                                           (not (e2e-session-awaiting-post-query-output-p session))
+                                           (not candidate-stability-tested-p)
+                                           (max (+ candidate-stable-since stability-ticks)
+                                                (or *route-frame-capture-not-before-at*
+                                                    (+ candidate-stable-since
+                                                       stability-ticks)))))
              (output-gaps-since ()
-               (let* ((gaps (e2e-session-output-gaps-seconds session))
-                      (new-count (max 0 (- (length gaps) output-gap-count))))
-                 (reverse (subseq gaps 0 new-count))))
-             (return-capture (now)
-               (values
-                (%route-frame-capture-copy-octets cumulative)
-                candidate-grid
-                (list :side side
-                      :stage stage
-                      :elapsed-seconds (%ticks-to-seconds (- now started-at))
-                      :last-output-seconds
-                      (let ((last-output-at
-                              (e2e-session-last-output-at session)))
-                        (and last-output-at
-                             (%elapsed-seconds session last-output-at)))
-                      :output-gaps-seconds (output-gaps-since)
-                      :stable-signature candidate-signature)))
+                                (let* ((gaps (e2e-session-output-gaps-seconds session))
+                                       (new-count (max 0 (- (length gaps) output-gap-count))))
+                                  (reverse (subseq gaps 0 new-count))))
+             (return-capture (now stable-check-at)
+                             (values
+                              (%route-frame-capture-copy-octets cumulative)
+                              candidate-grid
+                              (list :side side
+                                    :stage stage
+                                    :elapsed-seconds (%ticks-to-seconds (- now started-at))
+                                    :last-output-seconds
+                                    (let ((last-output-at
+                                           (e2e-session-last-output-at session)))
+                                      (and last-output-at
+                                           (%elapsed-seconds session last-output-at)))
+                                    :output-gaps-seconds (output-gaps-since)
+                                    :stable-signature candidate-signature
+                                    :awaiting-post-query-output-p
+                                    (e2e-session-awaiting-post-query-output-p session)
+                                    :candidate-grid-p (not (null candidate-grid))
+                                    :stable-check-at-seconds
+                                    (and stable-check-at
+                                         (%elapsed-seconds session stable-check-at)))))
              (signal-timeout ()
-               (%route-frame-capture-signal-timeout
-                side stage started-at timeout-budget session
-                last-stable-signature)))
-          (let ((prefix-grid
-                  (and (plusp prefix-length)
-                       (%route-frame-capture-current-grid
-                        cumulative rows columns))))
+                             (let ((stable-check-at (compute-stable-check-at)))
+                               (%route-frame-capture-signal-timeout
+                                side stage started-at timeout-budget session
+                                last-stable-signature
+                                :awaiting-post-query-output-p
+                                (e2e-session-awaiting-post-query-output-p session)
+                                :candidate-grid-p (not (null candidate-grid))
+                                :stable-check-at-seconds
+                                (and stable-check-at
+                                     (%elapsed-seconds session stable-check-at))
+                                :grid-unavailable-reason
+                                last-grid-unavailable-reason))))
+          (multiple-value-bind (prefix-grid unavailable-reason)
+              (if (plusp prefix-length)
+                  (%route-frame-capture-current-grid
+                   cumulative rows columns)
+                (values nil :empty-prefix))
+            (setf last-grid-unavailable-reason unavailable-reason)
             (when prefix-grid
               (multiple-value-bind (signature canonical)
                   (%route-grid-stable-signature prefix-grid)
@@ -179,62 +240,73 @@
                   (max 0 (- prefix-length 3))))
           (handler-case
               (loop
-                for now = (%now)
-                do
-                   (when (>= now deadline)
-                     (signal-timeout))
-                   (let* ((awaiting-post-query-output-p
-                            (e2e-session-awaiting-post-query-output-p session))
-                          (stable-check-at
-                            (and candidate-grid
-                                 candidate-stable-since
-                                 (not awaiting-post-query-output-p)
-                                 (not candidate-stability-tested-p)
-                                 (max (+ candidate-stable-since stability-ticks)
-                                      (or *route-frame-capture-not-before-at*
-                                          (+ candidate-stable-since
-                                             stability-ticks))))))
-                     (when (and stable-check-at (>= now stable-check-at))
-                       (setf last-stable-signature candidate-signature)
-                       (if (predicate-p candidate-grid)
-                           (return-from %route-capture-frame
-                             (return-capture now))
-                         (setf candidate-stability-tested-p t)))
-                     (let* ((wake-at
-                              (if (and stable-check-at
-                                       (not candidate-stability-tested-p)
-                                       (< now stable-check-at))
-                                  (min deadline stable-check-at)
-                                deadline))
-                            (chunk
-                              (%pty-read-chunk-before
-                               session buffer wake-at deadline timeout-budget)))
-                       (when chunk
-                         (loop for byte across chunk
-                               do (vector-push-extend byte cumulative))
-                         (setf (e2e-session-awaiting-post-query-output-p session)
+               for now = (%now)
+               do
+               (when (>= now deadline)
+                 (signal-timeout))
+               (let* ((stable-check-at
+                       (compute-stable-check-at)))
+                 (when (and stable-check-at (>= now stable-check-at))
+                   (setf last-stable-signature candidate-signature)
+                   (if (predicate-p candidate-grid)
+                       (return-from %route-capture-frame
+                                    (return-capture now stable-check-at))
+                     (setf candidate-stability-tested-p t)))
+                 (let* ((wake-at
+                         (if (and stable-check-at
+                                  (not candidate-stability-tested-p)
+                                  (< now stable-check-at))
+                             (min deadline stable-check-at)
+                           deadline))
+                        (chunk
+                         (%pty-read-chunk-before
+                          session buffer wake-at deadline timeout-budget)))
+                   (when chunk
+                     (loop for byte across chunk
+                           do (vector-push-extend byte cumulative))
+                     (setf (e2e-session-awaiting-post-query-output-p session)
+                           nil)
+                     (let ((query-response-at nil))
+                       (multiple-value-bind (next-index answered-p)
+                           (%pty-answer-cursor-query
+                            session cumulative
+                            (e2e-session-cursor-query-scan-index session)
+                            deadline)
+                         ;; Start the stability window when the CPR response is written.
+                         (setf (e2e-session-cursor-query-scan-index session)
+                               next-index
+                               (e2e-session-awaiting-post-query-output-p
+                                session)
                                nil)
-                         (multiple-value-bind (next-index answered-p
-                                               output-after-query-p)
-                             (%pty-answer-cursor-query
-                              session cumulative
-                              (e2e-session-cursor-query-scan-index session)
-                              deadline)
-                           (setf (e2e-session-cursor-query-scan-index session)
-                                 next-index
-                                 (e2e-session-awaiting-post-query-output-p session)
-                                 (and answered-p
-                                      (not output-after-query-p))))
-                         (let ((grid
-                                 (%route-frame-capture-current-grid
-                                  cumulative rows columns)))
-                           (if grid
-                               (install-grid grid (%now))
-                             (clear-candidate)))))))
+                         (when answered-p
+                           (setf query-response-at (%now))))
+                       (multiple-value-bind
+                           (grid unavailable-reason)
+                           (%route-frame-capture-current-grid
+                            cumulative rows columns)
+                         (setf last-grid-unavailable-reason
+                               unavailable-reason)
+                         ;; A partial PTY chunk has not changed the last complete grid.
+                         (if grid
+                             (progn
+                               (install-grid grid (or query-response-at (%now)))
+                               (when query-response-at
+                                 (setf candidate-stable-since
+                                       query-response-at)))
+                           (if (and candidate-grid
+                                    (or (eq unavailable-reason
+                                           :incomplete-escape-suffix)
+                                        (eq unavailable-reason
+                                            :incomplete-utf8-suffix)))
+                               (when query-response-at
+                                 (setf candidate-stable-since
+                                       query-response-at
+                                       candidate-stability-tested-p nil))
+                             (clear-candidate)))))))))
             (route-frame-capture-timeout (condition)
-              (error condition))
+                                         (error condition))
             (e2e-timeout ()
-              (signal-timeout))))))))
+                         (signal-timeout))))))))
 
 (defun %route-grid (octets rows columns)
   (let ((grid (make-terminal-grid :rows rows :cols columns)))

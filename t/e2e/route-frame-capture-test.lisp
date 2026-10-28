@@ -354,3 +354,111 @@
                 (not (null (search needle report :test (function char-equal))))
                 :to-be t))))
       (ntop.e2e::close-e2e-session session)))))
+
+(defun route-frame-capture-test-timeout (script stage)
+  (let ((session (route-frame-capture-test-launch script 2 12)))
+    (unwind-protect
+         (handler-case
+             (progn
+               (ntop.e2e::%route-capture-frame
+                session (route-frame-capture-test-empty-octets) 2 12
+                :side :reference :stage stage
+                :timeout-seconds 0.75d0 :stability-seconds 0.08d0)
+               nil)
+           (ntop.e2e::route-frame-capture-timeout (condition)
+             condition))
+      (ntop.e2e::close-e2e-session session))))
+
+(cl-weave:describe
+ "route frame capture cursor query"
+ (cl-weave:it
+  "starts the stability window when it answers a quiet CPR query"
+  (let* ((script
+           (format nil
+                   (concatenate 'string
+                                "import os,time~%"
+                                "os.write(1,bytes((27,91,50,74,27,91,72))"
+                                "+b'READY'+bytes((27,91,54,110)))~%"
+                                "while True: time.sleep(1)~%")))
+         (session (route-frame-capture-test-launch script 2 12))
+         (started-at (ntop.e2e::%now)))
+    (unwind-protect
+         (multiple-value-bind (octets grid metadata)
+             (ntop.e2e::%route-capture-frame
+              session (route-frame-capture-test-empty-octets) 2 12
+              :side :reference :stage :quiet-cursor-query
+              :timeout-seconds 1d0 :stability-seconds 0.08d0)
+           (cl-weave:expect
+            (search #(27 91 54 110) octets :test (function =))
+            :to-be-truthy)
+           (cl-weave:expect
+            (ntop.e2e:cell-character (ntop.e2e:grid-cell-at grid 0 0))
+            :to-equal #\R)
+           (cl-weave:expect
+            (and
+             (not (ntop.e2e::e2e-session-awaiting-post-query-output-p session))
+             (getf metadata :candidate-grid-p)
+             (realp (getf metadata :stable-check-at-seconds)))
+            :to-be t)
+           (cl-weave:expect
+            (>= (- (getf metadata :stable-check-at-seconds)
+                   (getf metadata :last-output-seconds))
+                0.08d0)
+            :to-be t)
+           (cl-weave:expect
+            (>= (ntop.e2e::%ticks-to-seconds
+                 (- (ntop.e2e::%now) started-at))
+                0.08d0)
+            :to-be t))
+      (ntop.e2e::close-e2e-session session))))
+ (cl-weave:it
+  "reports an incomplete CSI when no candidate grid can be built"
+  (let* ((script
+           (format nil
+                   (concatenate 'string
+                                "import os,time~%"
+                                "os.write(1,bytes((27,91,50,74,27,91,72))+b'FRAME'"
+                                "+bytes((27,91)))~%"
+                                "while True: time.sleep(1)~%")))
+         (condition
+           (route-frame-capture-test-timeout script :incomplete-csi)))
+    (cl-weave:expect
+     (typep condition 'ntop.e2e::route-frame-capture-timeout)
+     :to-be t)
+    (cl-weave:expect
+     (and
+      (not (ntop.e2e::route-frame-timeout-candidate-grid-p condition))
+      (null (ntop.e2e::route-frame-timeout-stable-check-at-seconds condition))
+      (eq (ntop.e2e::route-frame-timeout-grid-unavailable-reason condition)
+          :incomplete-escape-suffix))
+     :to-be t)
+    (cl-weave:expect
+     (search "grid unavailable: :INCOMPLETE-ESCAPE-SUFFIX."
+             (format nil "~a" condition))
+     :to-be-truthy)))
+ (cl-weave:it
+  "reports an incomplete UTF-8 suffix when no candidate grid can be built"
+  (let* ((script
+           (format nil
+                   (concatenate 'string
+                                "import os,time~%"
+                                "os.write(1,bytes((27,91,50,74,27,91,72))+b'FRAME'"
+                                "+bytes((206,)))~%"
+                                "while True: time.sleep(1)~%")))
+         (condition
+           (route-frame-capture-test-timeout script :incomplete-utf8)))
+    (cl-weave:expect
+     (typep condition 'ntop.e2e::route-frame-capture-timeout)
+     :to-be t)
+    (cl-weave:expect
+     (and
+      (not (ntop.e2e::route-frame-timeout-candidate-grid-p condition))
+      (null (ntop.e2e::route-frame-timeout-stable-check-at-seconds condition))
+      (eq (ntop.e2e::route-frame-timeout-grid-unavailable-reason condition)
+          :incomplete-utf8-suffix))
+     :to-be t)
+    (cl-weave:expect
+     (search "grid unavailable: :INCOMPLETE-UTF8-SUFFIX."
+             (format nil "~a" condition))
+     :to-be-truthy)))
+ )

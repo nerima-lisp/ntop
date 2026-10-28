@@ -107,12 +107,11 @@
                        (length (criterion-projection-frames stable-grid)))
                       (%condition-a-process-header-ready-p
                        process-frame projection)))))
-          (declare (ignore metadata))
           (setf raw updated)
           (unless (sb-ext:process-alive-p (e2e-session-process session))
             (error "~a exited before its terminal frame stabilized."
                    program))
-          grid)
+          (values grid metadata))
       (let ((captured (e2e-session-output session)))
         (when captured (setf raw captured)))
       (unwind-protect

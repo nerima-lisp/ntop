@@ -445,7 +445,8 @@
    (:file "t/e2e/n7-test")
    (:file "t/e2e/pty-test")
    (:file "t/e2e/pty-route-test")
-   (:file "t/e2e/route-frame-capture-test"))
+   (:file "t/e2e/route-frame-capture-test")
+   (:file "t/e2e/criterion-a-capture-test"))
   :perform (asdf:test-op (operation system)
              (declare (ignore operation system))
              (unless (uiop:symbol-call "CL-WEAVE" "RUN-ALL"
